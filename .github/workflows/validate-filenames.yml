@@ -1,0 +1,25 @@
+name: Validate Filenames
+
+on: [push]
+
+jobs:
+  validate:
+    name: Filenames validation
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: List all filenames
+      run: |
+        # Get all files in the repository
+        files=$(git ls-tree -r HEAD --name-only)
+
+        # Check filenames for non-printable ASCII characters (0x20 to 0x7E)
+        for file in $files; do
+          if ! echo "$file" | grep -Pq '^[\x20-\x7E]+$'; then
+            echo "Filename contains characters not ASCII-printable: $file"
+            exit 1
+          fi
+        done
