@@ -1,0 +1,4 @@
+[submodule "firmware/slv_ardupilot"]
+	path = firmware/slv_ardupilot
+	url = git@github.com:mesondynamics/slv_ardupilot.git
+	slv = slv
