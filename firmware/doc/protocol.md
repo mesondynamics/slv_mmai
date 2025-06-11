@@ -115,6 +115,7 @@
 |  0x55  | EKF2融合数据 | uint64_t timestamp<br/>float x<br/>float y<br/>float z<br/>float ox<br/>float oy<br/>float oz<br/>float ow<br/>float x_covariance<br/>float y_covariance<br/>float z_covariance<br/>float rx_covariance<br/>float ry_covariance<br/>float rz_covariance<br/>float vx<br/>float vy<br/>float vz<br/>float wx<br/>float wy<br/>float wz<br/>float vx_covariance<br/>float vy_covariance<br/>float vz_covariance<br/>float wx_covariance<br/>float wy_covariance<br/>float wz_covariance<br/> | 108      |
 |  0x56  | 时间同步数据 | uint64_t timestamp                                           | 8        |
 |  0x57  | 激光定位数据 | uint64_t timestamp<br/>float x<br/>float y<br/>float z<br/>float ox<br/>float oy<br/>float oz<br/>float ow<br/>float x_covariance<br/>float y_covariance<br/>float z_covariance<br/>float rx_covariance<br/>float ry_covariance<br/>float rz_covariance<br/> | 56       |
+|  0x58  | 车身角数据 | double steering_angle | 4       |
 
 ## 5. 其它说明
 
