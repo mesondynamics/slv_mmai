@@ -1,0 +1,8 @@
+{
+  "source": {
+    "sourceType": "STM32CubeMX"
+  },
+  "board": "NUCLEO-H563ZI",
+  "device": "STM32H563ZIT6",
+  "toolchain": "GCC"
+}
