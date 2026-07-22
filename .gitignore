@@ -230,3 +230,7 @@ fp-info-cache
 *.bak
 *.kicad_prl
 *.lck
+
+
+# MacOS
+*.DS_Store
