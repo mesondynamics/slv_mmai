@@ -1339,6 +1339,50 @@
 			(embedded_fonts no)
 		)
 	)
+	(text "PD0"
+		(exclude_from_sim no)
+		(at 121.92 68.58 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left bottom)
+		)
+		(uuid "20354577-7cb8-421f-8bf7-689cb8e12de6")
+	)
+	(text "PB12"
+		(exclude_from_sim no)
+		(at 119.38 132.08 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left bottom)
+		)
+		(uuid "be985df4-5b85-41a9-ac40-fbbfdd883e4f")
+	)
+	(text "PD1"
+		(exclude_from_sim no)
+		(at 121.92 58.42 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left bottom)
+		)
+		(uuid "ec74cadb-db71-4f77-8159-11baa8d9f6a1")
+	)
+	(text "PB13"
+		(exclude_from_sim no)
+		(at 119.38 121.92 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left bottom)
+		)
+		(uuid "f5941713-f0fc-45e9-9303-045c590dc7c4")
+	)
 	(junction
 		(at 143.51 41.91)
 		(diameter 0)
@@ -1978,46 +2022,6 @@
 			(type default)
 		)
 		(uuid "fc255efa-99fd-439c-9eda-d4900bd65a1c")
-	)
-	(label "PD0"
-		(at 121.92 68.58 0)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left bottom)
-		)
-		(uuid "20354577-7cb8-421f-8bf7-689cb8e12de6")
-	)
-	(label "PB12"
-		(at 119.38 132.08 0)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left bottom)
-		)
-		(uuid "be985df4-5b85-41a9-ac40-fbbfdd883e4f")
-	)
-	(label "PD1"
-		(at 121.92 58.42 0)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left bottom)
-		)
-		(uuid "ec74cadb-db71-4f77-8159-11baa8d9f6a1")
-	)
-	(label "PB13"
-		(at 119.38 121.92 0)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left bottom)
-		)
-		(uuid "f5941713-f0fc-45e9-9303-045c590dc7c4")
 	)
 	(hierarchical_label "CAN1_L"
 		(shape bidirectional)
