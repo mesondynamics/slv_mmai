@@ -2684,6 +2684,12 @@
 		(uuid "309f1d0f-f951-4489-af1f-c121e2be5407")
 	)
 	(junction
+		(at 135.89 27.94)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "315464b6-f39d-4dbd-bf58-3531dbeda311")
+	)
+	(junction
 		(at 38.1 137.16)
 		(diameter 0)
 		(color 0 0 0 0)
@@ -3085,6 +3091,16 @@
 	)
 	(wire
 		(pts
+			(xy 135.89 25.4) (xy 135.89 27.94)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "12a45fc1-a37c-4833-ba71-09581ab8949c")
+	)
+	(wire
+		(pts
 			(xy 35.56 64.77) (xy 35.56 66.04)
 		)
 		(stroke
@@ -3162,6 +3178,16 @@
 			(type default)
 		)
 		(uuid "1cf77e08-a7ba-4cb5-90b9-6118f47af4a4")
+	)
+	(wire
+		(pts
+			(xy 154.94 41.91) (xy 154.94 39.37)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "1ea27cfa-4f4d-4b04-94d4-9e7a146b3990")
 	)
 	(wire
 		(pts
@@ -3422,6 +3448,16 @@
 			(type default)
 		)
 		(uuid "3c84f953-b16c-4b17-9a21-fabbcbba7ef9")
+	)
+	(wire
+		(pts
+			(xy 172.72 25.4) (xy 168.91 25.4)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "3ca590ae-5e34-4529-81eb-5101b180edb3")
 	)
 	(wire
 		(pts
@@ -4315,6 +4351,16 @@
 	)
 	(wire
 		(pts
+			(xy 162.56 41.91) (xy 154.94 41.91)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "ba54be5c-d5ad-4a17-b7ad-a60b10c3095b")
+	)
+	(wire
+		(pts
 			(xy 111.76 153.67) (xy 118.11 153.67)
 		)
 		(stroke
@@ -4802,6 +4848,28 @@
 			(justify left bottom)
 		)
 		(uuid "d685561e-9892-41e2-81f2-e6a6586d3e24")
+	)
+	(hierarchical_label "BAT_IN"
+		(shape input)
+		(at 162.56 41.91 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left)
+		)
+		(uuid "487b21e8-5bd6-4527-a824-ca0272d98ea4")
+	)
+	(hierarchical_label "BAT_GND"
+		(shape input)
+		(at 172.72 25.4 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left)
+		)
+		(uuid "b7d62734-e9d4-44a1-9d0b-af618bad381a")
 	)
 	(symbol
 		(lib_id "power:GND")
@@ -6580,6 +6648,84 @@
 		)
 	)
 	(symbol
+		(lib_id "power:PWR_FLAG")
+		(at 135.89 25.4 0)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(uuid "379e5b42-76cd-42bf-9350-02fceb7194fd")
+		(property "Reference" "#FLG07"
+			(at 135.89 23.495 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "PWR_FLAG"
+			(at 135.89 20.32 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 135.89 25.4 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 135.89 25.4 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Special symbol for telling ERC where power comes from"
+			(at 135.89 25.4 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "c5037759-c349-46ce-bd29-1970f52415e5")
+		)
+		(instances
+			(project "ecu"
+				(path "/e5f3c8f3-31b1-4864-b028-38bb5e50c369/bd16e371-9119-475c-bc81-983abed08b70"
+					(reference "#FLG07")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
 		(lib_id "Device:C")
 		(at 55.88 142.24 0)
 		(unit 1)
@@ -7777,6 +7923,84 @@
 			(project "ecu"
 				(path "/e5f3c8f3-31b1-4864-b028-38bb5e50c369/bd16e371-9119-475c-bc81-983abed08b70"
 					(reference "R63")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "power:+12V")
+		(at 154.94 39.37 0)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(uuid "69f439c8-cac0-4f50-9148-264246be5908")
+		(property "Reference" "#PWR0213"
+			(at 154.94 43.18 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "+12V"
+			(at 154.94 34.29 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 154.94 39.37 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 154.94 39.37 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Power symbol creates a global label with name \"+12V\""
+			(at 154.94 39.37 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "4fcedf45-90b5-49c2-947f-bfc93530552b")
+		)
+		(instances
+			(project "ecu"
+				(path "/e5f3c8f3-31b1-4864-b028-38bb5e50c369/bd16e371-9119-475c-bc81-983abed08b70"
+					(reference "#PWR0213")
 					(unit 1)
 				)
 			)
