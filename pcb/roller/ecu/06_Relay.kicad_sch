@@ -1704,10 +1704,6 @@
 		(uuid "d0725c8b-9eab-4e07-b5b3-aac88275b682")
 	)
 	(no_connect
-		(at 196.85 107.95)
-		(uuid "2afa9028-6958-4eb1-8941-2a6c1392eb33")
-	)
-	(no_connect
 		(at 71.12 48.26)
 		(uuid "5bbe4949-aafe-4744-bddd-be20ffeecca5")
 	)
@@ -2837,7 +2833,7 @@
 	)
 	(wire
 		(pts
-			(xy 199.39 102.87) (xy 196.85 102.87)
+			(xy 199.39 107.95) (xy 196.85 107.95)
 		)
 		(stroke
 			(width 0)
@@ -3727,7 +3723,7 @@
 	)
 	(hierarchical_label "E_STOP_OEM_SIDE"
 		(shape input)
-		(at 199.39 102.87 0)
+		(at 199.39 107.95 0)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -4625,96 +4621,6 @@
 			(project "ecu"
 				(path "/e5f3c8f3-31b1-4864-b028-38bb5e50c369/8ecbc12a-0669-48e9-8a42-e12d90c95eca"
 					(reference "K9")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
-		(lib_id "Relay:Relay_SPDT")
-		(at 189.23 100.33 270)
-		(unit 1)
-		(body_style 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(in_pos_files yes)
-		(dnp no)
-		(fields_autoplaced yes)
-		(uuid "1cc49e56-f8c0-4024-ab38-023a41555842")
-		(property "Reference" "K12"
-			(at 189.23 85.09 90)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Value" "Relay_SPDT"
-			(at 189.23 87.63 90)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" "Starlight:Relay_SPDT_Hongfa_HFV6_1FormC"
-			(at 187.96 111.76 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-		)
-		(property "Datasheet" ""
-			(at 189.23 100.33 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Description" "Relay SPDT, monostable, EN50005"
-			(at 189.23 100.33 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(pin "A1"
-			(uuid "5e13371d-41a4-4dd2-a909-64b36c4a538c")
-		)
-		(pin "A2"
-			(uuid "ef42a449-4f39-415b-a1c0-aa09720cf9ff")
-		)
-		(pin "14"
-			(uuid "51575868-dc37-4799-99e4-39bfca8e0f81")
-		)
-		(pin "12"
-			(uuid "911f289a-4860-423b-9ccb-4b83a3bb6c72")
-		)
-		(pin "11"
-			(uuid "f05a8f67-1880-4cb5-b9c1-9db659891b2d")
-		)
-		(instances
-			(project "ecu"
-				(path "/e5f3c8f3-31b1-4864-b028-38bb5e50c369/8ecbc12a-0669-48e9-8a42-e12d90c95eca"
-					(reference "K12")
 					(unit 1)
 				)
 			)
@@ -10344,6 +10250,93 @@
 			(project "ecu"
 				(path "/e5f3c8f3-31b1-4864-b028-38bb5e50c369/8ecbc12a-0669-48e9-8a42-e12d90c95eca"
 					(reference "#PWR0120")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Relay:Relay_SPST-NO")
+		(at 189.23 100.33 270)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(uuid "fbad7bef-d423-48f9-a090-0711c66f7b93")
+		(property "Reference" "K12"
+			(at 189.23 85.09 90)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "Relay_SPST-NO"
+			(at 189.23 87.63 90)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" "Starlight:Relay_SPST-NO_Hongfa_HFV6_1FormA"
+			(at 187.96 111.76 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Datasheet" ""
+			(at 189.23 100.33 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Relay SPST, normally open, EN50005"
+			(at 189.23 100.33 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "A1"
+			(uuid "41a781d5-4f68-4350-9bea-fc7ef81eb95d")
+		)
+		(pin "13"
+			(uuid "72e5e055-8073-4488-a4b0-676cf67235fe")
+		)
+		(pin "14"
+			(uuid "b43900b3-299a-41d5-9d6d-27ca08c938de")
+		)
+		(pin "A2"
+			(uuid "4713aea4-935b-431c-b1f1-574f622f77f7")
+		)
+		(instances
+			(project "ecu"
+				(path "/e5f3c8f3-31b1-4864-b028-38bb5e50c369/8ecbc12a-0669-48e9-8a42-e12d90c95eca"
+					(reference "K12")
 					(unit 1)
 				)
 			)

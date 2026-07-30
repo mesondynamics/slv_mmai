@@ -6233,6 +6233,17 @@
 		)
 		(uuid "5a081126-f474-4ca9-9313-af78b3ad76ad")
 	)
+	(text "PB2"
+		(exclude_from_sim no)
+		(at 214.63 100.33 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left bottom)
+		)
+		(uuid "5cdd9941-ee9b-4c73-a445-07f31d389e84")
+	)
 	(text "PA1"
 		(exclude_from_sim no)
 		(at 214.63 54.61 0)
@@ -6850,10 +6861,6 @@
 	(no_connect
 		(at 132.08 138.43)
 		(uuid "2a2f4043-51fb-4791-a9bb-4449a8f4e42d")
-	)
-	(no_connect
-		(at 213.36 100.33)
-		(uuid "2dc5cec3-1fa1-4b62-9ea8-d061cb0e0159")
 	)
 	(no_connect
 		(at 213.36 161.29)
@@ -7618,6 +7625,16 @@
 			(type default)
 		)
 		(uuid "363f49ed-078e-412b-a0e2-a661f6600210")
+	)
+	(wire
+		(pts
+			(xy 213.36 100.33) (xy 222.25 100.33)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "36ef00f2-edb4-44da-ab13-0f92fea5c3fd")
 	)
 	(wire
 		(pts
@@ -9445,6 +9462,17 @@
 			(justify left)
 		)
 		(uuid "7f665d73-f148-4c2c-8217-7742d9e5686e")
+	)
+	(hierarchical_label "ESTOP_DETECT"
+		(shape input)
+		(at 222.25 100.33 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left)
+		)
+		(uuid "868ad7de-2b80-45eb-84c1-3c1e00765c46")
 	)
 	(hierarchical_label "CAN2_TX"
 		(shape output)
