@@ -956,7 +956,7 @@
 		(uuid "0485eb0b-07ee-4e85-a9ce-9509055a4b66")
 		(at 225.74 90.8 180)
 		(property "Reference" "J7"
-			(at -15.83825 -7.64138 0)
+			(at 20.57 -5.19 0)
 			(layer "F.SilkS")
 			(uuid "74689ccd-5084-40af-91b5-7eb23dbfe473")
 			(effects
@@ -13793,7 +13793,7 @@
 		(at 176.44 94.8)
 		(tags "776163-1 ")
 		(property "Reference" "J6"
-			(at -22 -16.549886 0)
+			(at 18.19 1.48 0)
 			(unlocked yes)
 			(layer "F.SilkS")
 			(uuid "d1952b05-062a-4cf6-a327-14797f96aef3")
