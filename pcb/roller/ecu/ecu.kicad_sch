@@ -247,6 +247,16 @@
 	)
 	(wire
 		(pts
+			(xy 267.97 162.56) (xy 278.13 162.56)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "1b79bb5f-847b-46bd-b08f-dee7bb45bd1e")
+	)
+	(wire
+		(pts
 			(xy 180.34 139.7) (xy 187.96 139.7)
 		)
 		(stroke
@@ -2661,6 +2671,16 @@
 				(justify left)
 			)
 		)
+		(pin "ESTOP_NC" output
+			(at 278.13 162.56 180)
+			(uuid "08444b9e-11c6-4515-a387-a2f296a71faa")
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
 		(instances
 			(project "ecu"
 				(path "/e5f3c8f3-31b1-4864-b028-38bb5e50c369"
@@ -2671,7 +2691,7 @@
 	)
 	(sheet
 		(at 187.96 85.09)
-		(size 80.01 80.01)
+		(size 80.01 81.28)
 		(exclude_from_sim no)
 		(in_bom yes)
 		(on_board yes)
@@ -2697,7 +2717,7 @@
 			)
 		)
 		(property "Sheetfile" "06_Relay.kicad_sch"
-			(at 187.96 165.6846 0)
+			(at 187.96 166.9546 0)
 			(show_name no)
 			(do_not_autoplace no)
 			(effects
@@ -3260,6 +3280,16 @@
 		(pin "TRAVEL_SPEED_RANGE_OEM_SIDE" input
 			(at 267.97 132.08 0)
 			(uuid "145aab4d-67bc-4755-8308-805fcf882f46")
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify right)
+			)
+		)
+		(pin "ESTOP_NC" input
+			(at 267.97 162.56 0)
+			(uuid "f4c83c6f-4183-4e5f-8d2e-47391c131062")
 			(effects
 				(font
 					(size 1.27 1.27)

@@ -987,6 +987,145 @@
 			)
 			(embedded_fonts no)
 		)
+		(symbol "power:+BATT"
+			(power global)
+			(pin_numbers
+				(hide yes)
+			)
+			(pin_names
+				(offset 0)
+				(hide yes)
+			)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(in_pos_files yes)
+			(duplicate_pin_numbers_are_jumpers no)
+			(property "Reference" "#PWR"
+				(at 0 -3.81 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Value" "+BATT"
+				(at 0 3.556 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Footprint" ""
+				(at 0 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Datasheet" ""
+				(at 0 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Description" "Power symbol creates a global label with name \"+BATT\""
+				(at 0 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "ki_keywords" "global power battery"
+				(at 0 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(symbol "+BATT_0_1"
+				(polyline
+					(pts
+						(xy -0.762 1.27) (xy 0 2.54)
+					)
+					(stroke
+						(width 0)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(polyline
+					(pts
+						(xy 0 2.54) (xy 0.762 1.27)
+					)
+					(stroke
+						(width 0)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(polyline
+					(pts
+						(xy 0 0) (xy 0 2.54)
+					)
+					(stroke
+						(width 0)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+			)
+			(symbol "+BATT_1_1"
+				(pin power_in line
+					(at 0 0 90)
+					(length 0)
+					(name ""
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "1"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+			)
+			(embedded_fonts no)
+		)
 		(symbol "power:GND"
 			(power global)
 			(pin_numbers
@@ -2208,7 +2347,7 @@
 	)
 	(wire
 		(pts
-			(xy 132.08 227.33) (xy 132.08 229.87)
+			(xy 132.08 228.6) (xy 132.08 229.87)
 		)
 		(stroke
 			(width 0)
@@ -2688,16 +2827,6 @@
 	)
 	(wire
 		(pts
-			(xy 203.2 92.71) (xy 203.2 95.25)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "a9689026-ce66-4ebd-bc44-9162901dc678")
-	)
-	(wire
-		(pts
 			(xy 393.7 137.16) (xy 388.62 137.16)
 		)
 		(stroke
@@ -3048,7 +3177,7 @@
 	)
 	(wire
 		(pts
-			(xy 203.2 95.25) (xy 196.85 95.25)
+			(xy 199.39 95.25) (xy 196.85 95.25)
 		)
 		(stroke
 			(width 0)
@@ -3750,6 +3879,17 @@
 		)
 		(uuid "94568e01-d35c-4e30-aabc-c036e9ad22bb")
 	)
+	(hierarchical_label "ESTOP_NC"
+		(shape input)
+		(at 199.39 95.25 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left)
+		)
+		(uuid "95c19100-7731-4c02-ba83-1e8ac13ebb5c")
+	)
 	(hierarchical_label "VIB_LOW_OVR_RLY_COIL_DRV"
 		(shape input)
 		(at 53.34 99.06 180)
@@ -4080,7 +4220,7 @@
 		)
 	)
 	(symbol
-		(lib_id "power:+12V")
+		(lib_id "power:+BATT")
 		(at 125.73 144.78 0)
 		(unit 1)
 		(body_style 1)
@@ -4090,8 +4230,8 @@
 		(in_pos_files yes)
 		(dnp no)
 		(fields_autoplaced yes)
-		(uuid "04e5244f-1529-46df-bb27-6c81ff4e7ade")
-		(property "Reference" "#PWR0131"
+		(uuid "04b0189b-ac2a-4b2d-911d-12d62f79d97f")
+		(property "Reference" "#PWR011"
 			(at 125.73 148.59 0)
 			(hide yes)
 			(show_name no)
@@ -4102,7 +4242,7 @@
 				)
 			)
 		)
-		(property "Value" "+12V"
+		(property "Value" "+BAT"
 			(at 125.73 139.7 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -4134,7 +4274,7 @@
 				)
 			)
 		)
-		(property "Description" "Power symbol creates a global label with name \"+12V\""
+		(property "Description" "Power symbol creates a global label with name \"+BATT\""
 			(at 125.73 144.78 0)
 			(hide yes)
 			(show_name no)
@@ -4146,12 +4286,12 @@
 			)
 		)
 		(pin "1"
-			(uuid "1e9ff7ae-deca-4adf-9603-506f05b7a5bd")
+			(uuid "a5e8f556-da31-402f-b9c2-0b8eeb6e4e7a")
 		)
 		(instances
 			(project "ecu"
 				(path "/e5f3c8f3-31b1-4864-b028-38bb5e50c369/8ecbc12a-0669-48e9-8a42-e12d90c95eca"
-					(reference "#PWR0131")
+					(reference "#PWR011")
 					(unit 1)
 				)
 			)
@@ -4491,84 +4631,6 @@
 		)
 	)
 	(symbol
-		(lib_id "power:+12V")
-		(at 203.2 92.71 0)
-		(unit 1)
-		(body_style 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(in_pos_files yes)
-		(dnp no)
-		(fields_autoplaced yes)
-		(uuid "1b460c35-36b2-46d8-898a-a3d776fc1b93")
-		(property "Reference" "#PWR0126"
-			(at 203.2 96.52 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Value" "+12V"
-			(at 203.2 87.63 0)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" ""
-			(at 203.2 92.71 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Datasheet" ""
-			(at 203.2 92.71 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Description" "Power symbol creates a global label with name \"+12V\""
-			(at 203.2 92.71 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(pin "1"
-			(uuid "19c16358-ba14-4c9e-80af-d1b8c9af5965")
-		)
-		(instances
-			(project "ecu"
-				(path "/e5f3c8f3-31b1-4864-b028-38bb5e50c369/8ecbc12a-0669-48e9-8a42-e12d90c95eca"
-					(reference "#PWR0126")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
 		(lib_id "Relay:Relay_SPDT")
 		(at 189.23 100.33 270)
 		(unit 1)
@@ -4731,6 +4793,84 @@
 			(project "ecu"
 				(path "/e5f3c8f3-31b1-4864-b028-38bb5e50c369/8ecbc12a-0669-48e9-8a42-e12d90c95eca"
 					(reference "#PWR0128")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "power:+BATT")
+		(at 204.47 184.15 0)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(uuid "294d0b91-995a-4e0a-b6e8-880dcab81176")
+		(property "Reference" "#PWR014"
+			(at 204.47 187.96 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "+BAT"
+			(at 204.47 179.07 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 204.47 184.15 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 204.47 184.15 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Power symbol creates a global label with name \"+BATT\""
+			(at 204.47 184.15 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "47ef9588-64ce-4740-9dc0-c1914979e6a5")
+		)
+		(instances
+			(project "ecu"
+				(path "/e5f3c8f3-31b1-4864-b028-38bb5e50c369/8ecbc12a-0669-48e9-8a42-e12d90c95eca"
+					(reference "#PWR014")
 					(unit 1)
 				)
 			)
@@ -5226,6 +5366,84 @@
 		)
 	)
 	(symbol
+		(lib_id "power:+BATT")
+		(at 125.73 80.01 0)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(uuid "3c29c13f-9ffe-4b65-9e0c-ce8636b459eb")
+		(property "Reference" "#PWR09"
+			(at 125.73 83.82 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "+BAT"
+			(at 125.73 74.93 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 125.73 80.01 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 125.73 80.01 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Power symbol creates a global label with name \"+BATT\""
+			(at 125.73 80.01 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "1d5d44ee-5180-4600-8487-06205085eee8")
+		)
+		(instances
+			(project "ecu"
+				(path "/e5f3c8f3-31b1-4864-b028-38bb5e50c369/8ecbc12a-0669-48e9-8a42-e12d90c95eca"
+					(reference "#PWR09")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
 		(lib_id "power:GND")
 		(at 393.7 95.25 0)
 		(unit 1)
@@ -5385,6 +5603,84 @@
 			(project "ecu"
 				(path "/e5f3c8f3-31b1-4864-b028-38bb5e50c369/8ecbc12a-0669-48e9-8a42-e12d90c95eca"
 					(reference "K22")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "power:+BATT")
+		(at 125.73 111.76 0)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(uuid "4feb9d5c-7fb6-4d59-9397-05865946d7ba")
+		(property "Reference" "#PWR010"
+			(at 125.73 115.57 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "+BAT"
+			(at 125.73 106.68 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 125.73 111.76 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 125.73 111.76 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Power symbol creates a global label with name \"+BATT\""
+			(at 125.73 111.76 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "30e437e0-cc61-4c29-b437-64f349c63280")
+		)
+		(instances
+			(project "ecu"
+				(path "/e5f3c8f3-31b1-4864-b028-38bb5e50c369/8ecbc12a-0669-48e9-8a42-e12d90c95eca"
+					(reference "#PWR010")
 					(unit 1)
 				)
 			)
@@ -5880,6 +6176,84 @@
 		)
 	)
 	(symbol
+		(lib_id "power:+BATT")
+		(at 316.23 87.63 0)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(uuid "6940fba0-b4d2-45b3-a354-d3836e62edad")
+		(property "Reference" "#PWR015"
+			(at 316.23 91.44 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "+BAT"
+			(at 316.23 82.55 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 316.23 87.63 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 316.23 87.63 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Power symbol creates a global label with name \"+BATT\""
+			(at 316.23 87.63 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "ed05b4f3-7c21-4a91-8899-dd6c46c48431")
+		)
+		(instances
+			(project "ecu"
+				(path "/e5f3c8f3-31b1-4864-b028-38bb5e50c369/8ecbc12a-0669-48e9-8a42-e12d90c95eca"
+					(reference "#PWR015")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
 		(lib_id "power:+12V")
 		(at 73.66 255.27 0)
 		(unit 1)
@@ -6282,6 +6656,84 @@
 			(project "ecu"
 				(path "/e5f3c8f3-31b1-4864-b028-38bb5e50c369/8ecbc12a-0669-48e9-8a42-e12d90c95eca"
 					(reference "K18")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "power:+BATT")
+		(at 316.23 132.08 0)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(uuid "7d5529ae-74b9-4534-9497-41aeb0b668b0")
+		(property "Reference" "#PWR016"
+			(at 316.23 135.89 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "+BAT"
+			(at 316.23 127 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 316.23 132.08 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 316.23 132.08 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Power symbol creates a global label with name \"+BATT\""
+			(at 316.23 132.08 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "1656ac19-7ab2-4421-8b14-1d53972f3218")
+		)
+		(instances
+			(project "ecu"
+				(path "/e5f3c8f3-31b1-4864-b028-38bb5e50c369/8ecbc12a-0669-48e9-8a42-e12d90c95eca"
+					(reference "#PWR016")
 					(unit 1)
 				)
 			)
@@ -7207,84 +7659,6 @@
 	)
 	(symbol
 		(lib_id "power:+12V")
-		(at 132.08 227.33 0)
-		(unit 1)
-		(body_style 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(in_pos_files yes)
-		(dnp no)
-		(fields_autoplaced yes)
-		(uuid "a7e77024-1df7-4f8b-a76a-b65356b8a771")
-		(property "Reference" "#PWR0133"
-			(at 132.08 231.14 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Value" "+12V"
-			(at 132.08 222.25 0)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" ""
-			(at 132.08 227.33 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Datasheet" ""
-			(at 132.08 227.33 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Description" "Power symbol creates a global label with name \"+12V\""
-			(at 132.08 227.33 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(pin "1"
-			(uuid "4109d549-5069-487d-948f-08f4d9ec0edd")
-		)
-		(instances
-			(project "ecu"
-				(path "/e5f3c8f3-31b1-4864-b028-38bb5e50c369/8ecbc12a-0669-48e9-8a42-e12d90c95eca"
-					(reference "#PWR0133")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
-		(lib_id "power:+12V")
 		(at 203.2 34.29 0)
 		(unit 1)
 		(body_style 1)
@@ -7690,8 +8064,8 @@
 		)
 	)
 	(symbol
-		(lib_id "power:+12V")
-		(at 316.23 87.63 0)
+		(lib_id "power:+BATT")
+		(at 125.73 177.8 0)
 		(unit 1)
 		(body_style 1)
 		(exclude_from_sim no)
@@ -7700,9 +8074,9 @@
 		(in_pos_files yes)
 		(dnp no)
 		(fields_autoplaced yes)
-		(uuid "b45f9568-456d-4cea-9961-1b4c1545f755")
-		(property "Reference" "#PWR0138"
-			(at 316.23 91.44 0)
+		(uuid "b344bd30-2934-4bbb-b8d4-3f266bde9e10")
+		(property "Reference" "#PWR012"
+			(at 125.73 181.61 0)
 			(hide yes)
 			(show_name no)
 			(do_not_autoplace no)
@@ -7712,8 +8086,8 @@
 				)
 			)
 		)
-		(property "Value" "+12V"
-			(at 316.23 82.55 0)
+		(property "Value" "+BAT"
+			(at 125.73 172.72 0)
 			(show_name no)
 			(do_not_autoplace no)
 			(effects
@@ -7723,7 +8097,7 @@
 			)
 		)
 		(property "Footprint" ""
-			(at 316.23 87.63 0)
+			(at 125.73 177.8 0)
 			(hide yes)
 			(show_name no)
 			(do_not_autoplace no)
@@ -7734,7 +8108,7 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 316.23 87.63 0)
+			(at 125.73 177.8 0)
 			(hide yes)
 			(show_name no)
 			(do_not_autoplace no)
@@ -7744,86 +8118,8 @@
 				)
 			)
 		)
-		(property "Description" "Power symbol creates a global label with name \"+12V\""
-			(at 316.23 87.63 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(pin "1"
-			(uuid "32e5a75e-3cde-4019-b983-7555a346a418")
-		)
-		(instances
-			(project "ecu"
-				(path "/e5f3c8f3-31b1-4864-b028-38bb5e50c369/8ecbc12a-0669-48e9-8a42-e12d90c95eca"
-					(reference "#PWR0138")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
-		(lib_id "power:+12V")
-		(at 316.23 132.08 0)
-		(unit 1)
-		(body_style 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(in_pos_files yes)
-		(dnp no)
-		(fields_autoplaced yes)
-		(uuid "b6ea08cb-1fc4-4105-9173-d70c0f13310a")
-		(property "Reference" "#PWR0137"
-			(at 316.23 135.89 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Value" "+12V"
-			(at 316.23 127 0)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" ""
-			(at 316.23 132.08 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Datasheet" ""
-			(at 316.23 132.08 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Description" "Power symbol creates a global label with name \"+12V\""
-			(at 316.23 132.08 0)
+		(property "Description" "Power symbol creates a global label with name \"+BATT\""
+			(at 125.73 177.8 0)
 			(hide yes)
 			(show_name no)
 			(do_not_autoplace no)
@@ -7834,12 +8130,12 @@
 			)
 		)
 		(pin "1"
-			(uuid "071836fa-ece4-4b69-9c74-dd2e933aceaa")
+			(uuid "0c2165bc-4b29-4cbc-88b9-70783555a0ad")
 		)
 		(instances
 			(project "ecu"
 				(path "/e5f3c8f3-31b1-4864-b028-38bb5e50c369/8ecbc12a-0669-48e9-8a42-e12d90c95eca"
-					(reference "#PWR0137")
+					(reference "#PWR012")
 					(unit 1)
 				)
 			)
@@ -8396,6 +8692,84 @@
 		)
 	)
 	(symbol
+		(lib_id "power:+BATT")
+		(at 393.7 134.62 0)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(uuid "cab50ba1-2734-44fe-8dfa-11b48c0c07e5")
+		(property "Reference" "#PWR072"
+			(at 393.7 138.43 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "+BAT"
+			(at 393.7 129.54 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 393.7 134.62 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 393.7 134.62 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Power symbol creates a global label with name \"+BATT\""
+			(at 393.7 134.62 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "f0ec0800-473c-4000-be3b-9d52219b3ccd")
+		)
+		(instances
+			(project "ecu"
+				(path "/e5f3c8f3-31b1-4864-b028-38bb5e50c369/8ecbc12a-0669-48e9-8a42-e12d90c95eca"
+					(reference "#PWR072")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
 		(lib_id "Relay:Relay_SPST-NO")
 		(at 381 129.54 270)
 		(unit 1)
@@ -8570,84 +8944,6 @@
 		)
 	)
 	(symbol
-		(lib_id "power:+12V")
-		(at 125.73 80.01 0)
-		(unit 1)
-		(body_style 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(in_pos_files yes)
-		(dnp no)
-		(fields_autoplaced yes)
-		(uuid "cf615085-67e7-4293-a86a-190aad24c3b1")
-		(property "Reference" "#PWR0129"
-			(at 125.73 83.82 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Value" "+12V"
-			(at 125.73 74.93 0)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" ""
-			(at 125.73 80.01 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Datasheet" ""
-			(at 125.73 80.01 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Description" "Power symbol creates a global label with name \"+12V\""
-			(at 125.73 80.01 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(pin "1"
-			(uuid "087c9656-e215-4439-92fa-fe5584988cd9")
-		)
-		(instances
-			(project "ecu"
-				(path "/e5f3c8f3-31b1-4864-b028-38bb5e50c369/8ecbc12a-0669-48e9-8a42-e12d90c95eca"
-					(reference "#PWR0129")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
 		(lib_id "Device:C_Polarized")
 		(at 73.66 264.16 0)
 		(unit 1)
@@ -8811,84 +9107,6 @@
 			(project "ecu"
 				(path "/e5f3c8f3-31b1-4864-b028-38bb5e50c369/8ecbc12a-0669-48e9-8a42-e12d90c95eca"
 					(reference "K21")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
-		(lib_id "power:+12V")
-		(at 204.47 184.15 0)
-		(unit 1)
-		(body_style 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(in_pos_files yes)
-		(dnp no)
-		(fields_autoplaced yes)
-		(uuid "d6d036a5-db40-489c-a0e8-9ca6c14b5a0b")
-		(property "Reference" "#PWR0135"
-			(at 204.47 187.96 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Value" "+12V"
-			(at 204.47 179.07 0)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" ""
-			(at 204.47 184.15 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Datasheet" ""
-			(at 204.47 184.15 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Description" "Power symbol creates a global label with name \"+12V\""
-			(at 204.47 184.15 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(pin "1"
-			(uuid "b5f0f83c-fcd5-4455-998d-3691ea997771")
-		)
-		(instances
-			(project "ecu"
-				(path "/e5f3c8f3-31b1-4864-b028-38bb5e50c369/8ecbc12a-0669-48e9-8a42-e12d90c95eca"
-					(reference "#PWR0135")
 					(unit 1)
 				)
 			)
@@ -9552,84 +9770,6 @@
 		)
 	)
 	(symbol
-		(lib_id "power:+12V")
-		(at 125.73 111.76 0)
-		(unit 1)
-		(body_style 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(in_pos_files yes)
-		(dnp no)
-		(fields_autoplaced yes)
-		(uuid "e24100f2-bf02-43bd-a1df-b61663a5785c")
-		(property "Reference" "#PWR0130"
-			(at 125.73 115.57 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Value" "+12V"
-			(at 125.73 106.68 0)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" ""
-			(at 125.73 111.76 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Datasheet" ""
-			(at 125.73 111.76 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Description" "Power symbol creates a global label with name \"+12V\""
-			(at 125.73 111.76 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(pin "1"
-			(uuid "48a9972c-b160-4005-824d-eac702e297c1")
-		)
-		(instances
-			(project "ecu"
-				(path "/e5f3c8f3-31b1-4864-b028-38bb5e50c369/8ecbc12a-0669-48e9-8a42-e12d90c95eca"
-					(reference "#PWR0130")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
 		(lib_id "power:GND")
 		(at 204.47 154.94 0)
 		(unit 1)
@@ -9784,84 +9924,6 @@
 			(project "ecu"
 				(path "/e5f3c8f3-31b1-4864-b028-38bb5e50c369/8ecbc12a-0669-48e9-8a42-e12d90c95eca"
 					(reference "C22")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
-		(lib_id "power:+12V")
-		(at 125.73 177.8 0)
-		(unit 1)
-		(body_style 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(in_pos_files yes)
-		(dnp no)
-		(fields_autoplaced yes)
-		(uuid "e8a8561f-89a9-49c9-8bc9-087be5448237")
-		(property "Reference" "#PWR0132"
-			(at 125.73 181.61 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Value" "+12V"
-			(at 125.73 172.72 0)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" ""
-			(at 125.73 177.8 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Datasheet" ""
-			(at 125.73 177.8 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Description" "Power symbol creates a global label with name \"+12V\""
-			(at 125.73 177.8 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(pin "1"
-			(uuid "3553486a-f225-471f-91e4-17b2194e89fc")
-		)
-		(instances
-			(project "ecu"
-				(path "/e5f3c8f3-31b1-4864-b028-38bb5e50c369/8ecbc12a-0669-48e9-8a42-e12d90c95eca"
-					(reference "#PWR0132")
 					(unit 1)
 				)
 			)
@@ -10288,8 +10350,8 @@
 		)
 	)
 	(symbol
-		(lib_id "power:+12V")
-		(at 393.7 134.62 0)
+		(lib_id "power:+BATT")
+		(at 132.08 228.6 0)
 		(unit 1)
 		(body_style 1)
 		(exclude_from_sim no)
@@ -10298,9 +10360,9 @@
 		(in_pos_files yes)
 		(dnp no)
 		(fields_autoplaced yes)
-		(uuid "f47f7e35-172e-4639-8dbf-111fef2fb478")
-		(property "Reference" "#PWR0136"
-			(at 393.7 138.43 0)
+		(uuid "fc396796-f32f-4d2d-97f0-d17ebe30c9b7")
+		(property "Reference" "#PWR013"
+			(at 132.08 232.41 0)
 			(hide yes)
 			(show_name no)
 			(do_not_autoplace no)
@@ -10310,8 +10372,8 @@
 				)
 			)
 		)
-		(property "Value" "+12V"
-			(at 393.7 129.54 0)
+		(property "Value" "+BAT"
+			(at 132.08 223.52 0)
 			(show_name no)
 			(do_not_autoplace no)
 			(effects
@@ -10321,7 +10383,7 @@
 			)
 		)
 		(property "Footprint" ""
-			(at 393.7 134.62 0)
+			(at 132.08 228.6 0)
 			(hide yes)
 			(show_name no)
 			(do_not_autoplace no)
@@ -10332,7 +10394,7 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 393.7 134.62 0)
+			(at 132.08 228.6 0)
 			(hide yes)
 			(show_name no)
 			(do_not_autoplace no)
@@ -10342,8 +10404,8 @@
 				)
 			)
 		)
-		(property "Description" "Power symbol creates a global label with name \"+12V\""
-			(at 393.7 134.62 0)
+		(property "Description" "Power symbol creates a global label with name \"+BATT\""
+			(at 132.08 228.6 0)
 			(hide yes)
 			(show_name no)
 			(do_not_autoplace no)
@@ -10354,12 +10416,12 @@
 			)
 		)
 		(pin "1"
-			(uuid "5988aefe-0c96-4675-b27e-3eae9afe4eaf")
+			(uuid "0e86a3c9-f5e4-44a7-9b70-993fd7bc6282")
 		)
 		(instances
 			(project "ecu"
 				(path "/e5f3c8f3-31b1-4864-b028-38bb5e50c369/8ecbc12a-0669-48e9-8a42-e12d90c95eca"
-					(reference "#PWR0136")
+					(reference "#PWR013")
 					(unit 1)
 				)
 			)

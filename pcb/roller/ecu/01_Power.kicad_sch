@@ -5132,7 +5132,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "0.1uF/16V"
+		(property "Value" "0.1uF/50V"
 			(at 171.45 64.7699 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -6830,7 +6830,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "1uF/35V"
+		(property "Value" "1uF/50V"
 			(at 167.64 96.5199 0)
 			(show_name no)
 			(do_not_autoplace no)
