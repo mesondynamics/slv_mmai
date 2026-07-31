@@ -1868,7 +1868,7 @@
 			(drill 1.75)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
-			(net "+BAT")
+			(net "+12V")
 			(pinfunction "12_12")
 			(pintype "passive")
 			(solder_mask_margin 0.102)
