@@ -39913,7 +39913,7 @@
 			(drill oval 8.4 1.2)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
-			(net "+12V")
+			(net "+BAT")
 			(pintype "passive")
 			(uuid "16aaa677-4432-4ea2-bce7-8286d9c27e27")
 		)
