@@ -1,0 +1,227 @@
+(footprint "SOT95P237X111-3N"
+	(version 20260206)
+	(generator "pcbnew")
+	(generator_version "10.0")
+	(layer "F.Cu")
+	(property "Reference" "REF**"
+		(at 0.127 -2.3114 0)
+		(layer "F.SilkS")
+		(uuid "cb1e6379-f942-4e24-bb77-092e373dc7ce")
+		(effects
+			(font
+				(size 0.64 0.64)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Value" "SOT95P237X111-3N"
+		(at 4.5974 2.1336 0)
+		(layer "F.Fab")
+		(uuid "7046de12-1e1f-4712-ad14-10b4c0aa4c2f")
+		(effects
+			(font
+				(size 0.64 0.64)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Datasheet" ""
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "45b288d7-390c-4121-bc10-3001a418485c")
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+	)
+	(property "Description" ""
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "8309893f-4629-4ecf-8e3a-7c6be97041ea")
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+	)
+	(attr smd)
+	(duplicate_pad_numbers_are_jumpers no)
+	(fp_line
+		(start -0.1315 -1.45)
+		(end 0.65 -1.45)
+		(stroke
+			(width 0.127)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(uuid "31538a65-c030-4592-be44-bd53b15f8d24")
+	)
+	(fp_line
+		(start 0.65 -1.45)
+		(end 0.65 -0.6135)
+		(stroke
+			(width 0.127)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(uuid "d3e23d3a-f4b5-4f4c-85ed-b18dbae7e58d")
+	)
+	(fp_line
+		(start 0.65 0.6135)
+		(end 0.65 1.45)
+		(stroke
+			(width 0.127)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(uuid "6e8726d5-3a54-4aeb-af46-95cf02b1e8d5")
+	)
+	(fp_line
+		(start 0.65 1.45)
+		(end -0.1315 1.45)
+		(stroke
+			(width 0.127)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(uuid "f9e16b4a-5979-4288-8e68-e69380386850")
+	)
+	(fp_circle
+		(center -2.25 -0.95)
+		(end -2.15 -0.95)
+		(stroke
+			(width 0.2)
+			(type solid)
+		)
+		(fill no)
+		(layer "F.SilkS")
+		(uuid "71965364-f327-44ed-a875-d43ad65e19a7")
+	)
+	(fp_line
+		(start -1.925 -1.7)
+		(end 1.925 -1.7)
+		(stroke
+			(width 0.05)
+			(type solid)
+		)
+		(layer "F.CrtYd")
+		(uuid "7b2c94bf-80f6-4e9b-b441-e5636f4ca675")
+	)
+	(fp_line
+		(start -1.925 1.7)
+		(end -1.925 -1.7)
+		(stroke
+			(width 0.05)
+			(type solid)
+		)
+		(layer "F.CrtYd")
+		(uuid "eab9d43e-e745-4d8a-89a7-ece1e1e6e4d8")
+	)
+	(fp_line
+		(start 1.925 -1.7)
+		(end 1.925 1.7)
+		(stroke
+			(width 0.05)
+			(type solid)
+		)
+		(layer "F.CrtYd")
+		(uuid "3ea6c110-2515-4bd3-96b1-3989592f5ad6")
+	)
+	(fp_line
+		(start 1.925 1.7)
+		(end -1.925 1.7)
+		(stroke
+			(width 0.05)
+			(type solid)
+		)
+		(layer "F.CrtYd")
+		(uuid "0b775a8c-4ddd-4247-bc4a-943a1402ca03")
+	)
+	(fp_line
+		(start -0.65 -1.45)
+		(end 0.65 -1.45)
+		(stroke
+			(width 0.127)
+			(type solid)
+		)
+		(layer "F.Fab")
+		(uuid "2a5f78f9-f77a-4cbb-b3d3-611a7dfadea1")
+	)
+	(fp_line
+		(start -0.65 1.45)
+		(end -0.65 -1.45)
+		(stroke
+			(width 0.127)
+			(type solid)
+		)
+		(layer "F.Fab")
+		(uuid "a3f16084-9d6b-406a-b854-64fdc734d46d")
+	)
+	(fp_line
+		(start 0.65 -1.45)
+		(end 0.65 1.45)
+		(stroke
+			(width 0.127)
+			(type solid)
+		)
+		(layer "F.Fab")
+		(uuid "f60d8b97-b7ee-4aac-95d5-659944ca22ea")
+	)
+	(fp_line
+		(start 0.65 1.45)
+		(end -0.65 1.45)
+		(stroke
+			(width 0.127)
+			(type solid)
+		)
+		(layer "F.Fab")
+		(uuid "b7b7b83e-e77e-4da6-a9f4-0d8493e05b65")
+	)
+	(fp_circle
+		(center -2.25 -0.95)
+		(end -2.15 -0.95)
+		(stroke
+			(width 0.2)
+			(type solid)
+		)
+		(fill no)
+		(layer "F.Fab")
+		(uuid "4ce23984-c422-4cc3-b406-ea943b926a6b")
+	)
+	(pad "1" smd rect
+		(at -1.06 -0.95)
+		(size 1.23 0.6)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(solder_mask_margin 0.102)
+		(uuid "2725fd9a-b0e0-481c-ad9e-89eb0ccae1a5")
+	)
+	(pad "2" smd rect
+		(at -1.06 0.95)
+		(size 1.23 0.6)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(solder_mask_margin 0.102)
+		(uuid "09aa7b9c-5d5b-4257-8101-68e6b63726f4")
+	)
+	(pad "3" smd rect
+		(at 1.06 0)
+		(size 1.23 0.6)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(solder_mask_margin 0.102)
+		(uuid "35e83917-4dff-4268-97a7-c695855966d4")
+	)
+	(embedded_fonts no)
+	(model "${KIPRJMOD}/libraries/starlight_lib/starlight.3dshapes/NUP2105LT1G.step"
+		(offset
+			(xyz 0 0 0)
+		)
+		(scale
+			(xyz 1 1 1)
+		)
+		(rotate
+			(xyz -90 -0 -0)
+		)
+	)
+)
