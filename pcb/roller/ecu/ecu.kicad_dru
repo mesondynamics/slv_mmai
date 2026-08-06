@@ -1,0 +1,24 @@
+(version 1)
+
+(rule "R1 global copper clearance - JLC 2 oz"
+  (constraint clearance (min 0.20mm)))
+
+(rule "R1 copper to routed board edge"
+  (constraint edge_clearance (min 0.50mm)))
+
+(rule "R1 U4 POFV finished hole"
+  (condition "A.Type == 'Pad' && A.Reference == 'U4' && A.Pad_Number == '25'")
+  (constraint hole_size (min 0.25mm))
+  (constraint annular_width (min 0.15mm)))
+
+(rule "R1 MDI pair skew"
+  (condition "A.NetClass == 'MDI_100'")
+  (constraint skew (max 0.50mm)))
+
+(rule "R1 CAN pair skew"
+  (condition "A.NetClass == 'CAN_120'")
+  (constraint skew (max 1.00mm)))
+
+(rule "R1 RMII maximum route length"
+  (condition "A.NetClass == 'RMII_50'")
+  (constraint length (max 60mm)))

@@ -994,7 +994,7 @@
 			)
 			(embedded_fonts no)
 		)
-		(symbol "Diode:ESD131-B1-W0201"
+		(symbol "Starlight:PESD5V0S1BA_115"
 			(pin_numbers
 				(hide yes)
 			)
@@ -1017,7 +1017,7 @@
 					)
 				)
 			)
-			(property "Value" "ESD131-B1-W0201"
+			(property "Value" "PESD5V0S1BA_115"
 				(at 0 -2.54 0)
 				(show_name no)
 				(do_not_autoplace no)
@@ -1027,7 +1027,7 @@
 					)
 				)
 			)
-			(property "Footprint" "Diode_SMD:Infineon_SG-WLL-2-3_0.58x0.28_P0.36mm"
+			(property "Footprint" "Diode_SMD:D_SOD-323"
 				(at 0 0 0)
 				(show_name no)
 				(do_not_autoplace no)
@@ -1038,7 +1038,7 @@
 					)
 				)
 			)
-			(property "Datasheet" "https://www.infineon.com/dgdl/Infineon-ESD131-B1-W0201-DataSheet-v02_00-EN.pdf?fileId=5546d4625cc9456a015ce94850964889"
+			(property "Datasheet" "https://assets.nexperia.com/documents/data-sheet/PESD5V0S1BA-Q.pdf"
 				(at 0 0 0)
 				(show_name no)
 				(do_not_autoplace no)
@@ -1049,7 +1049,7 @@
 					)
 				)
 			)
-			(property "Description" "Bidirectional ESD protection diode, ±5.5Vrwm, 0.23pF, SG-WLL-2-3"
+			(property "Description" "AEC-Q101 bidirectional 5 V ESD protection diode, SOD323"
 				(at 0 0 0)
 				(show_name no)
 				(do_not_autoplace no)
@@ -1082,7 +1082,7 @@
 					)
 				)
 			)
-			(symbol "ESD131-B1-W0201_0_1"
+			(symbol "PESD5V0S1BA_115_0_1"
 				(polyline
 					(pts
 						(xy -2.54 -1.27) (xy 0 0) (xy -2.54 1.27) (xy -2.54 -1.27)
@@ -1132,7 +1132,7 @@
 					)
 				)
 			)
-			(symbol "ESD131-B1-W0201_1_1"
+			(symbol "PESD5V0S1BA_115_1_1"
 				(pin passive line
 					(at -3.81 0 0)
 					(length 2.54)
@@ -12399,7 +12399,7 @@
 		)
 	)
 	(symbol
-		(lib_id "Diode:ESD131-B1-W0201")
+		(lib_id "Starlight:PESD5V0S1BA_115")
 		(at 45.72 60.96 90)
 		(unit 1)
 		(body_style 1)
@@ -12421,7 +12421,7 @@
 				(justify right)
 			)
 		)
-		(property "Value" "ESDALC6V1-1U2"
+		(property "Value" "PESD5V0S1BA,115"
 			(at 48.26 62.2299 90)
 			(show_name no)
 			(do_not_autoplace no)
@@ -12432,7 +12432,7 @@
 				(justify right)
 			)
 		)
-		(property "Footprint" "Diode_SMD:Infineon_SG-WLL-2-3_0.58x0.28_P0.36mm"
+		(property "Footprint" "Diode_SMD:D_SOD-323"
 			(at 45.72 60.96 0)
 			(hide yes)
 			(show_name no)
@@ -12443,7 +12443,7 @@
 				)
 			)
 		)
-		(property "Datasheet" "https://www.infineon.com/dgdl/Infineon-ESD131-B1-W0201-DataSheet-v02_00-EN.pdf?fileId=5546d4625cc9456a015ce94850964889"
+		(property "Datasheet" "https://assets.nexperia.com/documents/data-sheet/PESD5V0S1BA-Q.pdf"
 			(at 45.72 60.96 0)
 			(hide yes)
 			(show_name no)
@@ -12454,7 +12454,7 @@
 				)
 			)
 		)
-		(property "Description" "Bidirectional ESD protection diode, ±5.5Vrwm, 0.23pF, SG-WLL-2-3"
+		(property "Description" "AEC-Q101 bidirectional 5 V ESD protection diode, SOD323"
 			(at 45.72 60.96 0)
 			(hide yes)
 			(show_name no)

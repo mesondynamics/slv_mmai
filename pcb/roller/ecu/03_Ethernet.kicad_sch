@@ -979,7 +979,7 @@
 					(justify right)
 				)
 			)
-			(property "Footprint" "Package_DFN_QFN:VQFN-24-1EP_4x4mm_P0.5mm_EP2.5x2.5mm_ThermalVias"
+			(property "Footprint" "Starlight:VQFN-24-1EP_4x4mm_P0.5mm_EP2.5x2.5mm_POFV"
 				(at 1.27 -26.67 0)
 				(show_name no)
 				(do_not_autoplace no)
@@ -2224,7 +2224,7 @@
 			)
 			(embedded_fonts no)
 		)
-		(symbol "Starlight:KMS-1102NL"
+		(symbol "Starlight:SM91071AL-E"
 			(pin_names
 				(offset 1.016)
 			)
@@ -2243,7 +2243,7 @@
 					)
 				)
 			)
-			(property "Value" "KMS-1102NL"
+			(property "Value" "SM91071AL-E"
 				(at 0 3.81 0)
 				(show_name no)
 				(do_not_autoplace no)
@@ -2286,7 +2286,7 @@
 					)
 				)
 			)
-			(symbol "KMS-1102NL_1_1"
+			(symbol "SM91071AL-E_1_1"
 				(rectangle
 					(start -12.7 10.16)
 					(end 12.7 -10.16)
@@ -7438,7 +7438,7 @@
 		)
 	)
 	(symbol
-		(lib_id "Starlight:KMS-1102NL")
+		(lib_id "Starlight:SM91071AL-E")
 		(at 218.44 85.09 0)
 		(unit 1)
 		(body_style 1)
@@ -7458,7 +7458,7 @@
 				)
 			)
 		)
-		(property "Value" "KMS-1102NL"
+		(property "Value" "SM91071AL-E"
 			(at 210.312 73.66 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -7468,7 +7468,7 @@
 				)
 			)
 		)
-		(property "Footprint" "Transformer_SMD:Transformer_Pulse_H1100NL"
+		(property "Footprint" "Starlight:Bourns_SM91071AL-E"
 			(at 218.44 85.09 0)
 			(hide yes)
 			(show_name no)
@@ -7904,7 +7904,7 @@
 				(justify right)
 			)
 		)
-		(property "Footprint" "LED_SMD:LED_0201_0603Metric"
+		(property "Footprint" "LED_SMD:LED_0603_1608Metric"
 			(at 180.34 130.81 0)
 			(hide yes)
 			(show_name no)
@@ -9767,7 +9767,7 @@
 				(justify right)
 			)
 		)
-		(property "Footprint" "LED_SMD:LED_0201_0603Metric"
+		(property "Footprint" "LED_SMD:LED_0603_1608Metric"
 			(at 162.56 130.81 0)
 			(hide yes)
 			(show_name no)
@@ -11137,7 +11137,7 @@
 				(justify left)
 			)
 		)
-		(property "Footprint" "Package_DFN_QFN:VQFN-24-1EP_4x4mm_P0.5mm_EP2.5x2.5mm_ThermalVias"
+		(property "Footprint" "Starlight:VQFN-24-1EP_4x4mm_P0.5mm_EP2.5x2.5mm_POFV"
 			(at 128.27 118.11 0)
 			(hide yes)
 			(show_name no)

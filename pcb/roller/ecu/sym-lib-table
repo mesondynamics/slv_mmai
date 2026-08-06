@@ -1,0 +1,4 @@
+(sym_lib_table
+  (version 7)
+  (lib (name "Starlight")(type "KiCad")(uri "${KIPRJMOD}/libraries/starlight_lib/starlight.kicad_sym")(options "")(descr "Project-local Starlight symbols, ECU R1"))
+)
