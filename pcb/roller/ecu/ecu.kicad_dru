@@ -1,6 +1,6 @@
 (version 1)
 
-(rule "R1 global copper clearance - JLC 2 oz"
+(rule "JLC 4L 2 oz copper clearance"
   (constraint clearance (min 0.20mm)))
 
 (rule "R1 copper to routed board edge"

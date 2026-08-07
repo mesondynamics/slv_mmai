@@ -2785,10 +2785,22 @@
 		(uuid "12f04a35-2b80-4996-82db-49e7154390dc")
 	)
 	(junction
+		(at 104.14 72.39)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "137ca35d-a91e-407c-af8c-2e49842f4573")
+	)
+	(junction
 		(at 172.72 54.61)
 		(diameter 0)
 		(color 0 0 0 0)
 		(uuid "175bc3ce-8184-4dbe-9a7e-2dc435eacdf0")
+	)
+	(junction
+		(at 104.14 74.93)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "1cf9cd56-5a91-41df-9d82-a3557faa6012")
 	)
 	(junction
 		(at 71.12 125.73)
@@ -2827,6 +2839,12 @@
 		(uuid "7e9d1018-d339-4862-8251-99f4a8e9c221")
 	)
 	(junction
+		(at 104.14 73.66)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "7ee004bb-f830-4b8a-be4b-f53e0dce59b4")
+	)
+	(junction
 		(at 38.1 125.73)
 		(diameter 0)
 		(color 0 0 0 0)
@@ -2851,18 +2869,6 @@
 		(uuid "aba1f5b8-c75f-4ee0-a473-22092005d505")
 	)
 	(junction
-		(at 81.28 96.52)
-		(diameter 0)
-		(color 0 0 0 0)
-		(uuid "ac1baf37-df40-4f3e-8d3d-31d120f5b7f6")
-	)
-	(junction
-		(at 81.28 93.98)
-		(diameter 0)
-		(color 0 0 0 0)
-		(uuid "af2d6aff-15a1-4217-a62c-24873a18be5c")
-	)
-	(junction
 		(at 107.95 158.75)
 		(diameter 0)
 		(color 0 0 0 0)
@@ -2881,20 +2887,12 @@
 		(uuid "f510ff16-3366-4b67-8497-174ae08aafe0")
 	)
 	(no_connect
-		(at 82.55 88.9)
-		(uuid "01fbaae7-ef18-4064-9070-11997f6fa257")
-	)
-	(no_connect
 		(at 194.31 68.58)
 		(uuid "158416c6-3d1c-4f56-a274-d1c984e4440c")
 	)
 	(no_connect
 		(at 194.31 66.04)
 		(uuid "232fad62-fb8e-480b-8eca-a88f82bff930")
-	)
-	(no_connect
-		(at 82.55 91.44)
-		(uuid "7f3216ab-155c-42a1-a62b-5548e1bb5233")
 	)
 	(no_connect
 		(at 173.99 62.23)
@@ -2936,7 +2934,7 @@
 	)
 	(wire
 		(pts
-			(xy 106.68 72.39) (xy 102.87 72.39)
+			(xy 106.68 72.39) (xy 104.14 72.39)
 		)
 		(stroke
 			(width 0)
@@ -2953,6 +2951,16 @@
 			(type default)
 		)
 		(uuid "0d688dd3-b4ac-42f5-8f42-a06e6ade50d9")
+	)
+	(wire
+		(pts
+			(xy 78.74 91.44) (xy 82.55 91.44)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "0ff5fa18-6e1b-41e2-ae04-6b4d0ff4e513")
 	)
 	(wire
 		(pts
@@ -3046,16 +3054,6 @@
 	)
 	(wire
 		(pts
-			(xy 81.28 93.98) (xy 81.28 96.52)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "29287a94-a244-4f1b-a64b-64fa533d1ca5")
-	)
-	(wire
-		(pts
 			(xy 210.82 140.97) (xy 196.85 140.97)
 		)
 		(stroke
@@ -3106,6 +3104,16 @@
 	)
 	(wire
 		(pts
+			(xy 104.14 73.66) (xy 152.4 73.66)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "45510ae7-18ed-497e-85a6-bcfd4ce2aecf")
+	)
+	(wire
+		(pts
 			(xy 106.68 62.23) (xy 102.87 62.23)
 		)
 		(stroke
@@ -3136,13 +3144,13 @@
 	)
 	(wire
 		(pts
-			(xy 81.28 96.52) (xy 82.55 96.52)
+			(xy 78.74 96.52) (xy 82.55 96.52)
 		)
 		(stroke
 			(width 0)
 			(type default)
 		)
-		(uuid "4e359301-d410-48f4-a39c-8aca46bccdf6")
+		(uuid "4b79e75d-7fa0-4d48-bc14-f34c4b750fb2")
 	)
 	(wire
 		(pts
@@ -3183,16 +3191,6 @@
 			(type default)
 		)
 		(uuid "55f60c12-a94b-4906-9651-e9b7591f42b8")
-	)
-	(wire
-		(pts
-			(xy 81.28 102.87) (xy 152.4 102.87)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "58cd0da1-427f-4672-8556-892053c6405e")
 	)
 	(wire
 		(pts
@@ -3256,6 +3254,16 @@
 	)
 	(wire
 		(pts
+			(xy 104.14 74.93) (xy 102.87 74.93)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "6bb1b0c0-49a2-4240-b7ed-86ccfa7e32e5")
+	)
+	(wire
+		(pts
 			(xy 196.85 128.27) (xy 182.88 128.27)
 		)
 		(stroke
@@ -3286,7 +3294,7 @@
 	)
 	(wire
 		(pts
-			(xy 78.74 93.98) (xy 81.28 93.98)
+			(xy 78.74 93.98) (xy 82.55 93.98)
 		)
 		(stroke
 			(width 0)
@@ -3303,6 +3311,16 @@
 			(type default)
 		)
 		(uuid "7564984d-0aab-423c-b691-26ebfcd66c3f")
+	)
+	(wire
+		(pts
+			(xy 104.14 72.39) (xy 104.14 73.66)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "784642b7-62e3-4186-a0a6-e51a4069818a")
 	)
 	(wire
 		(pts
@@ -3446,23 +3464,13 @@
 	)
 	(wire
 		(pts
-			(xy 152.4 55.88) (xy 152.4 102.87)
+			(xy 152.4 55.88) (xy 152.4 73.66)
 		)
 		(stroke
 			(width 0)
 			(type default)
 		)
 		(uuid "a56a0f57-18a5-4db9-9d77-0a93fb0c9301")
-	)
-	(wire
-		(pts
-			(xy 81.28 93.98) (xy 82.55 93.98)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "a7152aac-6bfe-4179-8da6-a383ecf4fb11")
 	)
 	(wire
 		(pts
@@ -3566,6 +3574,16 @@
 	)
 	(wire
 		(pts
+			(xy 104.14 73.66) (xy 104.14 74.93)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "c8a625d2-a2c5-4a9f-ba3a-306cd489b7b8")
+	)
+	(wire
+		(pts
 			(xy 107.95 158.75) (xy 107.95 163.83)
 		)
 		(stroke
@@ -3666,17 +3684,17 @@
 	)
 	(wire
 		(pts
-			(xy 81.28 96.52) (xy 81.28 102.87)
+			(xy 104.14 72.39) (xy 102.87 72.39)
 		)
 		(stroke
 			(width 0)
 			(type default)
 		)
-		(uuid "dc4b3eca-c6b8-43e7-9589-7251d7773760")
+		(uuid "ddb19d93-4161-4051-9458-7b60f0e048ed")
 	)
 	(wire
 		(pts
-			(xy 106.68 74.93) (xy 102.87 74.93)
+			(xy 106.68 74.93) (xy 104.14 74.93)
 		)
 		(stroke
 			(width 0)
@@ -3693,6 +3711,16 @@
 			(type default)
 		)
 		(uuid "e1726bad-7598-43ab-a60f-c686b44fd6ce")
+	)
+	(wire
+		(pts
+			(xy 78.74 88.9) (xy 82.55 88.9)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "e22d0f32-d8c7-4965-bdf6-94b6710399e0")
 	)
 	(wire
 		(pts
@@ -3796,16 +3824,6 @@
 	)
 	(wire
 		(pts
-			(xy 78.74 96.52) (xy 81.28 96.52)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "f80add85-6665-4d21-b95f-7dd38d7612a4")
-	)
-	(wire
-		(pts
 			(xy 210.82 128.27) (xy 196.85 128.27)
 		)
 		(stroke
@@ -3854,16 +3872,27 @@
 		)
 		(uuid "ff84acf0-63ca-42bd-bf32-fafbb585d49b")
 	)
-	(hierarchical_label "PARK_BRAKE_DEVICE_SIDE"
+	(hierarchical_label "YV_BACK_COIL_N"
 		(shape input)
-		(at 78.74 71.12 180)
+		(at 106.68 80.01 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left)
+		)
+		(uuid "01185367-0c68-4c4f-87a1-e80227d79e27")
+	)
+	(hierarchical_label "ENGINE_START_DEVICE_SIDE"
+		(shape input)
+		(at 78.74 53.34 180)
 		(effects
 			(font
 				(size 1.27 1.27)
 			)
 			(justify right)
 		)
-		(uuid "08f13d98-b878-4a10-a364-ee516f863762")
+		(uuid "05c21a7f-e599-4629-b3d7-df9a04f7b5c7")
 	)
 	(hierarchical_label "CAN1_L"
 		(shape bidirectional)
@@ -3876,16 +3905,16 @@
 		)
 		(uuid "0d022abe-8aec-4c7c-9dfa-2f61d18fd3f5")
 	)
-	(hierarchical_label "VIB_FRONT_DEVICE_SIDE"
+	(hierarchical_label "REAR_MAIN_LAMP_DEVICE_SIDE"
 		(shape input)
-		(at 78.74 60.96 180)
+		(at 78.74 71.12 180)
 		(effects
 			(font
 				(size 1.27 1.27)
 			)
 			(justify right)
 		)
-		(uuid "14575940-73c9-4b26-a1cc-5d944b97d57f")
+		(uuid "13f296ff-535e-45f9-aadc-4d9e6cae4add")
 	)
 	(hierarchical_label "CAN2_L"
 		(shape bidirectional)
@@ -3898,30 +3927,19 @@
 		)
 		(uuid "14580455-c956-4a2e-bf71-7498e2d5754c")
 	)
-	(hierarchical_label "VIB_ENABLE_DEVICE_SIDE"
-		(shape input)
-		(at 78.74 53.34 180)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right)
-		)
-		(uuid "1652db1e-036c-44c4-859f-2cfa23b8a404")
-	)
-	(hierarchical_label "RIGHT_TURN_SIGNAL_DEVICE_SIDE"
-		(shape input)
-		(at 106.68 90.17 0)
+	(hierarchical_label "VIB_ENABLE_OEM_SIDE"
+		(shape output)
+		(at 106.68 62.23 0)
 		(effects
 			(font
 				(size 1.27 1.27)
 			)
 			(justify left)
 		)
-		(uuid "17f3d8c8-acce-468c-8b92-40b7aea8f7b9")
+		(uuid "1eea7612-85d4-4b3f-af66-dd506dc16023")
 	)
-	(hierarchical_label "VIB_HIGH_DEVICE_SIDE"
-		(shape input)
+	(hierarchical_label "TRAVEL_SPEED_RANGE_OEM_SIDE"
+		(shape output)
 		(at 78.74 55.88 180)
 		(effects
 			(font
@@ -3929,7 +3947,7 @@
 			)
 			(justify right)
 		)
-		(uuid "21ea61ef-38cf-4e33-8fe3-63263209e149")
+		(uuid "23e45618-1f0b-4f7b-9a3c-45f70b65073c")
 	)
 	(hierarchical_label "OIL_LEVEL_IN"
 		(shape output)
@@ -3942,27 +3960,49 @@
 		)
 		(uuid "2d9f6348-ff17-4617-adb8-c40d0cf8eb01")
 	)
-	(hierarchical_label "FRONT_LED_HEADLAMP_DEVICE_SIDE"
+	(hierarchical_label "VIB_REAR_DEVICE_SIDE"
 		(shape input)
-		(at 78.74 81.28 180)
+		(at 106.68 54.61 0)
 		(effects
 			(font
 				(size 1.27 1.27)
 			)
-			(justify right)
+			(justify left)
 		)
-		(uuid "3561265e-ad56-4166-b0d9-cc329dadb5b1")
+		(uuid "2e14d46a-fc8b-476e-be50-38aa2b97594f")
 	)
-	(hierarchical_label "TRAVEL_SPEED_RANGE_DEVICE_SIDE"
-		(shape input)
-		(at 78.74 68.58 180)
+	(hierarchical_label "ENGINE_SPEED_OEM_SIDE"
+		(shape output)
+		(at 78.74 93.98 180)
 		(effects
 			(font
 				(size 1.27 1.27)
 			)
 			(justify right)
 		)
-		(uuid "4141a4b5-d8f7-4693-a857-0a216cf28374")
+		(uuid "373236aa-97dc-4794-93b3-937b9fc2129a")
+	)
+	(hierarchical_label "E_STOP_DEVICE_SIDE"
+		(shape input)
+		(at 78.74 91.44 180)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right)
+		)
+		(uuid "3beefbe0-2ef2-49fe-b045-dcd1fc322e42")
+	)
+	(hierarchical_label "VIB_FRONT_OEM_SIDE"
+		(shape output)
+		(at 106.68 64.77 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left)
+		)
+		(uuid "3c2d3ff5-bd48-4569-ad1c-c240c4e2f1e7")
 	)
 	(hierarchical_label "SPEED_IN"
 		(shape output)
@@ -3986,49 +4026,60 @@
 		)
 		(uuid "46bbfc13-ec7b-4f8f-acae-6cb6a7741d9d")
 	)
-	(hierarchical_label "ENGINE_SPEED_DEVICE_SIDE"
-		(shape input)
-		(at 78.74 66.04 180)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right)
-		)
-		(uuid "4923b0c4-b3e0-422a-b066-0aef23c7b7ff")
-	)
-	(hierarchical_label "VIB_FRONT_OEM_SIDE"
+	(hierarchical_label "VIB_LOW_OEM_SIDE"
 		(shape output)
-		(at 106.68 62.23 0)
+		(at 106.68 90.17 0)
 		(effects
 			(font
 				(size 1.27 1.27)
 			)
 			(justify left)
 		)
-		(uuid "66be3136-0061-4437-ad5e-62775b61c9ea")
+		(uuid "4b2eaa01-ebe8-4514-bc49-acc0250e816d")
 	)
-	(hierarchical_label "YV_FWD_COIL_P"
+	(hierarchical_label "LEFT_TURN_SIGNAL_DEVICE_SIDE"
 		(shape input)
-		(at 78.74 93.98 180)
+		(at 78.74 63.5 180)
 		(effects
 			(font
 				(size 1.27 1.27)
 			)
 			(justify right)
 		)
-		(uuid "693b545e-6038-41ca-b8aa-86f286073d69")
+		(uuid "4de9c1ca-effd-4fec-aded-5ebc2d19deb4")
 	)
-	(hierarchical_label "ENGINE_SPEED_OEM_SIDE"
-		(shape output)
-		(at 106.68 67.31 0)
+	(hierarchical_label "PARK_BRAKE_DEVICE_SIDE"
+		(shape input)
+		(at 78.74 96.52 180)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right)
+		)
+		(uuid "5800d1e7-3bd1-4383-a51d-a0d1adb6f050")
+	)
+	(hierarchical_label "PUMP1_DEVICE_SIDE"
+		(shape input)
+		(at 106.68 59.69 0)
 		(effects
 			(font
 				(size 1.27 1.27)
 			)
 			(justify left)
 		)
-		(uuid "6e9089cb-e014-4262-8ea8-b8924b2583ec")
+		(uuid "66d287c2-4121-4b12-bad8-2e359bfbb3b8")
+	)
+	(hierarchical_label "VIB_HIGH_DEVICE_SIDE"
+		(shape input)
+		(at 106.68 69.85 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left)
+		)
+		(uuid "692562bb-55a2-42a6-b5db-e655f64c9471")
 	)
 	(hierarchical_label "ESTOP_NC"
 		(shape output)
@@ -4041,27 +4092,16 @@
 		)
 		(uuid "6fc10fd8-6ae6-40b9-b1ce-9972f353b0c4")
 	)
-	(hierarchical_label "VIB_LOW_DEVICE_SIDE"
+	(hierarchical_label "YV_FWD_COIL_P"
 		(shape input)
-		(at 78.74 58.42 180)
+		(at 106.68 72.39 0)
 		(effects
 			(font
 				(size 1.27 1.27)
 			)
-			(justify right)
+			(justify left)
 		)
-		(uuid "75a31921-dd6f-49f4-8cba-1fe2a2525fd4")
-	)
-	(hierarchical_label "PUMP1_DEVICE_SIDE"
-		(shape input)
-		(at 78.74 76.2 180)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right)
-		)
-		(uuid "76ff4d74-a552-420c-8b84-fc3fce19e4e9")
+		(uuid "75863685-f3e7-4b1c-a950-c3918ed73e1a")
 	)
 	(hierarchical_label "BAT_IN"
 		(shape output)
@@ -4076,50 +4116,6 @@
 	)
 	(hierarchical_label "REAR_LED_HEADLAMP_DEVICE_SIDE"
 		(shape input)
-		(at 106.68 85.09 0)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left)
-		)
-		(uuid "7fb680ac-665b-4472-b989-7eaa2a71df34")
-	)
-	(hierarchical_label "VIB_REAR_DEVICE_SIDE"
-		(shape input)
-		(at 78.74 63.5 180)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right)
-		)
-		(uuid "8042808e-0f38-46ac-aaee-00011a84b01d")
-	)
-	(hierarchical_label "PARK_BRAKE_OEM_SIDE"
-		(shape output)
-		(at 106.68 72.39 0)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left)
-		)
-		(uuid "8157ea82-d553-4439-92b8-eba7164a354a")
-	)
-	(hierarchical_label "VIB_ENABLE_OEM_SIDE"
-		(shape output)
-		(at 106.68 54.61 0)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left)
-		)
-		(uuid "847a081b-a94c-4adc-b8c1-b4032e124121")
-	)
-	(hierarchical_label "VIB_HIGH_OEM_SIDE"
-		(shape output)
 		(at 106.68 57.15 0)
 		(effects
 			(font
@@ -4127,21 +4123,21 @@
 			)
 			(justify left)
 		)
-		(uuid "8575c88d-332e-4689-82f7-59ff9ffcd498")
+		(uuid "7a0c4994-c120-42d9-a7e7-fd26c975c7d7")
 	)
-	(hierarchical_label "ENGINE_START_DEVICE_SIDE"
+	(hierarchical_label "REVERSE_ALARM_DEVICE_SIDE"
 		(shape input)
-		(at 78.74 78.74 180)
+		(at 78.74 68.58 180)
 		(effects
 			(font
 				(size 1.27 1.27)
 			)
 			(justify right)
 		)
-		(uuid "94865d6f-8a4e-42be-99fc-0857e24b7d65")
+		(uuid "7eaafcf5-2ed1-4dcd-af77-212f637ef590")
 	)
-	(hierarchical_label "E_STOP_DEVICE_SIDE"
-		(shape input)
+	(hierarchical_label "VIB_REAR_OEM_SIDE"
+		(shape output)
 		(at 78.74 73.66 180)
 		(effects
 			(font
@@ -4149,9 +4145,42 @@
 			)
 			(justify right)
 		)
-		(uuid "977f9b07-e50b-4165-a8e6-8fa9d05ae00e")
+		(uuid "7efc5ed7-6ac6-4a12-bc28-4518f716fc93")
 	)
-	(hierarchical_label "PUMP2_DEVICE_SIDE"
+	(hierarchical_label "E_STOP_OEM_SIDE"
+		(shape output)
+		(at 106.68 87.63 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left)
+		)
+		(uuid "8175839b-e3b7-46de-9ee1-598b9df071f9")
+	)
+	(hierarchical_label "FRONT_MAIN_LAMP_DEVICE_SIDE"
+		(shape input)
+		(at 78.74 58.42 180)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right)
+		)
+		(uuid "81c19e00-7899-4dcc-be20-9c906ee638f3")
+	)
+	(hierarchical_label "ENGINE_SPEED_DEVICE_SIDE"
+		(shape input)
+		(at 78.74 60.96 180)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right)
+		)
+		(uuid "823c02ce-bca3-4d9c-a309-316805d7cf9b")
+	)
+	(hierarchical_label "YV_FWD_COIL_N"
 		(shape input)
 		(at 106.68 77.47 0)
 		(effects
@@ -4160,7 +4189,29 @@
 			)
 			(justify left)
 		)
-		(uuid "9d3512d3-49fd-4b4d-a139-ad58d3843c1f")
+		(uuid "88990a3f-c610-42cb-b67c-caf9c4c1ee85")
+	)
+	(hierarchical_label "RIGHT_TURN_SIGNAL_DEVICE_SIDE"
+		(shape input)
+		(at 78.74 88.9 180)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right)
+		)
+		(uuid "907b4d87-326c-48a1-b663-102a3f4a9b8d")
+	)
+	(hierarchical_label "TRAVEL_SPEED_RANGE_DEVICE_SIDE"
+		(shape input)
+		(at 78.74 83.82 180)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right)
+		)
+		(uuid "95e8022a-6f11-458e-a5fe-cbc3f8088a05")
 	)
 	(hierarchical_label "CAN1_H"
 		(shape bidirectional)
@@ -4173,27 +4224,27 @@
 		)
 		(uuid "9fb12bf6-088c-4ba2-9ac5-c105f3c7935c")
 	)
-	(hierarchical_label "REAR_MAIN_LAMP_DEVICE_SIDE"
+	(hierarchical_label "HORN_DEVICE_SIDE"
 		(shape input)
-		(at 106.68 87.63 0)
+		(at 78.74 78.74 180)
 		(effects
 			(font
 				(size 1.27 1.27)
 			)
-			(justify left)
+			(justify right)
 		)
-		(uuid "a0ea6435-fdbf-4f99-942c-e0331f0c06d6")
+		(uuid "a761a76c-04ad-4f84-946a-621aff10a573")
 	)
-	(hierarchical_label "YV_FWD_COIL_N"
+	(hierarchical_label "FRONT_LED_HEADLAMP_DEVICE_SIDE"
 		(shape input)
-		(at 106.68 92.71 0)
+		(at 78.74 76.2 180)
 		(effects
 			(font
 				(size 1.27 1.27)
 			)
-			(justify left)
+			(justify right)
 		)
-		(uuid "ab3288e9-d747-4e0c-9a97-d6fb4b26b35a")
+		(uuid "ab7bf6b7-9315-4130-b34f-faf47c95ab40")
 	)
 	(hierarchical_label "ENGINE_SENSOR_IN"
 		(shape output)
@@ -4206,6 +4257,28 @@
 		)
 		(uuid "abc58c87-8f51-40e6-8d6b-12d34364f293")
 	)
+	(hierarchical_label "PARK_BRAKE_OEM_SIDE"
+		(shape output)
+		(at 78.74 66.04 180)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right)
+		)
+		(uuid "b3db3e28-288f-4be1-ac9e-6e6fd4fe27eb")
+	)
+	(hierarchical_label "YV_BACK_COIL_P"
+		(shape input)
+		(at 106.68 74.93 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left)
+		)
+		(uuid "b97f6459-93b0-454c-9020-5d7212d4034f")
+	)
 	(hierarchical_label "CAN2_H"
 		(shape bidirectional)
 		(at 173.99 72.39 180)
@@ -4217,51 +4290,29 @@
 		)
 		(uuid "b9fd2d14-74c2-4024-8c79-8d9979b170d0")
 	)
-	(hierarchical_label "E_STOP_OEM_SIDE"
-		(shape output)
-		(at 106.68 74.93 0)
+	(hierarchical_label "VIB_LOW_DEVICE_SIDE"
+		(shape input)
+		(at 106.68 67.31 0)
 		(effects
 			(font
 				(size 1.27 1.27)
 			)
 			(justify left)
 		)
-		(uuid "c2a53fe9-4e71-4eeb-a732-4977c99ec78a")
+		(uuid "c2e0e81b-c22e-45da-b39d-22ec199cdce3")
 	)
-	(hierarchical_label "HORN_DEVICE_SIDE"
+	(hierarchical_label "VIB_ENABLE_DEVICE_SIDE"
 		(shape input)
-		(at 106.68 80.01 0)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left)
-		)
-		(uuid "c3a2a75e-6d0d-44fd-b295-db7ae58f1e92")
-	)
-	(hierarchical_label "FRONT_MAIN_LAMP_DEVICE_SIDE"
-		(shape input)
-		(at 78.74 83.82 180)
+		(at 78.74 81.28 180)
 		(effects
 			(font
 				(size 1.27 1.27)
 			)
 			(justify right)
 		)
-		(uuid "c8924e2c-12a5-4e56-a735-3b1c79edcb9e")
+		(uuid "c82216c0-425d-4174-a62f-e6c66f26cee9")
 	)
-	(hierarchical_label "YV_BACK_COIL_P"
-		(shape input)
-		(at 78.74 96.52 180)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right)
-		)
-		(uuid "cf1fd58f-2944-46ec-8940-3da72279d326")
-	)
-	(hierarchical_label "YV_BACK_COIL_N"
+	(hierarchical_label "VIB_FRONT_DEVICE_SIDE"
 		(shape input)
 		(at 106.68 95.25 0)
 		(effects
@@ -4270,18 +4321,18 @@
 			)
 			(justify left)
 		)
-		(uuid "d0535c83-33d1-4272-b065-4b749e3b95a1")
+		(uuid "d95116d1-e45b-40c4-8734-81df8fe32299")
 	)
-	(hierarchical_label "VIB_LOW_OEM_SIDE"
-		(shape output)
-		(at 106.68 59.69 0)
+	(hierarchical_label "PUMP2_DEVICE_SIDE"
+		(shape input)
+		(at 78.74 86.36 180)
 		(effects
 			(font
 				(size 1.27 1.27)
 			)
-			(justify left)
+			(justify right)
 		)
-		(uuid "d4fea587-ba2f-4406-93c2-59c77061f012")
+		(uuid "e8dadb79-4411-4f74-8e12-c66c1b9df2eb")
 	)
 	(hierarchical_label "BAT_GND"
 		(shape output)
@@ -4294,49 +4345,16 @@
 		)
 		(uuid "e94f732a-a326-4f64-a4c7-4f14cbfcda02")
 	)
-	(hierarchical_label "LEFT_TURN_SIGNAL_DEVICE_SIDE"
-		(shape input)
-		(at 78.74 86.36 180)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right)
-		)
-		(uuid "f2dfd677-63d7-4e7e-9f27-f8cde3f4f6c0")
-	)
-	(hierarchical_label "TRAVEL_SPEED_RANGE_OEM_SIDE"
+	(hierarchical_label "VIB_HIGH_OEM_SIDE"
 		(shape output)
-		(at 106.68 69.85 0)
+		(at 106.68 92.71 0)
 		(effects
 			(font
 				(size 1.27 1.27)
 			)
 			(justify left)
 		)
-		(uuid "f5571489-211a-4e82-86e0-4fd8797f7452")
-	)
-	(hierarchical_label "REVERSE_ALARM_DEVICE_SIDE"
-		(shape input)
-		(at 106.68 82.55 0)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left)
-		)
-		(uuid "f83ba95a-45bd-47fd-9fa4-b666a5756106")
-	)
-	(hierarchical_label "VIB_REAR_OEM_SIDE"
-		(shape output)
-		(at 106.68 64.77 0)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left)
-		)
-		(uuid "fc928ebd-e40b-42b8-accb-b049c3325a9f")
+		(uuid "f62b7e56-7a2f-4860-8bbd-f26ed351ba55")
 	)
 	(hierarchical_label "WATER_LEVEL_IN"
 		(shape output)
