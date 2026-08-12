@@ -225,6 +225,7 @@
         0.25,
         0.32,
         0.5,
+        0.8,
         1.3,
         1.5,
         2.0,
@@ -994,7 +995,7 @@
         "uuid": "e5f3c8f3-31b1-4864-b028-38bb5e50c369"
       }
     ],
-    "used_designators": "#PWR102-113,#PWR129,#PWR131-132",
+    "used_designators": "J7,#PWR102-113,#PWR129,#PWR131-132",
     "variants": []
   },
   "sheets": [

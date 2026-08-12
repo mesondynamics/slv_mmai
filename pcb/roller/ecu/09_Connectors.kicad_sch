@@ -2773,12 +2773,6 @@
 		(uuid "081bdc9a-ec7a-403c-86b9-7aee8024d902")
 	)
 	(junction
-		(at 182.88 140.97)
-		(diameter 0)
-		(color 0 0 0 0)
-		(uuid "098c621f-6025-44f6-895f-e466c0ad0c63")
-	)
-	(junction
 		(at 172.72 52.07)
 		(diameter 0)
 		(color 0 0 0 0)
@@ -2833,12 +2827,6 @@
 		(uuid "7b37e019-c692-43cc-99a0-6972de4ccb10")
 	)
 	(junction
-		(at 196.85 140.97)
-		(diameter 0)
-		(color 0 0 0 0)
-		(uuid "7e9d1018-d339-4862-8251-99f4a8e9c221")
-	)
-	(junction
 		(at 104.14 73.66)
 		(diameter 0)
 		(color 0 0 0 0)
@@ -2875,16 +2863,14 @@
 		(uuid "b79c7384-1ee3-4d23-8261-c4e8e627bae0")
 	)
 	(junction
-		(at 196.85 128.27)
-		(diameter 0)
-		(color 0 0 0 0)
-		(uuid "cff0e158-c1f4-46a9-8724-4224ce25ebb2")
-	)
-	(junction
 		(at 88.9 125.73)
 		(diameter 0)
 		(color 0 0 0 0)
 		(uuid "f510ff16-3366-4b67-8497-174ae08aafe0")
+	)
+	(no_connect
+		(at 182.88 140.97)
+		(uuid "113de72d-7c4d-42aa-99bf-c69adec260cc")
 	)
 	(no_connect
 		(at 194.31 68.58)
@@ -2895,12 +2881,24 @@
 		(uuid "232fad62-fb8e-480b-8eca-a88f82bff930")
 	)
 	(no_connect
+		(at 210.82 140.97)
+		(uuid "72f862d6-ddc6-4a2f-8dde-47ecf82ad6b8")
+	)
+	(no_connect
+		(at 182.88 128.27)
+		(uuid "8360c7d7-ddff-445d-b863-f4e1c30a9960")
+	)
+	(no_connect
 		(at 173.99 62.23)
 		(uuid "c19fb9f1-9b78-4ace-85d5-c451ba88e504")
 	)
 	(no_connect
 		(at 173.99 64.77)
 		(uuid "d33a8c85-6877-4190-802e-d0945801e1df")
+	)
+	(no_connect
+		(at 210.82 128.27)
+		(uuid "d5f747d0-398f-4dd4-bcd4-c3e7a75e99cc")
 	)
 	(wire
 		(pts
@@ -2984,26 +2982,6 @@
 	)
 	(wire
 		(pts
-			(xy 196.85 140.97) (xy 182.88 140.97)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "1487aa65-2348-4ef1-aaa8-1d3a0cf4c05d")
-	)
-	(wire
-		(pts
-			(xy 182.88 140.97) (xy 182.88 146.05)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "184d39ec-112e-4765-a918-ce7dbd6fcebf")
-	)
-	(wire
-		(pts
 			(xy 172.72 52.07) (xy 173.99 52.07)
 		)
 		(stroke
@@ -3051,16 +3029,6 @@
 			(type default)
 		)
 		(uuid "256c0cbe-fe15-4697-92fd-fd8444bb76ef")
-	)
-	(wire
-		(pts
-			(xy 210.82 140.97) (xy 196.85 140.97)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "2d0a7d4e-4223-443e-895c-d0c543833696")
 	)
 	(wire
 		(pts
@@ -3184,16 +3152,6 @@
 	)
 	(wire
 		(pts
-			(xy 158.75 80.01) (xy 173.99 80.01)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "55f60c12-a94b-4906-9651-e9b7591f42b8")
-	)
-	(wire
-		(pts
 			(xy 106.68 64.77) (xy 102.87 64.77)
 		)
 		(stroke
@@ -3264,16 +3222,6 @@
 	)
 	(wire
 		(pts
-			(xy 196.85 128.27) (xy 182.88 128.27)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "6d048dee-a28a-46e4-a204-00c1aab59431")
-	)
-	(wire
-		(pts
 			(xy 78.74 58.42) (xy 82.55 58.42)
 		)
 		(stroke
@@ -3331,16 +3279,6 @@
 			(type default)
 		)
 		(uuid "7a23ed0d-6d83-4a9c-9227-60bf8f9deeed")
-	)
-	(wire
-		(pts
-			(xy 196.85 128.27) (xy 196.85 140.97)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "808e7495-aa9c-4b15-b605-9941a04d37e2")
 	)
 	(wire
 		(pts
@@ -3474,6 +3412,16 @@
 	)
 	(wire
 		(pts
+			(xy 173.99 67.31) (xy 163.83 67.31)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "a6d0d0e7-2ce6-498e-b99f-234f7fbf7bb7")
+	)
+	(wire
+		(pts
 			(xy 106.68 82.55) (xy 102.87 82.55)
 		)
 		(stroke
@@ -3604,7 +3552,7 @@
 	)
 	(wire
 		(pts
-			(xy 158.75 78.74) (xy 158.75 80.01)
+			(xy 163.83 64.77) (xy 163.83 67.31)
 		)
 		(stroke
 			(width 0)
@@ -3824,16 +3772,6 @@
 	)
 	(wire
 		(pts
-			(xy 210.82 128.27) (xy 196.85 128.27)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "f80d3d5a-7aff-4468-9d05-2fe776269e1e")
-	)
-	(wire
-		(pts
 			(xy 133.35 158.75) (xy 107.95 158.75)
 		)
 		(stroke
@@ -3894,17 +3832,6 @@
 		)
 		(uuid "05c21a7f-e599-4629-b3d7-df9a04f7b5c7")
 	)
-	(hierarchical_label "CAN1_L"
-		(shape bidirectional)
-		(at 173.99 69.85 180)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right)
-		)
-		(uuid "0d022abe-8aec-4c7c-9dfa-2f61d18fd3f5")
-	)
 	(hierarchical_label "REAR_MAIN_LAMP_DEVICE_SIDE"
 		(shape input)
 		(at 78.74 71.12 180)
@@ -3916,16 +3843,16 @@
 		)
 		(uuid "13f296ff-535e-45f9-aadc-4d9e6cae4add")
 	)
-	(hierarchical_label "CAN2_L"
+	(hierarchical_label "CAN2_H"
 		(shape bidirectional)
-		(at 173.99 74.93 180)
+		(at 194.31 53.34 0)
 		(effects
 			(font
 				(size 1.27 1.27)
 			)
-			(justify right)
+			(justify left)
 		)
-		(uuid "14580455-c956-4a2e-bf71-7498e2d5754c")
+		(uuid "19106a51-b19c-46cc-a49e-0dccb1cf41eb")
 	)
 	(hierarchical_label "VIB_ENABLE_OEM_SIDE"
 		(shape output)
@@ -3949,17 +3876,6 @@
 		)
 		(uuid "23e45618-1f0b-4f7b-9a3c-45f70b65073c")
 	)
-	(hierarchical_label "OIL_LEVEL_IN"
-		(shape output)
-		(at 194.31 53.34 0)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left)
-		)
-		(uuid "2d9f6348-ff17-4617-adb8-c40d0cf8eb01")
-	)
 	(hierarchical_label "VIB_REAR_DEVICE_SIDE"
 		(shape input)
 		(at 106.68 54.61 0)
@@ -3970,6 +3886,17 @@
 			(justify left)
 		)
 		(uuid "2e14d46a-fc8b-476e-be50-38aa2b97594f")
+	)
+	(hierarchical_label "CAN1_L"
+		(shape bidirectional)
+		(at 173.99 80.01 180)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right)
+		)
+		(uuid "34312ad6-2609-4c51-9957-58a241cad50a")
 	)
 	(hierarchical_label "ENGINE_SPEED_OEM_SIDE"
 		(shape output)
@@ -4004,28 +3931,6 @@
 		)
 		(uuid "3c2d3ff5-bd48-4569-ad1c-c240c4e2f1e7")
 	)
-	(hierarchical_label "SPEED_IN"
-		(shape output)
-		(at 194.31 60.96 0)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left)
-		)
-		(uuid "4414eb11-078f-4a3c-aeb5-0f7131e38cfa")
-	)
-	(hierarchical_label "OIL_TEMP_IN"
-		(shape output)
-		(at 194.31 55.88 0)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left)
-		)
-		(uuid "46bbfc13-ec7b-4f8f-acae-6cb6a7741d9d")
-	)
 	(hierarchical_label "VIB_LOW_OEM_SIDE"
 		(shape output)
 		(at 106.68 90.17 0)
@@ -4036,6 +3941,17 @@
 			(justify left)
 		)
 		(uuid "4b2eaa01-ebe8-4514-bc49-acc0250e816d")
+	)
+	(hierarchical_label "ESTOP_NC"
+		(shape output)
+		(at 173.99 69.85 180)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right)
+		)
+		(uuid "4db39450-6c79-478d-97d3-06e286ff1d32")
 	)
 	(hierarchical_label "LEFT_TURN_SIGNAL_DEVICE_SIDE"
 		(shape input)
@@ -4059,6 +3975,17 @@
 		)
 		(uuid "5800d1e7-3bd1-4383-a51d-a0d1adb6f050")
 	)
+	(hierarchical_label "OIL_LEVEL_IN"
+		(shape output)
+		(at 173.99 74.93 180)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right)
+		)
+		(uuid "5d5fc400-c7b9-4790-b941-556f41437ac1")
+	)
 	(hierarchical_label "PUMP1_DEVICE_SIDE"
 		(shape input)
 		(at 106.68 59.69 0)
@@ -4070,6 +3997,17 @@
 		)
 		(uuid "66d287c2-4121-4b12-bad8-2e359bfbb3b8")
 	)
+	(hierarchical_label "OIL_TEMP_IN"
+		(shape output)
+		(at 173.99 72.39 180)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right)
+		)
+		(uuid "66f33025-b457-49e5-9947-ef9d345ccd7f")
+	)
 	(hierarchical_label "VIB_HIGH_DEVICE_SIDE"
 		(shape input)
 		(at 106.68 69.85 0)
@@ -4080,17 +4018,6 @@
 			(justify left)
 		)
 		(uuid "692562bb-55a2-42a6-b5db-e655f64c9471")
-	)
-	(hierarchical_label "ESTOP_NC"
-		(shape output)
-		(at 173.99 77.47 180)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right)
-		)
-		(uuid "6fc10fd8-6ae6-40b9-b1ce-9972f353b0c4")
 	)
 	(hierarchical_label "YV_FWD_COIL_P"
 		(shape input)
@@ -4136,6 +4063,17 @@
 		)
 		(uuid "7eaafcf5-2ed1-4dcd-af77-212f637ef590")
 	)
+	(hierarchical_label "WATER_LEVEL_IN"
+		(shape output)
+		(at 194.31 55.88 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left)
+		)
+		(uuid "7ebef9d9-7e7f-4ed7-8824-c563975c9536")
+	)
 	(hierarchical_label "VIB_REAR_OEM_SIDE"
 		(shape output)
 		(at 78.74 73.66 180)
@@ -4180,6 +4118,17 @@
 		)
 		(uuid "823c02ce-bca3-4d9c-a309-316805d7cf9b")
 	)
+	(hierarchical_label "CAN1_H"
+		(shape bidirectional)
+		(at 173.99 77.47 180)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right)
+		)
+		(uuid "8627d7a2-4d14-47fc-a94b-a5030d1070a6")
+	)
 	(hierarchical_label "YV_FWD_COIL_N"
 		(shape input)
 		(at 106.68 77.47 0)
@@ -4213,16 +4162,16 @@
 		)
 		(uuid "95e8022a-6f11-458e-a5fe-cbc3f8088a05")
 	)
-	(hierarchical_label "CAN1_H"
-		(shape bidirectional)
-		(at 173.99 67.31 180)
+	(hierarchical_label "SPEED_IN"
+		(shape output)
+		(at 194.31 63.5 0)
 		(effects
 			(font
 				(size 1.27 1.27)
 			)
-			(justify right)
+			(justify left)
 		)
-		(uuid "9fb12bf6-088c-4ba2-9ac5-c105f3c7935c")
+		(uuid "98a9e9dd-988a-4ee5-9d60-541ae745f2a6")
 	)
 	(hierarchical_label "HORN_DEVICE_SIDE"
 		(shape input)
@@ -4248,14 +4197,14 @@
 	)
 	(hierarchical_label "ENGINE_SENSOR_IN"
 		(shape output)
-		(at 194.31 63.5 0)
+		(at 194.31 58.42 0)
 		(effects
 			(font
 				(size 1.27 1.27)
 			)
 			(justify left)
 		)
-		(uuid "abc58c87-8f51-40e6-8d6b-12d34364f293")
+		(uuid "b1a37d9b-cb0e-4dc6-9e0a-d48946fa9eaf")
 	)
 	(hierarchical_label "PARK_BRAKE_OEM_SIDE"
 		(shape output)
@@ -4278,17 +4227,6 @@
 			(justify left)
 		)
 		(uuid "b97f6459-93b0-454c-9020-5d7212d4034f")
-	)
-	(hierarchical_label "CAN2_H"
-		(shape bidirectional)
-		(at 173.99 72.39 180)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right)
-		)
-		(uuid "b9fd2d14-74c2-4024-8c79-8d9979b170d0")
 	)
 	(hierarchical_label "VIB_LOW_DEVICE_SIDE"
 		(shape input)
@@ -4323,6 +4261,17 @@
 		)
 		(uuid "d95116d1-e45b-40c4-8734-81df8fe32299")
 	)
+	(hierarchical_label "CAN2_L"
+		(shape bidirectional)
+		(at 194.31 60.96 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left)
+		)
+		(uuid "e3b4803b-2043-45d2-9479-10b98927a805")
+	)
 	(hierarchical_label "PUMP2_DEVICE_SIDE"
 		(shape input)
 		(at 78.74 86.36 180)
@@ -4355,17 +4304,6 @@
 			(justify left)
 		)
 		(uuid "f62b7e56-7a2f-4860-8bbd-f26ed351ba55")
-	)
-	(hierarchical_label "WATER_LEVEL_IN"
-		(shape output)
-		(at 194.31 58.42 0)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left)
-		)
-		(uuid "fd3817ce-68cd-4389-992c-4f7f5d89a9f6")
 	)
 	(symbol
 		(lib_id "Diode:1.5SMCxxA")
@@ -4529,7 +4467,7 @@
 	)
 	(symbol
 		(lib_id "power:+12V")
-		(at 158.75 78.74 0)
+		(at 163.83 64.77 0)
 		(unit 1)
 		(body_style 1)
 		(exclude_from_sim no)
@@ -4540,7 +4478,7 @@
 		(fields_autoplaced yes)
 		(uuid "1403823a-32a9-4e89-b6dd-f19ec2149bad")
 		(property "Reference" "#PWR0129"
-			(at 158.75 82.55 0)
+			(at 163.83 68.58 0)
 			(hide yes)
 			(show_name no)
 			(do_not_autoplace no)
@@ -4551,7 +4489,7 @@
 			)
 		)
 		(property "Value" "+12V"
-			(at 158.75 73.66 0)
+			(at 163.83 59.69 0)
 			(show_name no)
 			(do_not_autoplace no)
 			(effects
@@ -4561,7 +4499,7 @@
 			)
 		)
 		(property "Footprint" ""
-			(at 158.75 78.74 0)
+			(at 163.83 64.77 0)
 			(hide yes)
 			(show_name no)
 			(do_not_autoplace no)
@@ -4572,7 +4510,7 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 158.75 78.74 0)
+			(at 163.83 64.77 0)
 			(hide yes)
 			(show_name no)
 			(do_not_autoplace no)
@@ -4583,7 +4521,7 @@
 			)
 		)
 		(property "Description" "Power symbol creates a global label with name \"+12V\""
-			(at 158.75 78.74 0)
+			(at 163.83 64.77 0)
 			(hide yes)
 			(show_name no)
 			(do_not_autoplace no)
@@ -4682,84 +4620,6 @@
 			(project "ecu"
 				(path "/e5f3c8f3-31b1-4864-b028-38bb5e50c369/70e522b8-5e86-4012-974f-127d60591632"
 					(reference "C89")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
-		(lib_id "power:GND")
-		(at 182.88 146.05 0)
-		(unit 1)
-		(body_style 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(in_pos_files yes)
-		(dnp no)
-		(fields_autoplaced yes)
-		(uuid "3116b4f0-f8de-4868-a753-e32e0b91c7ef")
-		(property "Reference" "#PWR0130"
-			(at 182.88 152.4 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Value" "GND"
-			(at 182.88 151.13 0)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" ""
-			(at 182.88 146.05 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Datasheet" ""
-			(at 182.88 146.05 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Description" "Power symbol creates a global label with name \"GND\" , ground"
-			(at 182.88 146.05 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(pin "1"
-			(uuid "bf4930b9-c444-4339-b6d0-1926f1951908")
-		)
-		(instances
-			(project "ecu"
-				(path "/e5f3c8f3-31b1-4864-b028-38bb5e50c369/70e522b8-5e86-4012-974f-127d60591632"
-					(reference "#PWR0130")
 					(unit 1)
 				)
 			)
