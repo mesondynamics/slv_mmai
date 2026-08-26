@@ -40,7 +40,7 @@ ENTRY(Reset_Handler)
 MEMORY
 {
   RAM    (xrw)    : ORIGIN = 0x30000000,    LENGTH = 320K    /* Memory is divided. Actual start is 0x20000000 and actual length is 640K */
-  FLASH    (rx)    : ORIGIN = 0xc000000,    LENGTH = 1016K    /* Memory is divided. Actual start is 0x8000000 and actual length is 2048K */
+  FLASH    (rx)    : ORIGIN = 0xc000000,    LENGTH = 1000K    /* Sectors 125/126 are reserved for Secure valve parameters. */
   FLASH_NSC    (rx)    : ORIGIN = 0xc0fe000,    LENGTH = 8K    /* Non-Secure Call-able region */
 }
 /* Highest address of the user mode stack */

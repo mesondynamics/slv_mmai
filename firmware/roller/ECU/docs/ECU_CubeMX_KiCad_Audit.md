@@ -1,37 +1,51 @@
-# ECU KiCad / STM32CubeMX 工程审查与交付说明
+# ECU KiCad / STM32CubeMX 配置审查
 
-审查日期：2026-08-26  
-目标器件：STM32H563ZIT6，LQFP144  
-CubeMX：6.18.0；STM32CubeH5：1.7.0  
-PCB 工程：`pcb/roller/ecu`  
-固件工程：`firmware/roller/ECU`
+审查日期：2026-08-26
 
-## 1. 结论
+MCU：STM32H563ZIT6，LQFP144
 
-工程已从 NUCLEO 模板残留状态改为自定义 ECU 板配置，并已由 CubeMX 自己回读、重新生成及双域编译。关键安全状态和外设归属已经写入 `ECU.ioc`，不是只修改生成后的 C 文件，因此以后从 CubeMX UI 再生成仍会生效。
+工具：STM32CubeMX 6.18.0、STM32CubeH5 1.7.0
 
-当前是“工业控制开发基线”，不是经认证的功能安全产品。单路光耦急停检测、软件 PWM 关断和普通 MCU 看门狗不能单独形成 IEC 61508 SIL 或 ISO 13849 PL 安全功能；最终安全等级必须由系统风险分析、独立硬件切断链路、诊断覆盖率和验证证据共同确定。
+硬件依据：`pcb/roller/ecu` KiCad 工程
 
-## 2. 已固化到 CubeMX 的配置
+兼容依据：上一版 `legacy ECU firmware` 与
+`docs/SCH_2025-10-13.pdf`
 
-| 功能 | 当前配置 | 设计理由 |
+## 1. 审查结论
+
+`ECU.ioc` 已从新建工程补齐为可开发基线。引脚、外设归属、关键初始电平、
+CAN 位时序、ETH MAC、DMA、定时器和 TrustZone 属性均已写回 `.ioc`，并非只
+修改生成 C 文件。应用逻辑放在 `Secure/App`、`NonSecure/App`、
+`Secure_nsclib` 和用户维护的 CMake 文件内；CubeMX 再生成不会删除这些文件。
+
+当前 PCB 的 PB8/PB9 物理网络接反，已按用户决定改为 Secure GPIO 开漏模拟
+I²C：`PB8=SW_I2C_SDA`、`PB9=SW_I2C_SCL`，无需飞线。ATECC608C 协议功能
+明确延期；目前只做总线释放、时钟拉伸超时和 9 个 SCL 脉冲恢复，故障会上报
+但不会阻止车辆基本功能。
+
+LwIP 在 STM32H5 当前 CubeMX 工程中作为项目自有中间件集成。CubeMX 继续生成
+ETH HAL、描述符和引脚初始化；LwIP、LAN8742 接口和 ECU UDP 应用放在生成目录
+之外。这样既保留 `.ioc` 的硬件配置，又避免 UI 再生成覆盖协议代码。
+
+## 2. 已持久化的 CubeMX 配置
+
+| 子系统 | 当前设置 | 设计约束 |
 |---|---|---|
-| 系统时钟 | HSE 25 MHz，SYSCLK/HCLK 250 MHz，HSE CSS 开启 | 外部晶振失效进入 NMI，Secure 异常路径立即关断输出 |
-| TrustZone | ADC12、TIM4、TIM6、I2C1、IWDG 为 Secure；对应 GPIO/EXTI 和 GPDMA 通道为 Secure | NonSecure 网络/协议代码不能直接改阀 PWM、读安全总线或喂狗 |
-| 急停 | PB2 `ESTOP_DETECT`，双边沿 Secure EXTI，电平高表示急停/线路故障 | 与 KiCad 光耦输出一致；上升沿立即锁存故障，下降沿不会自动重新使能 |
-| 阀 PWM | TIM4 CH1=PB6、CH2=PB7，中心对齐，20 kHz，初始占空比 0 | 250 MHz / (2 × 6250) = 20 kHz；正反向软件互锁 |
-| 电流采样 | ADC2：PA4/IN18、PA6/IN3；TIM4 TRGO 上升沿；GPDMA1 CH1 循环 | TIM4 内部 CH4 比较值 3125，在 PWM 中点触发；采样时间 47.5 cycles |
-| 慢速模拟量 | ADC1 共 9 路，TIM6 TRGO 1 kHz，GPDMA1 CH0 循环 | PC0、PC2、PC3、PA3、PA5、PB0、PB1、VREFINT、芯片温度；外部通道 92.5 cycles，VREFINT/芯片温度 640.5 cycles |
-| CAN1/CAN2 | Classic CAN，250 kbit/s，25 MHz kernel，Prescaler=4，Seg1=19，Seg2=5，SJW=4 | 25 tq/bit，80% 采样点；自动重发和 Transmit Pause 开启；各预留 8 个标准、2 个扩展过滤器 |
-| SPI4/TPIC | PE2 SCK、PE6 MOSI，主机单向发送，8 bit，15.625 Mbit/s | 清除原 4-bit/62.5 Mbit/s 默认值，给板级串联驱动留足时序裕量 |
-| TPIC 安全脚 | PE3 OE_N 上电高；PE5 CLR_N 低；PE7 CTRL_BUF_EN 低；PE4 RCK 低 | 与 R72/R73 硬件上下拉共同形成上电关闭状态 |
-| I2C1 | PB8=SCL、PB9=SDA，100 kHz，模拟滤波开启，数字滤波 2 cycles | I2C 作为 Secure 低速安全传感器总线；物理换线要求见第 5 节 |
-| 速度输入 | TIM2 CH1=PA0，1 MHz 计数，32-bit free-running，输入滤波 8，IRQ 优先级 6 | 便于后续做周期/频率捕获并降低毛刺影响 |
-| PHY | RMII 引脚按原理图配置；PB14 `RMII_NRST` 上电保持低 | NonSecure 应用等待 10 ms 后释放 PHY 复位 |
-| 看门狗 | Secure IWDG，LSI 32 kHz，Prescaler=32，Reload=1999，约 2 s | NonSecure 只能通过递增 heartbeat 的 NSC API 请求刷新 |
-| 未使用脚 | 不主动初始化，保持 H5 复位后的模拟/高阻状态 | 避免无连接引脚数字输入浮动；SWD、晶振和已用引脚除外 |
+| 时钟 | HSE 25 MHz，SYSCLK/HCLK 250 MHz，CSS 开启 | HSE 故障进入 NMI 并关断输出 |
+| TrustZone | ADC12、SPI4、TIM4、TIM6、IWDG 为 Secure；对应 GPIO、EXTI、DMA 受保护 | NonSecure 不能直接写继电器、阀 PWM 或安全采样 |
+| 急停 | PB2，Secure 双边沿 EXTI，标签 `ESTOP_DETECT` | 高电平立即锁存故障；恢复后仍需中性命令清故障 |
+| 软件 I²C | PB8=软件 SDA、PB9=软件 SCL，GPIO Output、Open Drain、上电 High | 仅适用于当前接反的 PCB；内部不上拉，依赖板上外部上拉 |
+| TPIC6A595 | SPI4 Secure；PE2 SCK、PE6 MOSI；8 bit、TX only、3.90625 Mbit/s | PE3 OE_N 上电 High；PE5 CLR_N、PE7 BUF_EN、PE4 RCK 上电 Low |
+| 阀 PWM | TIM4 CH1=PB6、CH2=PB7；中心对齐 20 kHz；初值 0 | 正反向互锁；CH4=1 在中心对齐计数谷底、即 PWM 导通脉冲中心触发 ADC2 |
+| 慢速 ADC | ADC1 九路，TIM6 TRGO 1 kHz，GPDMA1 CH0 circular | 外部量、VREFINT、MCU 温度；采样顺序见下表 |
+| 电流 ADC | ADC2 两路，12.5 cycles，TIM4 TRGO，GPDMA1 CH1 circular；ADC2/GPDMA IRQ priority 1 | 前进 PA4、后退 PA6；20 kHz 电流 PI、上电零点校准、VREFINT 补偿和硬故障阈值 |
+| FDCAN1 | Classic CAN 250 kbit/s，80% 采样点，自动重发；0 standard/6 extended filters | 车辆 J1939 接口；只接受六个 PGN |
+| FDCAN2 | Classic CAN 250 kbit/s，0 filters | 预留，应用不启动控制器 |
+| 速度输入 | TIM2 CH1=PA0；1 MHz、32 bit、输入滤波 8、IRQ | 20000 pulse/km，1500 ms 丢信号，IIR α=0.2 |
+| Ethernet | RMII、MAC `8A:EA:B5:00:00:02`；PB14 PHY reset 上电 Low | NonSecure 应用延迟 10 ms 释放 LAN8742 |
+| IWDG | Secure，LSI、Prescaler 32、Reload 1999，约 2 s | NonSecure 只能通过带递增 heartbeat 的 NSC 服务刷新 |
 
-ADC1 DMA 数组顺序固定如下，后续标定代码必须按此顺序解释：
+ADC1 DMA 固定顺序：
 
 | 索引 | 信号 | MCU 通道 |
 |---:|---|---|
@@ -45,158 +59,187 @@ ADC1 DMA 数组顺序固定如下，后续标定代码必须按此顺序解释�
 | 7 | VREFINT | internal |
 | 8 | MCU temperature | internal |
 
-ADC2 索引 0 为前进阀电流 PA4，索引 1 为后退阀电流 PA6。
+ADC2 索引 0 为前进阀电流 PA4，索引 1 为后退阀电流 PA6。车辆状态沿用
+`mV = raw × 3360 / 4096`，发动机信号达到 3200 mV 判定运行。尚未取得传感器
+标定曲线的通道只上报原始值/毫伏值，不编造工程量或报警阈值。
 
-ADC 内核输入为 250 MHz、异步预分频为 4，因此转换时钟为 62.5 MHz，低于
-H563 数据手册给出的 75 MHz ADC 上限。640.5 cycles 对应约 10.25 µs，满足
-VREFINT 至少 4.3 µs、内部温度传感器至少 9 µs 的采样时间要求。
+## 3. 必须在 CubeMX UI 中这样核对
 
-## 3. 再生成安全的软件结构
+正常情况下不需要再手工修改。使用 CubeMX 6.18 打开项目根目录 `ECU.ioc`；
+不要从 NUCLEO 模板重建工程。若 UI 显示黄色冲突或要求迁移固件包，先取消生成
+并确认仍使用 STM32CubeH5 1.7.0。
 
-CubeMX 生成目录仍由 `ECU.ioc` 管理。项目自有代码放在不会被生成器删除的位置：
+### 3.1 Secure context 和 PB8/PB9
 
-- `Secure/App/Src/safety_service.c`：急停锁存、输出关断、PWM 方向互锁、ADC DMA 启动、GTZC/ADC 异常处理和 IWDG 服务。
-- `Secure_nsclib/safety_api.h`：Secure/NonSecure 共用 ABI、状态位、返回码和常量。
-- `Secure/Core/Src/secure_nsc.c` 的 USER CODE 区：NSC veneer，并对 NonSecure 输出指针做 CMSE 范围及读写属性检查。
-- `NonSecure/App/Src/ecu_app.c`：不自动使能执行器，只释放 PHY、读取安全快照并提供基础 heartbeat。
-- Secure/NonSecure `CMakeLists.txt`：自有源目录、额外警告和 `-fno-common`；这些文件由 CubeMX 只创建一次，不会重复覆盖。
+1. 在 Pinout 页面切换到 **Cortex-M33 Secure** context。
+2. PB8 选择 `GPIO_Output`，User Label 为 `SW_I2C_SDA`；PB9 选择
+   `GPIO_Output`，User Label 为 `SW_I2C_SCL`。
+3. 在两脚 GPIO 参数中确认 Output Level=`High`、Mode=`Output Open Drain`、
+   Pull=`No pull-up and no pull-down`、Speed=`Low`、Pin Attribute=`Secure`。
+4. **不要启用 I2C1，也不要把 PB8/PB9 改为硬件 AF。** 当前 PCB 只有上述
+   反常映射才能不飞线工作。
+5. `System Core > GTZC_S` 中不需要配置 I2C1；应确认 SPI4、ADC12、TIM4、
+   TIM6、IWDG 为 Secure，并启用相应 Illegal Access interrupt。
+6. CubeMX 6.18 当前会把 SRAM3 的 privilege vectors 全部生成为 privileged-only，
+   且 `.ioc` 不保存手工加入的 MPCBB3 privilege 数组。ETH DMA 以非特权总线主设备
+   访问 NonSecure 描述符，因此 `Secure/Core/Src/gtzc_s.c` 的
+   `GTZC_S_Init 2` USER CODE 会在生成配置之后，仅将 SRAM3 前 64 KiB
+   (`0x20050000..0x2005FFFF`) 改为允许非特权访问。该段由
+   `ProjectManager.KeepUserCode=true` 保留；不要删除或移出 USER CODE 标记。
+   其余 SRAM3 继续保持 privileged-only。
 
-安全输出状态机遵循以下原则：
+### 3.2 TPIC 和安全初始电平
 
-1. 上电、异常、GTZC 非法访问、ADC 错误或急停时，PWM CCR1/CCR2 立即清零，TPIC OE_N 拉高，CLR_N 和缓冲使能拉低。
-2. 急停恢复只消除实时电平，故障锁存仍保留；NonSecure 必须显式调用清故障，再单独调用 ARM。
-3. 正向和反向 PWM 不允许同时非零；命令序号必须单调递增，重复或旧命令被拒绝。
-4. ARM 前先锁存全零 TPIC 移位寄存器，再开放缓冲和输出。
-5. 当前 NonSecure heartbeat 是开发基线。正式应用必须把控制任务、CAN、传感器更新和故障管理的健康结果汇总后，才允许 heartbeat 递增。
+1. `Connectivity > SPI4`：Master、Simplex Transmit Only、8 Bits、Prescaler
+   32，计算速率应为 3.90625 Mbit/s。
+2. PE2=`SPI4_SCK/TPIC_SRCK`，PE6=`SPI4_MOSI/TPIC_SER`，两脚均为 Secure。
+3. PE3 `TPIC_OE_N` 初值 High；PE5 `TPIC_CLR_N`、PE7
+   `TPIC_CTRL_BUF_EN`、PE4 `TPIC_RCK` 初值 Low。任何一个初值变化都可能造成
+   上电瞬态吸合，不能接受。
 
-## 4. 在 CubeMX UI 中的核对方法
+### 3.3 ADC、DMA 和 TIM4/TIM6
 
-正常情况下不需要再手工改变这些页面；以下步骤用于你打开 UI 后验收。使用 CubeMX 6.18.0 打开根目录 `ECU.ioc`，不要以 NUCLEO 板模板重新建工程。
+1. ADC1 regular group 为 9 ranks，触发源 `TIM6 TRGO / Rising edge`，DMA
+   circular；ADC2 为 2 ranks，触发源 `TIM4 TRGO / Rising edge`。
+2. GPDMA1 CH0/CH1 分别为 ADC1/ADC2，source fixed、destination increment、
+   half-word、circular，并标记 Secure channel/source/destination；Security 页的
+   Channel Privilege 必须为 **Privileged**。ADC DMA 的 linked-list node 与目标缓冲区
+   位于 privileged-only Secure SRAM，设成 Non-Privileged 会触发 GPDMA `USE` 错误并
+   使 ADC 快照保持为零。
+3. TIM4 Counter Mode=`Center Aligned mode 1`，Prescaler=0，Period=6249；
+   CH1/CH2 PWM Pulse=0。ADC2 两个 regular rank 均为 12.5 cycles；ADC2 和
+   GPDMA1 Channel1 IRQ 抢占优先级均为 1。
+4. 保留虚拟 `PWM Generation4 No Output`，Pulse=1，Master TRGO=`OC4REF`。
+   中心对齐 PWM1 在计数谷底跨越导通区，该触发点位于导通脉冲中心附近；
+   删除 CH4 或恢复 3125 都会破坏 20 kHz 电流采样相位。
+5. TIM6 Update Event 频率为 1 kHz，并启用 Secure global interrupt。
 
-### 4.1 Pinout & Configuration
+### 3.4 Ethernet 与 FDCAN
 
-1. 切换到 Secure context。
-2. 在 `System Core > GTZC_S` 核对 ADC12、I2C1、IWDG、TIM4、TIM6 显示为 Secure，并启用对应 Illegal Access interrupt。
-3. 核对 PB2 是 Secure `GPIO_EXTI2`，模式为 Rising/Falling，标签为 `ESTOP_DETECT`；不要再使用旧的 PG2。
-4. 核对 PB6/PB7、所有 ADC 引脚、PB8/PB9 为 Secure pin attribute。
-5. 核对 PE3 初始电平是 High，PE5/PE7 是 Low；PB14 在 NonSecure context 初始为 Low。
+1. 切换到 **Cortex-M33 NonSecure** context。
+2. ETH Mode=`RMII`，MAC=`8A:EA:B5:00:00:02`；核对 RMII 引脚与 KiCad
+   网络一致，PB14 `RMII_NRST` 初值 Low。
+3. FDCAN1/FDCAN2 均为 Classic CAN 250000 bit/s：kernel 25 MHz、Prescaler
+   4、Seg1=19、Seg2=5、SJW=4、Auto Retransmission 与 Transmit Pause enabled。
+4. FDCAN1 Standard Filters=0、Extended Filters=6；FDCAN2 两类均为 0。
+   PGN/Mask 在应用启动时配置，CubeMX UI 只保存 RAM 元素数量。
+5. FDCAN1 IT0 优先级 5；TIM2 捕获优先级 6。CAN2 不启用运行时通知。
 
-### 4.2 ADC 和 DMA
+### 3.5 LwIP 的特殊说明
 
-1. ADC1 regular group 应有 9 ranks，External Trigger 为 `TIM6 TRGO / Rising edge`，Data Management 为 `DMA Circular`。
-2. ADC2 regular group 应有 2 ranks，External Trigger 为 `TIM4 TRGO / Rising edge`，Data Management 为 `DMA Circular`。
-3. GPDMA1 Channel 0/1 分别请求 ADC1/ADC2，source fixed、destination increment、两侧 half-word、circular，并显示 Secure source/destination/channel。
+不要在 CubeMX 中另加一份 LwIP，也不要复制 `MX_LWIP_Init()` 代码。本工程使用：
 
-### 4.3 TIM4
+- `ThirdParty/LwIP`：固定版本的协议栈源码（避免 CubeMX 清理保留名 `Middlewares`）；
+- `Drivers/BSP/Components/lan8742`：PHY 驱动；
+- `NonSecure/App/Network`：本板 `ethernetif` 与 `lwipopts.h`；
+- `NonSecure/App/Src/ecu_network.c`：静态 IP 和 UDP 协议。
 
-1. Counter Mode 为 `Center Aligned mode 1`，Prescaler=0，Period=6249。
-2. CH1/CH2 为 PWM Generation，Pulse=0。
-3. 必须能看到虚拟通道 `PWM Generation4 No Output`，Pulse=3125。
-4. Master Output Trigger 为 `OC4REF`。不要把虚拟 CH4 删除，否则 ADC2 不再随 PWM 中点采样。
+`NonSecure/CMakeLists.txt` 顶部明确标注“generated only once”，CubeMX 后续不会
+重写现有文件。生成的 `NonSecure/Core/Src/eth.c` 仍是 ETH HAL 唯一硬件实例，
+应用层不会重复定义 `heth`、描述符或 MSP。
 
-### 4.4 FDCAN
+### 3.6 Project Manager
 
-两个控制器都应显示 250000 bit/s、80% sample point、Classic frame、Auto Retransmission enabled。中断使用 IT0，优先级 5。
-
-过滤器的数量已预留，但过滤器 ID/Mask 尚未配置，因为工程中没有整车 CAN communication matrix。正式启用 CAN 前，必须按网络矩阵逐条配置白名单过滤器，再调用 `HAL_FDCAN_Start()`；不能依赖默认接受全部报文。
-
-### 4.5 Project Manager
-
-保持：Toolchain=CMake、Keep User Code enabled、删除旧生成文件 enabled。生成后运行：
+保持 Toolchain=`CMake`、Keep User Code=`enabled`、删除旧生成文件=`enabled`。
+每次 UI 生成后必须执行：
 
 ```sh
 ./tools/audit_config.sh
+./tools/test.sh
 ./tools/build.sh Debug
+./tools/build.sh Release
 ```
 
-CubeMX 6.18 生成的顶层 `ExternalProject` 会让 Debug/Release 共用
-`Secure/build` 和 `NonSecure/build`，反复切换时可能沿用另一配置的对象。
-`tools/build.sh` 因此按配置直接生成到各域的 `build/Debug` 或
-`build/Release`；工程验收和 CI 请使用该入口，不要把顶层增量构建的成功
-当作双配置已分别重编译的证据。
+`tools/build.sh` 对 Secure/NonSecure 和 Debug/Release 使用独立构建目录，避免
+CubeMX 顶层 ExternalProject 在切换配置时复用错误对象。
 
-## 5. 必须完成的硬件动作：I2C 飞线
+## 4. 再生成安全边界
 
-KiCad 网络把 MCU PB8/PB9 与板上 I2C SCL/SDA 物理接反。固件必须保持 STM32 标准复用：PB8=SCL、PB9=SDA；不能靠交换 GPIO 标签规避，因为外设开漏时序由硬件复用决定。
+| 所有者 | 目录/文件 | CubeMX 行为 |
+|---|---|---|
+| CubeMX | `*/Core`、`*/mx-generated.cmake` | 可再生成；自定义入口只放 USER CODE 区 |
+| 项目 | `Secure/App`、`NonSecure/App` | CubeMX 不管理 |
+| 项目 | `Secure_nsclib/safety_api.h` | 共用 ABI，版本化维护 |
+| 项目 | Secure/NonSecure `CMakeLists.txt` | CubeMX 只首次创建，不覆盖现有文件 |
+| 项目 | `ThirdParty/LwIP`、`Drivers/BSP` | 固定依赖，CubeMX 不管理 |
+| 项目 | `tools`、`tests`、`docs` | CubeMX 不管理 |
 
-当前板处理要求：
+Secure NSC veneer 位于 `Secure/Core/Src/secure_nsc.c` 的 USER CODE 区，所有
+NonSecure 指针先做 CMSE 地址范围和访问属性检查，再复制到 Secure 栈上验证。
+NonSecure 不能传入裸 TPIC 位图，只能提交有范围约束的高层执行器结构。
+重新 ARM 时始终保持 TPIC `OE_N=High`：先连通 AHCT541，再释放
+`CLR_N`，经 SPI 移入并锁存 32 位全零，最后才打开 `OE_N`。禁止在
+缓冲器断开时用无效 RCK 脉冲代替该流程。
 
-1. 断电并确认 3V3、传感器电源无残压。
-2. 切断 PB8 到错误 SDA 网络、PB9 到错误 SCL 网络的两条连接。
-3. 交叉飞线，使 PB8 最终到物理 SCL，PB9 最终到物理 SDA。
-4. 用断电通断档确认无短路，并确认每根线各自有上拉到正确 I/O 电压域。
-5. 上电后先用示波器验证 idle high、100 kHz SCL 和 ACK，再连接正式传感器。
+## 5. 下一版 PCB 强制 ECO：恢复硬件 I²C
 
-此项不能由 CubeMX 或软件消除。未完成飞线前，不要执行 I2C 总线功能测试。
+ECO 编号建议：`ECU-R2-I2C-001`。
 
-## 6. 必须在 STM32CubeProgrammer 中配置/核对的 Option Bytes
+1. 原理图将 MCU PB8 接物理 SCL、PB9 接物理 SDA，禁止继续沿用当前交换网络。
+2. 核对两线各有适合总线电容和目标速率的外部上拉，电压域与 ATECC608C I/O
+   一致；保留 SCL/SDA/GND 测试点。
+3. 新板固件在 CubeMX Secure context 中移除 PB8/PB9 GPIO Output，启用 I2C1：
+   PB8=`I2C1_SCL`、PB9=`I2C1_SDA`、100 kHz、Analog Filter enabled，并把
+   I2C1 设为 Secure。
+4. 删除 `software_i2c.c` 的构建引用，ATECC608C 驱动只通过受限 Secure 服务
+   暴露签名/验证等高层操作，不向 NonSecure 开放任意寄存器访问。
+5. 投板评审必须把 PCB 网络表与 `.ioc` 引脚表交叉检查，并做 idle、ACK、
+   stuck-low recovery、时钟拉伸和掉电回灌测试。
 
-Option Bytes 不保存在 `.ioc`，而且错误设置可能触发 mass erase 或导致设备无法按当前镜像启动。操作前先在 STM32CubeProgrammer 导出完整 Option Bytes/readout 报告，并保留可连接-under-reset 的调试口。
+当前板代码和 UI 中均以 `SW_I2C_PCB_R1` capability 标识此临时方案，避免它
+被误认为下一版的长期设计。
 
-当前生成工程采用 STM32H563 官方 TrustZone 双 bank 基线：
+## 6. Option Bytes：CubeMX 外的人工步骤
 
-- Secure image：Bank1 secure alias `0x0C000000`，1 MiB，其中末尾 8 KiB 为 NSC linker region。
-- NonSecure image：Bank2 `0x08100000`，1 MiB。
-- Secure RAM：SRAM1+SRAM2 共 320 KiB。
-- NonSecure RAM：SRAM3 共 320 KiB。
+Option Bytes 不属于 `.ioc`。烧录前先只读导出并核对：
 
-在 `Option Bytes` 页面按“名称和读回结果”核对，不要只照抄十六进制值：
+- `TZEN` 已启用；
+- `SECBOOTADD=0x0C000000`，开发期 `SECBOOT_LOCK=0xC3`（未锁定）；
+- Bank1 secure watermark 覆盖 Secure/NSC 镜像；
+- Bank2 为 NonSecure，可从 `0x08100000` 启动；
+- 开发期保持 RDP Level 0 和可用 SWD；
+- 不在未备份、未核对 RM0481 的情况下修改 SECWM、RDP、BOOT_LOCK。
 
-1. `TZEN` 必须为 Enabled。
-2. Bank1 secure watermark 必须覆盖当前 Secure/NSC 镜像；Bank2 secure watermark 必须为空，即 `SECWM2_PSTRT > SECWM2_PEND`，使整个 Bank2 为 NonSecure。对 2 MiB H563，Bank1 通常是 128 个 8 KiB sector；写入前仍须用器件读回和 RM0481 核对边界。
-3. 开发期保留 RDP Level 0，完成安全启动、恢复流程和量产烧录验证后再评审 RDP/BOOT_LOCK；不要在开发阶段提前锁死。
-4. 量产配置建议把 IWDG 设为 Hardware 模式，使其早于应用代码启动；调试配置可以先保留 Software 模式。两种配置都要分别做复位原因和超时试验。
-5. BOR level 必须根据 ECU 电源掉电曲线、外部 supervisor 和 Flash 工作电压实测后确定，不能只按模板默认值。
+本工程的 `tools/program_ecu.sh provision-and-flash` 在首次写 Option Bytes 前强制
+核对芯片 ID/Product State，并备份完整 2 MiB Flash、Option Bytes 与 SHA-256；
+任何备份失败都中止迁移。该保护不替代对授权、能量隔离和目标序列号的人工复核。
 
-原方案中“Secure Flash 256 KiB / NonSecure 1792 KiB”的优化本次没有强行写入 linker：CubeMX 6.18 的该 TrustZone CMake 模板按 bank 生成 1 MiB/1 MiB，直接手改 linker 会在后续 UI 生成时被覆盖，还必须同步 SECWM、NSC、VTOR 和烧录流程。若后续确实需要 1792 KiB NonSecure 空间，应单独建立受版本控制的 memory-layout/post-generation 流程并在样片上验证后实施，不能只改一个地址。
+当前 linker：Secure `0x0C000000` 长 1000 KiB，Bank1 sectors 125/126 的
+`0x0C0FA000..0x0C0FDFFF` 保留给阀参数双扇区日志，NSC `0x0C0FE000` 长
+8 KiB；NonSecure `0x08100000` 长 1024 KiB。附加 linker ASSERT 即使 CubeMX
+重写主 linker，也会阻止镜像进入参数扇区。若实芯片 Option Bytes 与此布局不一致，
+停止烧录并先评审迁移；不得自动写入未知安全选项。
 
-## 7. 尚未配置，需由系统需求决定
+NonSecure `.bss` 中包含 ETH 描述符及全部 LwIP pool；链接片段
+`NonSecure/App/Linker/eth_dma_sram3_guard.ld` 强制它不超过
+`0x20060000`。这样后续静态数据增长超出 GTZC 已审查的 64 KiB DMA 窗口时会在
+链接阶段失败，而不是在实机上表现为隐蔽的 Ethernet DMA 超时。
 
-以下不是可以从原理图可靠推断的参数，因此保留为明确的后续工作，而不是填入任意默认值：
+## 7. 明确保留项与工业化缺口
 
-- CAN1/CAN2 标准/扩展 ID 白名单、报文周期、timeout、bus-off 恢复策略和节点地址。
-- 电流采样的零点、增益、允许峰值、短路阈值、去抖时间和关断反应时间；阈值确定前安全服务只完成采样与急停关断。
-- 7 路外部模拟量的分压比、NTC/传感器曲线、开短路诊断上下限和生产标定数据。
-- Secure I2C 设备地址、寄存器白名单、总线恢复策略以及数据 CRC/PEC。当前 I2C 不向 NonSecure 暴露任意读写接口。
-- Ethernet 协议栈、PHY 地址/型号驱动、MAC 地址来源、网络安全策略和链路诊断。当前仅完成 RMII MAC 和 PHY reset 基线。
-- TIM2 速度输入的齿数/脉冲数、最小最大周期、timeout 和溢出处理。
-- MPU 的最终分区、不可执行 RAM、外设访问策略、Secure Boot/镜像签名、回滚保护和密钥配置。
-- 故障日志的掉电保存、写入寿命和诊断服务。
+- ATECC608C 按需求延期；当前只有软件 I²C 基础层和总线健康诊断。
+- CAN2 预留，不启动；车辆通信全部迁移到 CAN1。
+- 当前 PCB 无转向执行器、主电源继电器、电源锁存和 indicator1/2/3 对应输出；
+  V2 继续接收这些兼容字段但无动作，状态固定为 0。
+- 已按用户最终确认区分两条速度链路。发动机高/低转速触发使用 K3/K24/K25：
+  K3 只在触发期间切断原车信号，触点稳定 50 ms 后，K24 接 BAT（高转速）或
+  K25 接 GND（低转速）连续 1 s；源继电器先释放，50 ms 后 K3 再释放恢复
+  原车。安全域强制 K24/K25 互斥。龟兔档使用 K13/K14：控制有效时 K13 接管，
+  K14 吸合接 GND=兔子，释放悬空=乌龟。两条链路均需带真实车端负载测量触点
+  电压、动作时序和失电恢复状态。
+- 油温曲线、油压/水位阈值仍缺少经认可的标定数据，不虚构工程量报警。
+  阀电流已按原理图 1 mV/mA 基线实现可调增益/偏置、上电零点校准、过流、
+  开路、非活动通道电流和 ADC 轨故障保护；这些阈值在量产前仍必须用标准电流表
+  校准并做开短路故障注入，不能只依赖软件仿真。
+- Secure Boot、镜像签名、防回滚、持久化故障日志、量产密钥流程、诊断访问
+  控制尚未在本阶段需求中定义。
+- 单路 MCU 急停输入和软件控制不能独立宣称 SIL/PL。最终车辆必须保留独立的
+  硬件安全链，并依据目标法规完成风险分析、EMC、环境、电气和耐久验证。
 
-## 8. 上板验收清单
-
-1. 只烧 Secure 镜像时，确认阀 PWM、TPIC 输出和 PHY reset 均保持安全状态。
-2. 烧双镜像后测 PB6/PB7：20 kHz、中心对齐、未 ARM 时占空比为 0。
-3. 示波器/调试寄存器确认 TIM4 CCR4=3125，ADC2 DMA sequence 以约 20 kHz 增长；ADC1 sequence 以约 1 kHz 增长。
-4. 急停 PB2 拉高时，测量输出关断延时并确认故障锁存；PB2 恢复低后输出不得自动恢复。
-5. 停止 NonSecure heartbeat，确认约 2 s 看门狗复位并检查 reset cause。
-6. 断开/扰动 HSE，确认 CSS/NMI 路径使输出安全并由看门狗复位。
-7. 两路 CAN 分别做 250 kbit/s 示波器位宽、ACK、错误帧、bus-off 和恢复测试；按 ISO 11898 总线拓扑核对终端电阻。
-8. 完成 I2C 飞线后做 idle、时钟、ACK、上拉电压和 stuck-low recovery 测试。
-9. 做电源缓升/缓降、棕断、反复上电、EFT/ESD/浪涌后的安全状态验证；EMC 等级由整机标准决定。
-
-自动静态配置审计：
-
-```sh
-./tools/audit_config.sh
-```
-
-CubeMX 无界面回读与再生成：
+自动审计入口：
 
 ```sh
 ./tools/cubemx_cli.sh validate
 ./tools/cubemx_cli.sh generate
+./tools/audit_config.sh
 ```
-
-`validate` 会把 CubeMX 展开的配置写到 `/tmp/ECU-cubemx-expanded.ioc`，便于检查默认参数；该文件不是项目配置源。
-
-## 9. 设计依据
-
-- ST DS14258 Rev. 6，STM32H562xx/H563xx 数据手册：ADC 最大时钟、VREFINT
-  和温度传感器采样时间、电气特性。
-  <https://www.st.com/resource/en/datasheet/stm32h563ai.pdf>
-- ST RM0481，STM32H5 参考手册：RCC、ADC、TrustZone、Flash secure
-  watermark、GTZC 和 Option Bytes。
-  <https://www.st.com/resource/en/reference_manual/rm0481-stm32h533-stm32h563-stm32h573-and-stm32h562-armbased-32bit-mcus-stmicroelectronics.pdf>
-- 本仓库 KiCad 原理图和 PCB：所有引脚、网络名、硬件上下拉及 I2C 换线结论的
-  板级依据。软件配置不能替代数据手册的电气限制或实板测量。

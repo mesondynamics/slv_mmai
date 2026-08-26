@@ -60,6 +60,8 @@ void GTZC_IRQHandler(void);
 void EXTI2_IRQHandler(void);
 void GPDMA1_Channel0_IRQHandler(void);
 void GPDMA1_Channel1_IRQHandler(void);
+void ADC2_IRQHandler(void);
+void TIM6_IRQHandler(void);
 /* USER CODE BEGIN EFP */
 
 /* USER CODE END EFP */

@@ -529,7 +529,7 @@
 //   <o.10> ETH_IRQn              <0=> Secure state
 //   <o.11> ETH_WKUP_IRQn         <0=> Secure state
 //   <o.12> DCMI_PSSI_IRQn        <0=> Secure state
-//   <o.13> FDCAN2_IT0_IRQn       <1=> Non-Secure state
+//   <o.13> FDCAN2_IT0_IRQn       <0=> Secure state
 //   <o.14> FDCAN2_IT1_IRQn       <0=> Secure state
 //   <o.15> CORDIC_IRQn           <0=> Secure state
 //   <o.16> FMAC_IRQn             <0=> Secure state
@@ -546,7 +546,7 @@
 //   <o.30> I2C4_ER_IRQn          <0=> Secure state
 //   <o.31> LPTIM3_IRQn           <0=> Secure state
 */
-#define NVIC_INIT_ITNS3_VAL      0x00002000
+#define NVIC_INIT_ITNS3_VAL      0x00000000
 
 /*
 //   </e>

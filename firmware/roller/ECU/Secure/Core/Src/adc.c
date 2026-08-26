@@ -201,7 +201,7 @@ void MX_ADC2_Init(void)
   */
   sConfig.Channel = ADC_CHANNEL_18;
   sConfig.Rank = ADC_REGULAR_RANK_1;
-  sConfig.SamplingTime = ADC_SAMPLETIME_47CYCLES_5;
+  sConfig.SamplingTime = ADC_SAMPLETIME_12CYCLES_5;
   sConfig.SingleDiff = ADC_SINGLE_ENDED;
   sConfig.OffsetNumber = ADC_OFFSET_NONE;
   sConfig.Offset = 0;
@@ -209,6 +209,10 @@ void MX_ADC2_Init(void)
   {
     Error_Handler();
   }
+
+  /* ADC2 interrupt Init */
+  HAL_NVIC_SetPriority(ADC2_IRQn, 1, 0);
+  HAL_NVIC_EnableIRQ(ADC2_IRQn);
 
   /** Configure Regular Channel
   */
@@ -335,7 +339,7 @@ void HAL_ADC_MspInit(ADC_HandleTypeDef* adcHandle)
 
     __HAL_LINKDMA(adcHandle, DMA_Handle, handle_GPDMA1_Channel0);
 
-    if (HAL_DMA_ConfigChannelAttributes(&handle_GPDMA1_Channel0, DMA_CHANNEL_NPRIV|DMA_CHANNEL_SEC) != HAL_OK)
+    if (HAL_DMA_ConfigChannelAttributes(&handle_GPDMA1_Channel0, DMA_CHANNEL_PRIV|DMA_CHANNEL_SEC) != HAL_OK)
     {
       Error_Handler();
     }
@@ -430,7 +434,7 @@ void HAL_ADC_MspInit(ADC_HandleTypeDef* adcHandle)
 
     __HAL_LINKDMA(adcHandle, DMA_Handle, handle_GPDMA1_Channel1);
 
-    if (HAL_DMA_ConfigChannelAttributes(&handle_GPDMA1_Channel1, DMA_CHANNEL_NPRIV|DMA_CHANNEL_SEC) != HAL_OK)
+    if (HAL_DMA_ConfigChannelAttributes(&handle_GPDMA1_Channel1, DMA_CHANNEL_PRIV|DMA_CHANNEL_SEC) != HAL_OK)
     {
       Error_Handler();
     }

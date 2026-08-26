@@ -22,7 +22,6 @@
 #include "fdcan.h"
 #include "gpdma.h"
 #include "gtzc_ns.h"
-#include "spi.h"
 #include "tim.h"
 #include "gpio.h"
 
@@ -100,7 +99,6 @@ int main(void)
   MX_ETH_Init();
   MX_FDCAN1_Init();
   MX_FDCAN2_Init();
-  MX_SPI4_Init();
   MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
   if (ECU_AppInit() != SAFETY_RESULT_OK)

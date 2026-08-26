@@ -59,12 +59,6 @@ void Error_Handler(void);
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
-#define TPIC_SRCK_Pin GPIO_PIN_2
-#define TPIC_SRCK_GPIO_Port GPIOE
-#define TPIC_RCK_Pin GPIO_PIN_4
-#define TPIC_RCK_GPIO_Port GPIOE
-#define TPIC_SER_Pin GPIO_PIN_6
-#define TPIC_SER_GPIO_Port GPIOE
 #define RCC_OSC_IN_Pin GPIO_PIN_0
 #define RCC_OSC_IN_GPIO_Port GPIOH
 #define RMII_MDC_Pin GPIO_PIN_1

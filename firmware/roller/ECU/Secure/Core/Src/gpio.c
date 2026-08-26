@@ -57,28 +57,13 @@ void MX_GPIO_Init(void)
   HAL_GPIO_WritePin(TPIC_OE_N_GPIO_Port, TPIC_OE_N_Pin, GPIO_PIN_SET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOE, TPIC_CLR_N_Pin|TPIC_CTRL_BUF_EN_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOE, TPIC_RCK_Pin|TPIC_CLR_N_Pin|TPIC_CTRL_BUF_EN_Pin, GPIO_PIN_RESET);
 
-  /*IO attributes management functions */
-  HAL_GPIO_ConfigPinAttributes(GPIOE, TPIC_SRCK_Pin|TPIC_RCK_Pin|TPIC_SER_Pin, GPIO_PIN_NSEC);
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOB, SW_I2C_SDA_Pin|SW_I2C_SCL_Pin, GPIO_PIN_SET);
 
-  /*IO attributes management functions */
-  HAL_GPIO_ConfigPinAttributes(GPIOC, RMII_MDC_Pin|RMII_RXD0_Pin|RMII_RXD1_Pin, GPIO_PIN_NSEC);
-
-  /*IO attributes management functions */
-  HAL_GPIO_ConfigPinAttributes(GPIOA, SPEED_IN_Pin|RMII_REF_CLK_Pin|RMII_MDIO_Pin|RMII_CRS_DV_Pin, GPIO_PIN_NSEC);
-
-  /*IO attributes management functions */
-  HAL_GPIO_ConfigPinAttributes(GPIOB, CAN2_RX_Pin|CAN2_TX_Pin|RMII_NRST_Pin|RMII_TXD1_Pin, GPIO_PIN_NSEC);
-
-  /*IO attributes management functions */
-  HAL_GPIO_ConfigPinAttributes(GPIOD, CAN1_RX_Pin|CAN1_TX_Pin, GPIO_PIN_NSEC);
-
-  /*IO attributes management functions */
-  HAL_GPIO_ConfigPinAttributes(GPIOG, RMII_TX_EN_Pin|RMII_TXD0_Pin, GPIO_PIN_NSEC);
-
-  /*Configure GPIO pins : TPIC_OE_N_Pin TPIC_CLR_N_Pin TPIC_CTRL_BUF_EN_Pin */
-  GPIO_InitStruct.Pin = TPIC_OE_N_Pin|TPIC_CLR_N_Pin|TPIC_CTRL_BUF_EN_Pin;
+  /*Configure GPIO pins : TPIC_OE_N_Pin TPIC_RCK_Pin TPIC_CLR_N_Pin TPIC_CTRL_BUF_EN_Pin */
+  GPIO_InitStruct.Pin = TPIC_OE_N_Pin|TPIC_RCK_Pin|TPIC_CLR_N_Pin|TPIC_CTRL_BUF_EN_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
@@ -97,6 +82,28 @@ void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   GPIO_InitStruct.Alternate = GPIO_AF0_TRACE;
   HAL_GPIO_Init(SWDIO_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : SW_I2C_SDA_Pin SW_I2C_SCL_Pin */
+  GPIO_InitStruct.Pin = SW_I2C_SDA_Pin|SW_I2C_SCL_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_OD;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+  /*IO attributes management functions */
+  HAL_GPIO_ConfigPinAttributes(GPIOC, RMII_MDC_Pin|RMII_RXD0_Pin|RMII_RXD1_Pin, GPIO_PIN_NSEC);
+
+  /*IO attributes management functions */
+  HAL_GPIO_ConfigPinAttributes(GPIOA, SPEED_IN_Pin|RMII_REF_CLK_Pin|RMII_MDIO_Pin|RMII_CRS_DV_Pin, GPIO_PIN_NSEC);
+
+  /*IO attributes management functions */
+  HAL_GPIO_ConfigPinAttributes(GPIOB, CAN2_RX_Pin|CAN2_TX_Pin|RMII_NRST_Pin|RMII_TXD1_Pin, GPIO_PIN_NSEC);
+
+  /*IO attributes management functions */
+  HAL_GPIO_ConfigPinAttributes(GPIOD, CAN1_RX_Pin|CAN1_TX_Pin, GPIO_PIN_NSEC);
+
+  /*IO attributes management functions */
+  HAL_GPIO_ConfigPinAttributes(GPIOG, RMII_TX_EN_Pin|RMII_TXD0_Pin, GPIO_PIN_NSEC);
 
   /*Configure the EXTI line attribute */
   HAL_EXTI_ConfigLineAttributes(EXTI_LINE_2, EXTI_LINE_SEC);

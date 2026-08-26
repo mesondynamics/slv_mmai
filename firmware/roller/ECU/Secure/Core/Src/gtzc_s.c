@@ -22,6 +22,17 @@
 
 /* USER CODE BEGIN 0 */
 
+/*
+ * STM32CubeMX 6.18 emits SRAM3 as privileged-only and does not persist an
+ * MPCBB3 privilege-vector override in ECU.ioc.  Ethernet DMA transactions are
+ * non-privileged, so the SRAM3 window containing the NonSecure ETH
+ * descriptors and packet pools must allow non-privileged access.
+ *
+ * One MPCBB privilege vector covers 32 x 512-byte blocks (16 KiB).  Keep this
+ * exception deliberately bounded to 0x20050000..0x2005FFFF (64 KiB).
+ */
+#define ETH_DMA_SRAM3_PRIV_VECTOR_COUNT  4U
+
 /* USER CODE END 0 */
 
 /* GTZC_S init function */
@@ -36,6 +47,9 @@ void MX_GTZC_S_Init(void)
 
   /* USER CODE BEGIN GTZC_S_Init 1 */
 
+  MPCBB_ConfigTypeDef ethernet_dma_area_desc = {0};
+  uint32_t ethernet_dma_vector;
+
   /* USER CODE END GTZC_S_Init 1 */
   if (HAL_GTZC_TZIC_EnableIT(GTZC_PERIPH_TIM4) != HAL_OK)
   {
@@ -49,7 +63,7 @@ void MX_GTZC_S_Init(void)
   {
     Error_Handler();
   }
-  if (HAL_GTZC_TZIC_EnableIT(GTZC_PERIPH_I2C1) != HAL_OK)
+  if (HAL_GTZC_TZIC_EnableIT(GTZC_PERIPH_SPI4) != HAL_OK)
   {
     Error_Handler();
   }
@@ -77,7 +91,7 @@ void MX_GTZC_S_Init(void)
   {
     Error_Handler();
   }
-  if (HAL_GTZC_TZSC_ConfigPeriphAttributes(GTZC_PERIPH_I2C1, GTZC_TZSC_PERIPH_SEC|GTZC_TZSC_PERIPH_NPRIV) != HAL_OK)
+  if (HAL_GTZC_TZSC_ConfigPeriphAttributes(GTZC_PERIPH_SPI4, GTZC_TZSC_PERIPH_SEC|GTZC_TZSC_PERIPH_NPRIV) != HAL_OK)
   {
     Error_Handler();
   }
@@ -133,6 +147,22 @@ void MX_GTZC_S_Init(void)
     Error_Handler();
   }
   /* USER CODE BEGIN GTZC_S_Init 2 */
+
+  /* CubeMX regeneration-safe post-configuration for the ETH DMA SRAM window. */
+  if (HAL_GTZC_MPCBB_GetConfigMem(SRAM3_BASE, &ethernet_dma_area_desc) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  for (ethernet_dma_vector = 0U;
+       ethernet_dma_vector < ETH_DMA_SRAM3_PRIV_VECTOR_COUNT;
+       ethernet_dma_vector++)
+  {
+    ethernet_dma_area_desc.AttributeConfig.MPCBB_PrivConfig_array[ethernet_dma_vector] = 0U;
+  }
+  if (HAL_GTZC_MPCBB_ConfigMem(SRAM3_BASE, &ethernet_dma_area_desc) != HAL_OK)
+  {
+    Error_Handler();
+  }
 
   /* USER CODE END GTZC_S_Init 2 */
 

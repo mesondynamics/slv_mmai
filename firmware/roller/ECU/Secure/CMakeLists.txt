@@ -52,7 +52,12 @@ target_compile_options(${CMAKE_PROJECT_NAME} PRIVATE
     -Wextra
     -Wformat=2
     -Wundef
+    -Werror
     -fno-common
+)
+
+target_link_options(${CMAKE_PROJECT_NAME} PRIVATE
+    -T${CMAKE_CURRENT_SOURCE_DIR}/App/Linker/valve_config_flash_guard.ld
 )
 
 # Enable CMake support for ASM and C languages
@@ -68,6 +73,9 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user sources here
     ${CMAKE_CURRENT_SOURCE_DIR}/App/Src/safety_service.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/App/Src/software_i2c.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/App/Src/valve_control.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/App/Src/valve_config_store.c
 )
 
 # Link directories setup
@@ -87,10 +95,6 @@ list(REMOVE_ITEM CMAKE_C_IMPLICIT_LINK_LIBRARIES ob)
 if((CMAKE_C_STANDARD EQUAL 90) OR (CMAKE_C_STANDARD EQUAL 99))
     message(ERROR "Generated code requires C11 or higher")
 endif()
-
-
-
-
 
 
 

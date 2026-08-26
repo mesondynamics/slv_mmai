@@ -42,12 +42,17 @@ SECURE_FAULT_CB_ID     = 0x00U, /*!< System secure fault callback ID */
 void SECURE_RegisterCallback(SECURE_CallbackIDTypeDef CallbackId, void *func);
 uint32_t SECURE_SafetyGetStatus(void);
 int32_t SECURE_SafetyGetAdcSnapshot(SAFETY_AdcSnapshot *snapshot);
+int32_t SECURE_SafetyGetActuatorSnapshot(SAFETY_ActuatorSnapshot *snapshot);
+int32_t SECURE_SafetyGetValveConfig(SAFETY_ValveConfigSnapshot *snapshot);
+int32_t SECURE_SafetyApplyValveConfig(const SAFETY_ValveConfig *config);
+int32_t SECURE_SafetySaveValveConfig(void);
+int32_t SECURE_SafetyReloadValveConfig(void);
+int32_t SECURE_SafetyReadValveTelemetry(SAFETY_ValveTelemetryBatch *batch);
 int32_t SECURE_SafetyClearFault(uint32_t request_token);
 int32_t SECURE_SafetyArmOutputs(uint32_t request_token);
 int32_t SECURE_SafetyDisarmOutputs(void);
-int32_t SECURE_SafetySetPwm(uint16_t forward_compare,
-                            uint16_t reverse_compare,
-                            uint32_t command_sequence);
+int32_t SECURE_SafetySubmitActuatorCommand(
+    const SAFETY_ActuatorCommand *command);
 int32_t SECURE_SafetyKickWatchdog(uint32_t heartbeat);
 
 #endif /* SECURE_NSC_H */

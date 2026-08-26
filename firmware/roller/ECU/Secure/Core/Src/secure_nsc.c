@@ -95,6 +95,74 @@ CMSE_NS_ENTRY int32_t SECURE_SafetyGetAdcSnapshot(SAFETY_AdcSnapshot *snapshot)
   return Safety_GetAdcSnapshot(checked_snapshot);
 }
 
+CMSE_NS_ENTRY int32_t SECURE_SafetyGetActuatorSnapshot(
+    SAFETY_ActuatorSnapshot *snapshot)
+{
+  SAFETY_ActuatorSnapshot *checked_snapshot;
+
+  checked_snapshot = (SAFETY_ActuatorSnapshot *)cmse_check_address_range(
+      snapshot, sizeof(*snapshot), CMSE_NONSECURE | CMSE_MPU_READWRITE);
+  if (checked_snapshot == NULL)
+  {
+    return SAFETY_RESULT_BAD_ARGUMENT;
+  }
+  return Safety_GetActuatorSnapshot(checked_snapshot);
+}
+
+CMSE_NS_ENTRY int32_t SECURE_SafetyGetValveConfig(
+    SAFETY_ValveConfigSnapshot *snapshot)
+{
+  SAFETY_ValveConfigSnapshot *checked_snapshot;
+
+  checked_snapshot = (SAFETY_ValveConfigSnapshot *)cmse_check_address_range(
+      snapshot, sizeof(*snapshot), CMSE_NONSECURE | CMSE_MPU_READWRITE);
+  if (checked_snapshot == NULL)
+  {
+    return SAFETY_RESULT_BAD_ARGUMENT;
+  }
+  return Safety_GetValveConfig(checked_snapshot);
+}
+
+CMSE_NS_ENTRY int32_t SECURE_SafetyApplyValveConfig(
+    const SAFETY_ValveConfig *config)
+{
+  const SAFETY_ValveConfig *checked_config;
+  SAFETY_ValveConfig secure_config;
+
+  checked_config = (const SAFETY_ValveConfig *)cmse_check_address_range(
+      (void *)config, sizeof(*config), CMSE_NONSECURE | CMSE_MPU_READ);
+  if (checked_config == NULL)
+  {
+    return SAFETY_RESULT_BAD_ARGUMENT;
+  }
+  secure_config = *checked_config;
+  return Safety_ApplyValveConfig(&secure_config);
+}
+
+CMSE_NS_ENTRY int32_t SECURE_SafetySaveValveConfig(void)
+{
+  return Safety_SaveValveConfig();
+}
+
+CMSE_NS_ENTRY int32_t SECURE_SafetyReloadValveConfig(void)
+{
+  return Safety_ReloadValveConfig();
+}
+
+CMSE_NS_ENTRY int32_t SECURE_SafetyReadValveTelemetry(
+    SAFETY_ValveTelemetryBatch *batch)
+{
+  SAFETY_ValveTelemetryBatch *checked_batch;
+
+  checked_batch = (SAFETY_ValveTelemetryBatch *)cmse_check_address_range(
+      batch, sizeof(*batch), CMSE_NONSECURE | CMSE_MPU_READWRITE);
+  if (checked_batch == NULL)
+  {
+    return SAFETY_RESULT_BAD_ARGUMENT;
+  }
+  return Safety_ReadValveTelemetry(checked_batch);
+}
+
 CMSE_NS_ENTRY int32_t SECURE_SafetyClearFault(uint32_t request_token)
 {
   return Safety_ClearFault(request_token);
@@ -110,11 +178,22 @@ CMSE_NS_ENTRY int32_t SECURE_SafetyDisarmOutputs(void)
   return Safety_DisarmOutputs();
 }
 
-CMSE_NS_ENTRY int32_t SECURE_SafetySetPwm(uint16_t forward_compare,
-                                          uint16_t reverse_compare,
-                                          uint32_t command_sequence)
+CMSE_NS_ENTRY int32_t SECURE_SafetySubmitActuatorCommand(
+    const SAFETY_ActuatorCommand *command)
 {
-  return Safety_SetPwm(forward_compare, reverse_compare, command_sequence);
+  const SAFETY_ActuatorCommand *checked_command;
+  SAFETY_ActuatorCommand secure_command;
+
+  checked_command = (const SAFETY_ActuatorCommand *)cmse_check_address_range(
+      (void *)command, sizeof(*command), CMSE_NONSECURE | CMSE_MPU_READ);
+  if (checked_command == NULL)
+  {
+    return SAFETY_RESULT_BAD_ARGUMENT;
+  }
+  /* Copy once after attribution/MPU validation so NonSecure cannot alter
+     fields between validation and application. */
+  secure_command = *checked_command;
+  return Safety_SubmitActuatorCommand(&secure_command);
 }
 
 CMSE_NS_ENTRY int32_t SECURE_SafetyKickWatchdog(uint32_t heartbeat)

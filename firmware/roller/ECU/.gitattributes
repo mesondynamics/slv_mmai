@@ -1,0 +1,9 @@
+# STM32CubeMX emits trailing spaces in its IDE metadata on every generation.
+.mxproject whitespace=-trailing-space
+# CubeMX emits generated sources with CRLF even on Linux.  Treat the CR as part
+# of the line ending while retaining the normal trailing-space checks.
+/Secure/Core/** whitespace=cr-at-eol
+/NonSecure/Core/** whitespace=cr-at-eol
+/Secure_nsclib/secure_nsc.h whitespace=cr-at-eol
+/Secure/mx-generated.cmake whitespace=cr-at-eol
+/NonSecure/mx-generated.cmake whitespace=cr-at-eol
