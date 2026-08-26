@@ -129,7 +129,7 @@ void HAL_ETH_MspInit(ETH_HandleTypeDef* ethHandle)
     GPIO_InitStruct.Alternate = GPIO_AF11_ETH;
     HAL_GPIO_Init(RMII_TXD1_GPIO_Port, &GPIO_InitStruct);
 
-    GPIO_InitStruct.Pin = RMII_TXT_EN_Pin|RMI_TXD0_Pin;
+    GPIO_InitStruct.Pin = RMII_TX_EN_Pin|RMII_TXD0_Pin;
     GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
     GPIO_InitStruct.Pull = GPIO_NOPULL;
     GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
@@ -172,7 +172,7 @@ void HAL_ETH_MspDeInit(ETH_HandleTypeDef* ethHandle)
 
     HAL_GPIO_DeInit(RMII_TXD1_GPIO_Port, RMII_TXD1_Pin);
 
-    HAL_GPIO_DeInit(GPIOG, RMII_TXT_EN_Pin|RMI_TXD0_Pin);
+    HAL_GPIO_DeInit(GPIOG, RMII_TX_EN_Pin|RMII_TXD0_Pin);
 
   /* USER CODE BEGIN ETH_MspDeInit 1 */
 

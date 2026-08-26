@@ -18,8 +18,14 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "adc.h"
 #include "eth.h"
+#include "fdcan.h"
 #include "gtzc_ns.h"
+#include "i2c.h"
+#include "usart.h"
+#include "spi.h"
+#include "tim.h"
 #include "gpio.h"
 
 /* Private includes ----------------------------------------------------------*/
@@ -95,6 +101,14 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_ETH_Init();
+  MX_ADC1_Init();
+  MX_FDCAN1_Init();
+  MX_FDCAN2_Init();
+  MX_I2C1_Init();
+  MX_LPUART1_UART_Init();
+  MX_SPI4_Init();
+  MX_TIM2_Init();
+  MX_TIM4_Init();
   /* USER CODE BEGIN 2 */
 
   /* USER CODE END 2 */

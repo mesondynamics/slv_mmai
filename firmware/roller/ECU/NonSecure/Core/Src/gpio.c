@@ -32,16 +32,36 @@
 
 /* USER CODE END 1 */
 
-/** Pinout Configuration
+/** Configure pins
 */
 void MX_GPIO_Init(void)
 {
 
+  GPIO_InitTypeDef GPIO_InitStruct = {0};
+
   /* GPIO Ports Clock Enable */
+  __HAL_RCC_GPIOE_CLK_ENABLE();
   __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
   __HAL_RCC_GPIOG_CLK_ENABLE();
+  __HAL_RCC_GPIOD_CLK_ENABLE();
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOE, TPIC_OE_N_Pin|TPIC_RCK_Pin|TPIC_CLR_N_Pin, GPIO_PIN_RESET);
+
+  /*Configure GPIO pins : TPIC_OE_N_Pin TPIC_RCK_Pin TPIC_CLR_N_Pin */
+  GPIO_InitStruct.Pin = TPIC_OE_N_Pin|TPIC_RCK_Pin|TPIC_CLR_N_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOE, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : EXT_ESTOP_IN_Pin */
+  GPIO_InitStruct.Pin = EXT_ESTOP_IN_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(EXT_ESTOP_IN_GPIO_Port, &GPIO_InitStruct);
 
 }
 
