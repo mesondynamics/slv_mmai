@@ -431,13 +431,13 @@
 //   <o.3>  IWDG_IRQn             <0=> Secure state
 //   <o.5>  ADC1_IRQn             <0=> Secure state
 //   <o.6>  DAC1_IRQn             <0=> Secure state
-//   <o.7>  FDCAN1_IT0_IRQn       <0=> Secure state
+//   <o.7>  FDCAN1_IT0_IRQn       <1=> Non-Secure state
 //   <o.8>  FDCAN1_IT1_IRQn       <0=> Secure state
 //   <o.9>  TIM1_BRK_IRQn         <0=> Secure state
 //   <o.10> TIM1_UP_IRQn          <0=> Secure state
 //   <o.11> TIM1_TRG_COM_IRQn     <0=> Secure state
 //   <o.12> TIM1_CC_IRQn          <0=> Secure state
-//   <o.13> TIM2_IRQn             <0=> Secure state
+//   <o.13> TIM2_IRQn             <1=> Non-Secure state
 //   <o.14> TIM3_IRQn             <0=> Secure state
 //   <o.15> TIM4_IRQn             <0=> Secure state
 //   <o.16> TIM5_IRQn             <0=> Secure state
@@ -457,7 +457,7 @@
 //   <o.30> UART5_IRQn            <0=> Secure state
 //   <o.31> LPUART1_IRQn          <0=> Secure state
 */
-#define NVIC_INIT_ITNS1_VAL      0x00000000
+#define NVIC_INIT_ITNS1_VAL      0x00002080
 
 /*
 //   </e>
@@ -529,7 +529,7 @@
 //   <o.10> ETH_IRQn              <0=> Secure state
 //   <o.11> ETH_WKUP_IRQn         <0=> Secure state
 //   <o.12> DCMI_PSSI_IRQn        <0=> Secure state
-//   <o.13> FDCAN2_IT0_IRQn       <0=> Secure state
+//   <o.13> FDCAN2_IT0_IRQn       <1=> Non-Secure state
 //   <o.14> FDCAN2_IT1_IRQn       <0=> Secure state
 //   <o.15> CORDIC_IRQn           <0=> Secure state
 //   <o.16> FMAC_IRQn             <0=> Secure state
@@ -546,7 +546,7 @@
 //   <o.30> I2C4_ER_IRQn          <0=> Secure state
 //   <o.31> LPTIM3_IRQn           <0=> Secure state
 */
-#define NVIC_INIT_ITNS3_VAL      0x00000000
+#define NVIC_INIT_ITNS3_VAL      0x00002000
 
 /*
 //   </e>

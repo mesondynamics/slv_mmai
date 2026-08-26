@@ -25,6 +25,7 @@
 
 /* Includes ------------------------------------------------------------------*/
 #include <stdint.h>
+#include "safety_api.h"
 
 /* Exported types ------------------------------------------------------------*/
 /**
@@ -39,6 +40,15 @@ SECURE_FAULT_CB_ID     = 0x00U, /*!< System secure fault callback ID */
 /* Exported macro ------------------------------------------------------------*/
 /* Exported functions ------------------------------------------------------- */
 void SECURE_RegisterCallback(SECURE_CallbackIDTypeDef CallbackId, void *func);
+uint32_t SECURE_SafetyGetStatus(void);
+int32_t SECURE_SafetyGetAdcSnapshot(SAFETY_AdcSnapshot *snapshot);
+int32_t SECURE_SafetyClearFault(uint32_t request_token);
+int32_t SECURE_SafetyArmOutputs(uint32_t request_token);
+int32_t SECURE_SafetyDisarmOutputs(void);
+int32_t SECURE_SafetySetPwm(uint16_t forward_compare,
+                            uint16_t reverse_compare,
+                            uint32_t command_sequence);
+int32_t SECURE_SafetyKickWatchdog(uint32_t heartbeat);
 
 #endif /* SECURE_NSC_H */
 /* USER CODE END Non_Secure_CallLib_h */

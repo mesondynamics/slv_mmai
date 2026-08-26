@@ -22,6 +22,8 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "secure_nsc.h"
+#include "safety_service.h"
+#include <arm_cmse.h>
 /** @addtogroup STM32H5xx_HAL_Examples
 
   * @{
@@ -50,15 +52,23 @@ void *pSecureErrorCallback = NULL;   /* Pointer to secure error callback in Non-
   */
     CMSE_NS_ENTRY void SECURE_RegisterCallback(SECURE_CallbackIDTypeDef CallbackId, void *func)
     {
+      void *checked_func = NULL;
+
       if(func != NULL)
+      {
+        checked_func = cmse_check_address_range(
+            (void *)((uintptr_t)func & ~(uintptr_t)1U),
+            sizeof(uint16_t), CMSE_NONSECURE);
+      }
+      if(checked_func != NULL)
       {
         switch(CallbackId)
         {
           case SECURE_FAULT_CB_ID:           /* SecureFault Interrupt occurred */
-          pSecureFaultCallback = func;
+          pSecureFaultCallback = cmse_nsfptr_create(func);
           break;
           case GTZC_ERROR_CB_ID:             /* GTZC Interrupt occurred */
-          pSecureErrorCallback = func;
+          pSecureErrorCallback = cmse_nsfptr_create(func);
           break;
           default:
           /* unknown */
@@ -66,6 +76,51 @@ void *pSecureErrorCallback = NULL;   /* Pointer to secure error callback in Non-
         }
       }
     }
+
+CMSE_NS_ENTRY uint32_t SECURE_SafetyGetStatus(void)
+{
+  return Safety_GetStatus();
+}
+
+CMSE_NS_ENTRY int32_t SECURE_SafetyGetAdcSnapshot(SAFETY_AdcSnapshot *snapshot)
+{
+  SAFETY_AdcSnapshot *checked_snapshot;
+
+  checked_snapshot = (SAFETY_AdcSnapshot *)cmse_check_address_range(
+      snapshot, sizeof(*snapshot), CMSE_NONSECURE | CMSE_MPU_READWRITE);
+  if (checked_snapshot == NULL)
+  {
+    return SAFETY_RESULT_BAD_ARGUMENT;
+  }
+  return Safety_GetAdcSnapshot(checked_snapshot);
+}
+
+CMSE_NS_ENTRY int32_t SECURE_SafetyClearFault(uint32_t request_token)
+{
+  return Safety_ClearFault(request_token);
+}
+
+CMSE_NS_ENTRY int32_t SECURE_SafetyArmOutputs(uint32_t request_token)
+{
+  return Safety_ArmOutputs(request_token);
+}
+
+CMSE_NS_ENTRY int32_t SECURE_SafetyDisarmOutputs(void)
+{
+  return Safety_DisarmOutputs();
+}
+
+CMSE_NS_ENTRY int32_t SECURE_SafetySetPwm(uint16_t forward_compare,
+                                          uint16_t reverse_compare,
+                                          uint32_t command_sequence)
+{
+  return Safety_SetPwm(forward_compare, reverse_compare, command_sequence);
+}
+
+CMSE_NS_ENTRY int32_t SECURE_SafetyKickWatchdog(uint32_t heartbeat)
+{
+  return Safety_KickWatchdog(heartbeat);
+}
 
 /**
   * @}

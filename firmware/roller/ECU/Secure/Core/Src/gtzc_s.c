@@ -37,6 +37,54 @@ void MX_GTZC_S_Init(void)
   /* USER CODE BEGIN GTZC_S_Init 1 */
 
   /* USER CODE END GTZC_S_Init 1 */
+  if (HAL_GTZC_TZIC_EnableIT(GTZC_PERIPH_TIM4) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_GTZC_TZIC_EnableIT(GTZC_PERIPH_TIM6) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_GTZC_TZIC_EnableIT(GTZC_PERIPH_IWDG) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_GTZC_TZIC_EnableIT(GTZC_PERIPH_I2C1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_GTZC_TZIC_EnableIT(GTZC_PERIPH_ADC12) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_GTZC_TZIC_EnableIT(GTZC_PERIPH_GPDMA1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_GTZC_TZIC_EnableIT(GTZC_PERIPH_EXTI) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_GTZC_TZSC_ConfigPeriphAttributes(GTZC_PERIPH_TIM4, GTZC_TZSC_PERIPH_SEC|GTZC_TZSC_PERIPH_NPRIV) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_GTZC_TZSC_ConfigPeriphAttributes(GTZC_PERIPH_TIM6, GTZC_TZSC_PERIPH_SEC|GTZC_TZSC_PERIPH_NPRIV) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_GTZC_TZSC_ConfigPeriphAttributes(GTZC_PERIPH_IWDG, GTZC_TZSC_PERIPH_SEC|GTZC_TZSC_PERIPH_NPRIV) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_GTZC_TZSC_ConfigPeriphAttributes(GTZC_PERIPH_I2C1, GTZC_TZSC_PERIPH_SEC|GTZC_TZSC_PERIPH_NPRIV) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_GTZC_TZSC_ConfigPeriphAttributes(GTZC_PERIPH_ADC12, GTZC_TZSC_PERIPH_SEC|GTZC_TZSC_PERIPH_NPRIV) != HAL_OK)
+  {
+    Error_Handler();
+  }
   MPCBB_Area_Desc.SecureRWIllegalMode = GTZC_MPCBB_SRWILADIS_ENABLE;
   MPCBB_Area_Desc.InvertSecureState = GTZC_MPCBB_INVSECSTATE_NOT_INVERTED;
   MPCBB_Area_Desc.AttributeConfig.MPCBB_SecConfig_array[0] =   0x00000000;

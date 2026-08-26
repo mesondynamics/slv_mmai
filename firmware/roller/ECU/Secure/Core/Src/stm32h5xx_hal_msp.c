@@ -70,6 +70,11 @@ void HAL_MspInit(void)
 
   /* System interrupt init*/
 
+  /* Peripheral interrupt init */
+  /* GTZC_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(GTZC_IRQn, 1, 0);
+  HAL_NVIC_EnableIRQ(GTZC_IRQn);
+
   /* Disable the internal Pull-Up in Dead Battery pins of UCPD peripheral */
   HAL_PWREx_DisableUCPDDeadBattery();
 

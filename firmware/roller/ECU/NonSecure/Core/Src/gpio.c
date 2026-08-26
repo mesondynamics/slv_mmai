@@ -44,24 +44,28 @@ void MX_GPIO_Init(void)
   __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
-  __HAL_RCC_GPIOG_CLK_ENABLE();
   __HAL_RCC_GPIOD_CLK_ENABLE();
+  __HAL_RCC_GPIOG_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOE, TPIC_OE_N_Pin|TPIC_RCK_Pin|TPIC_CLR_N_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(TPIC_RCK_GPIO_Port, TPIC_RCK_Pin, GPIO_PIN_RESET);
 
-  /*Configure GPIO pins : TPIC_OE_N_Pin TPIC_RCK_Pin TPIC_CLR_N_Pin */
-  GPIO_InitStruct.Pin = TPIC_OE_N_Pin|TPIC_RCK_Pin|TPIC_CLR_N_Pin;
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(RMII_NRST_GPIO_Port, RMII_NRST_Pin, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin : TPIC_RCK_Pin */
+  GPIO_InitStruct.Pin = TPIC_RCK_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOE, &GPIO_InitStruct);
+  HAL_GPIO_Init(TPIC_RCK_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : EXT_ESTOP_IN_Pin */
-  GPIO_InitStruct.Pin = EXT_ESTOP_IN_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
+  /*Configure GPIO pin : RMII_NRST_Pin */
+  GPIO_InitStruct.Pin = RMII_NRST_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(EXT_ESTOP_IN_GPIO_Port, &GPIO_InitStruct);
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(RMII_NRST_GPIO_Port, &GPIO_InitStruct);
 
 }
 
