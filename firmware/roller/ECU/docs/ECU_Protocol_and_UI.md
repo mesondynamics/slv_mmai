@@ -139,6 +139,8 @@ UI 每秒续订一次。
 
 遥测批头为 `first_sequence:uint32`、`dropped_samples:uint32`、
 `sample_count:uint16`、`sample_period_us:uint16`。每个 20 B 样本依次是：
+`dropped_samples` 是当前订阅会话内的 Secure 环形缓冲覆盖数；订阅建立前无人读取
+造成的历史覆盖不计入该值，因而可直接作为当前调参会话的数据完整性判据。
 
 ```text
 timestamp_us:u32, requested_target_ma:i16, applied_target_ma:i16,

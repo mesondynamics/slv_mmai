@@ -26,13 +26,15 @@ NonSecure 域负责 LwIP UDP V2、CAN1/J1939 和速度采集。CAN2 只完成硬
 
 ```sh
 sudo ./tools/configure_ecu_network.sh
+./tools/check_ecu_latency.sh
 ./tools/ecu_debug_ui.py --ecu-ip 172.16.0.11
 ```
 
 浏览器打开 <http://127.0.0.1:8088>。脚本只给 `enp2s0` 创建独立的
 `ecu-bench` 配置（`172.16.0.10/16`、无默认路由），不会删除原连接。
 UI 的“电流 PI 调参”页提供 1 kHz 实时波形、RAM 实时应用与显式 Flash 保存；
-固件升级镜像不占用参数扇区。
+固件升级镜像不占用参数扇区。`check_ecu_latency.sh` 对 100 包零丢包、平均
+RTT≤1 ms、最大 RTT≤5 ms 设置硬门槛，应在空闲和遥测开启时都执行。
 
 构建产物：
 

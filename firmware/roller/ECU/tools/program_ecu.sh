@@ -11,6 +11,9 @@ task_secure_image="${task_project_dir}/Secure/build/Debug/ECU_S.elf"
 task_nonsecure_image="${task_project_dir}/NonSecure/build/Debug/ECU_NS.elf"
 task_backup_root="${ECU_BACKUP_DIR:-${task_project_dir}/artifacts/device-backups}"
 task_connect=( -c port=SWD "sn=${task_probe}" mode=UR reset=HWrst )
+task_valve_parameter_address="0x080FA000"
+task_valve_parameter_size="0x4000"
+task_valve_parameter_backup=""
 
 if [[ ! -x "${task_cli}" ]]; then
   echo "STM32CubeProgrammer CLI not found: ${task_cli}" >&2
@@ -89,10 +92,47 @@ check_trustzone_layout() {
   fi
 }
 
+backup_valve_parameters() {
+  local task_timestamp
+  task_timestamp="$(date -u +'%Y%m%dT%H%M%SZ')"
+  umask 077
+  mkdir -p -- "${task_backup_root}"
+  task_valve_parameter_backup="${task_backup_root}/stm32h563-${task_probe}-${task_timestamp}-valve-parameters-before.bin"
+  "${task_cli}" "${task_connect[@]}" -u \
+    "${task_valve_parameter_address}" "${task_valve_parameter_size}" \
+    "${task_valve_parameter_backup}"
+  sha256sum "${task_valve_parameter_backup}" > \
+    "${task_valve_parameter_backup}.sha256"
+  printf 'Valve parameter sectors backed up before firmware update:\n  %s\n' \
+    "${task_valve_parameter_backup}"
+}
+
+verify_valve_parameters_unchanged() {
+  local task_after
+  task_after="${task_valve_parameter_backup%-before.bin}-after.bin"
+  "${task_cli}" "${task_connect[@]}" -u \
+    "${task_valve_parameter_address}" "${task_valve_parameter_size}" \
+    "${task_after}"
+  sha256sum "${task_after}" > "${task_after}.sha256"
+  if ! cmp -s -- "${task_valve_parameter_backup}" "${task_after}"; then
+    printf 'ERROR: firmware update changed reserved valve parameter sectors.\nPre-update data remains at:\n  %s\n' \
+      "${task_valve_parameter_backup}" >&2
+    exit 5
+  fi
+  printf 'Valve parameter sectors verified unchanged after firmware update.\n'
+}
+
 flash_images() {
+  local task_preserve_parameters="${1:-yes}"
   check_images
+  if [[ "${task_preserve_parameters}" == "yes" ]]; then
+    backup_valve_parameters
+  fi
   "${task_cli}" "${task_connect[@]}" -d "${task_secure_image}" -v
   "${task_cli}" "${task_connect[@]}" -d "${task_nonsecure_image}" -v
+  if [[ "${task_preserve_parameters}" == "yes" ]]; then
+    verify_valve_parameters_unchanged
+  fi
   "${task_cli}" "${task_connect[@]}" -rst
 }
 
@@ -107,7 +147,7 @@ case "${task_action}" in
   flash)
     check_target_identity
     check_trustzone_layout
-    flash_images
+    flash_images yes
     ;;
   provision-and-flash)
     if [[ "${task_confirmation}" != "--accept-existing-flash-erase" ]]; then
@@ -133,7 +173,9 @@ EOF
       SECWM1_STRT=0x0 SECWM1_END=0x7F \
       SECWM2_STRT=0x1 SECWM2_END=0x0
     check_trustzone_layout
-    flash_images
+    # Provisioning is explicitly authorized to invalidate all prior Flash;
+    # the complete pre-migration backup above remains the recovery artifact.
+    flash_images no
     ;;
   *)
     echo "Usage: $0 {inspect|backup|flash|provision-and-flash [--accept-existing-flash-erase]}" >&2

@@ -14,7 +14,6 @@
 
 #define ECU_ETH_IFNAME0                  'e'
 #define ECU_ETH_IFNAME1                  '0'
-#define ECU_ETH_TX_TIMEOUT_MS            20U
 #define ECU_ETH_RX_BUFFER_SIZE           1536U
 #define ECU_ETH_RX_BUFFER_COUNT          12U
 
@@ -81,13 +80,20 @@ static err_t LowLevelOutput(struct netif *netif, struct pbuf *p)
     return ERR_ARG;
   }
 
+  /* Reclaim completed asynchronous descriptors before reserving another one.
+     A pbuf reference is retained in pData until HAL_ETH_ReleaseTxPacket calls
+     HAL_ETH_TxFreeCallback. This keeps the no-RTOS LwIP path non-blocking:
+     status/diagnostic traffic can no longer stall RX polling for a HAL timeout. */
+  (void)HAL_ETH_ReleaseTxPacket(&heth);
   TxConfig.Length = p->tot_len;
   TxConfig.TxBuffer = buffers;
-  TxConfig.pData = NULL;
-  status = HAL_ETH_Transmit(&heth, &TxConfig, ECU_ETH_TX_TIMEOUT_MS);
-  /* Polling transmit is complete on return. Release descriptor bookkeeping,
-     but do not free the caller-owned pbuf. */
-  (void)HAL_ETH_ReleaseTxPacket(&heth);
+  TxConfig.pData = p;
+  pbuf_ref(p);
+  status = HAL_ETH_Transmit_IT(&heth, &TxConfig);
+  if (status != HAL_OK)
+  {
+    pbuf_free(p);
+  }
   return (status == HAL_OK) ? ERR_OK : ERR_IF;
 }
 
@@ -106,6 +112,10 @@ void ethernetif_input(struct netif *netif)
 {
   struct pbuf *packet;
 
+  /* Transmit completion is polled rather than interrupt-driven, but never
+     waited for. The tight application loop therefore bounds RX latency while
+     keeping descriptor/pbuf lifetime explicit. */
+  (void)HAL_ETH_ReleaseTxPacket(&heth);
   do
   {
     packet = LowLevelInput();
@@ -235,8 +245,8 @@ void HAL_ETH_RxLinkCallback(void **start, void **end, uint8_t *buffer,
 
 void HAL_ETH_TxFreeCallback(uint32_t *buffer)
 {
-  /* Polling TX uses no retained packet. Keep this guard for HAL descriptor
-     release and for a future interrupt-mode conversion. */
+  /* Asynchronous TX retains one pbuf reference in the descriptor until the
+     polling release path observes DMA completion. */
   if (buffer != NULL)
   {
     pbuf_free((struct pbuf *)buffer);

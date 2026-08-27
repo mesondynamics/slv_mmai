@@ -20,6 +20,7 @@
 #define STATUS_PERIOD_MS             50UL
 #define DIAGNOSTIC_PERIOD_MS        100UL
 #define LINK_POLL_PERIOD_MS         250UL
+#define TELEMETRY_SEND_PERIOD_MS      8UL
 #define CONTROL_PRIORITY_EMERGENCY  255U
 #define CONTROL_MAX_SENDERS           6U
 #define TUNING_SUBSCRIPTION_MAX_MS  2000UL
@@ -57,11 +58,14 @@ static uint32_t last_apply_tick;
 static uint32_t last_status_tick;
 static uint32_t last_diagnostic_tick;
 static uint32_t last_link_poll_tick;
+static uint32_t last_telemetry_tick;
 static uint32_t secure_command_sequence;
 static uint8_t outputs_armed;
 static ip_addr_t telemetry_client_address;
 static uint16_t telemetry_client_port;
 static uint32_t telemetry_subscription_deadline;
+static uint32_t telemetry_dropped_baseline;
+static uint8_t telemetry_dropped_baseline_valid;
 static uint32_t transmit_sequence;
 
 static bool Network_SequenceIsNewer(uint32_t value, uint32_t previous)
@@ -205,8 +209,8 @@ static void Network_ExpireSlots(uint32_t now)
         Network_TimeExpired(now, slot->last_update_tick, CONTROL_TIMEOUT_MS))
     {
       slot->active = false;
-      /* A sequence number belongs to one live control session.  Once the
-         watchdog expires, allow a restarted legacy client (which starts its
+      /* A sequence number belongs to one live control session. Once the
+         watchdog expires, allow a restarted V2 client (which may start its
          sequence again at zero) to establish a new session. */
       slot->sequence_valid = false;
     }
@@ -398,7 +402,7 @@ static void Network_ApplyAuthority(uint32_t now)
   {
     /* Also clear the reported authority after an emergency-only slot expires.
        In that state the outputs are already disarmed, so testing outputs_armed
-       alone would leave the legacy status stuck in emergency mode. */
+       alone would leave V2 status stuck in emergency mode. */
     if (selection_changed || (outputs_armed != 0U))
     {
       ECU_DataModelControlLost();
@@ -654,6 +658,7 @@ static void Network_ReceiveTuning(void *argument, struct udp_pcb *pcb,
         telemetry_client_port = payload.subscribe.destination_port;
         telemetry_subscription_deadline =
             HAL_GetTick() + payload.subscribe.ttl_ms;
+        telemetry_dropped_baseline_valid = 0U;
         result = SAFETY_RESULT_OK;
       }
       else if (!Network_TuningAuthorized(address))
@@ -679,6 +684,7 @@ static void Network_SendValveTelemetry(uint32_t now)
       ((int32_t)(now - telemetry_subscription_deadline) >= 0))
   {
     telemetry_client_port = 0U;
+    telemetry_dropped_baseline_valid = 0U;
     return;
   }
   if ((SECURE_SafetyReadValveTelemetry(&batch) != SAFETY_RESULT_OK) ||
@@ -686,6 +692,15 @@ static void Network_SendValveTelemetry(uint32_t now)
   {
     return;
   }
+  /* The Secure ring runs continuously so pre-subscription overwrites are not
+     transport loss. Report a session-relative counter to make the tuning UI
+     and acceptance logs distinguish live loss from an idle historical count. */
+  if (telemetry_dropped_baseline_valid == 0U)
+  {
+    telemetry_dropped_baseline = batch.dropped_samples;
+    telemetry_dropped_baseline_valid = 1U;
+  }
+  batch.dropped_samples -= telemetry_dropped_baseline;
   counters.telemetry_dropped_samples = batch.dropped_samples;
   payload_size = (uint16_t)(offsetof(SAFETY_ValveTelemetryBatch, samples) +
       ((uint32_t)batch.sample_count * sizeof(batch.samples[0])));
@@ -712,6 +727,9 @@ bool ECU_NetworkInit(void)
   secure_command_sequence = 0U;
   telemetry_client_port = 0U;
   telemetry_subscription_deadline = 0U;
+  telemetry_dropped_baseline = 0U;
+  telemetry_dropped_baseline_valid = 0U;
+  last_telemetry_tick = HAL_GetTick();
   transmit_sequence = 0U;
 
   lwip_init();
@@ -743,9 +761,8 @@ bool ECU_NetworkInit(void)
     tuning_pcb = NULL;
     return false;
   }
-  /* The previous W5500 firmware used UDP/50001 as both the status destination
-     and source port.  Bind explicitly so existing receivers that validate the
-     source tuple continue to work. */
+  /* Keep UDP/50001 as both the status destination and source port so receivers
+     can validate the source tuple consistently. */
   ip_set_option(control_pcb, SOF_BROADCAST);
   ip_set_option(transmit_pcb, SOF_BROADCAST);
   bind_result = udp_bind(control_pcb, IP_ANY_TYPE, ECU_CONTROL_PORT);
@@ -792,7 +809,11 @@ void ECU_NetworkProcess(void)
     ethernet_link_check_state(&ecu_netif);
   }
   Network_ApplyAuthority(now);
-  Network_SendValveTelemetry(now);
+  if ((uint32_t)(now - last_telemetry_tick) >= TELEMETRY_SEND_PERIOD_MS)
+  {
+    last_telemetry_tick = now;
+    Network_SendValveTelemetry(now);
+  }
   if ((now - last_status_tick) >= STATUS_PERIOD_MS)
   {
     last_status_tick = now;

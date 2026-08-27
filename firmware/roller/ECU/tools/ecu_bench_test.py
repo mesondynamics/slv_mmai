@@ -152,6 +152,11 @@ def main() -> int:
     parser.add_argument("--ecu-ip", default="172.16.0.11")
     parser.add_argument("--accept-unloaded-actuation", action="store_true",
                         help="confirm that relay/valve actuation is safe on this bench")
+    parser.add_argument(
+        "--accept-disconnected-valves", action="store_true",
+        help=("valve coils are disconnected: verify target/PWM/reversal logic "
+              "but explicitly skip physical current tracking"),
+    )
     args = parser.parse_args()
     if not args.accept_unloaded_actuation:
         parser.error("--accept-unloaded-actuation is required")
@@ -200,20 +205,38 @@ def main() -> int:
                   "power_latch_on": 1, "main_power_relay_on": 1,
                   "steering_enable": 1}, BASE)
         forward = {**neutral, "valve_current_target_ma": 200}
-        require(bench.drive([(forward, 2, False)], 1.25,
-                            lambda: 120 <= int(bench.status["forward_current_ma"]) <= 300 and
-                            int(bench.status["forward_duty_permille"]) > 0 and
-                            int(bench.status["reverse_duty_permille"]) == 0),
-                "forward valve did not track 200 mA with exclusive PWM")
-        print("PASS  前进阀 200 mA 闭环及 PWM 互斥")
+        if args.accept_disconnected_valves:
+            require(bench.drive([(forward, 2, False)], 1.25,
+                                lambda: int(bench.status["valve_applied_target_ma"]) == 200 and
+                                int(bench.status["forward_current_ma"]) < 50 and
+                                int(bench.status["forward_duty_permille"]) >= 550 and
+                                int(bench.status["reverse_duty_permille"]) == 0),
+                    "forward disconnected-valve target/PWM check failed")
+            print("PASS  前进阀目标斜坡及 PWM 互斥（线圈未接，闭环电流验收 SKIP）")
+        else:
+            require(bench.drive([(forward, 2, False)], 1.25,
+                                lambda: 120 <= int(bench.status["forward_current_ma"]) <= 300 and
+                                int(bench.status["forward_duty_permille"]) > 0 and
+                                int(bench.status["reverse_duty_permille"]) == 0),
+                    "forward valve did not track 200 mA with exclusive PWM")
+            print("PASS  前进阀 200 mA 闭环及 PWM 互斥")
         passed += 1
         reverse = {**neutral, "valve_current_target_ma": -200}
-        require(bench.drive([(reverse, 2, False)], 1.65,
-                            lambda: 120 <= int(bench.status["reverse_current_ma"]) <= 300 and
-                            int(bench.status["reverse_duty_permille"]) > 0 and
-                            int(bench.status["forward_duty_permille"]) == 0),
-                "reverse valve did not complete safe reversal and track 200 mA")
-        print("PASS  安全换向及后退阀 200 mA 闭环 / PWM 互斥")
+        if args.accept_disconnected_valves:
+            require(bench.drive([(reverse, 2, False)], 1.65,
+                                lambda: int(bench.status["valve_applied_target_ma"]) == -200 and
+                                int(bench.status["reverse_current_ma"]) < 50 and
+                                int(bench.status["reverse_duty_permille"]) >= 550 and
+                                int(bench.status["forward_duty_permille"]) == 0),
+                    "reverse disconnected-valve target/PWM check failed")
+            print("PASS  安全换向及后退阀 PWM 互斥（线圈未接，闭环电流验收 SKIP）")
+        else:
+            require(bench.drive([(reverse, 2, False)], 1.65,
+                                lambda: 120 <= int(bench.status["reverse_current_ma"]) <= 300 and
+                                int(bench.status["reverse_duty_permille"]) > 0 and
+                                int(bench.status["forward_duty_permille"]) == 0),
+                    "reverse valve did not complete safe reversal and track 200 mA")
+            print("PASS  安全换向及后退阀 200 mA 闭环 / PWM 互斥")
         passed += 1
         bench.drive([(neutral, 2, False)], 0.45)
 
@@ -294,6 +317,8 @@ def main() -> int:
         bench.close()
 
     print(f"\nBench protocol acceptance passed: {passed} checks.")
+    if args.accept_disconnected_valves:
+        print("WARNING: valve current tracking was skipped because both coils were declared disconnected.")
     print("Note: diagnostic masks verify ECU logic; inspect relay contacts electrically before loading.")
     return 0
 
