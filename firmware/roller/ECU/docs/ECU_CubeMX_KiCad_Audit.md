@@ -19,9 +19,10 @@ CAN 位时序、ETH MAC、DMA、定时器和 TrustZone 属性均已写回 `.ioc`
 `Secure_nsclib` 和用户维护的 CMake 文件内；CubeMX 再生成不会删除这些文件。
 
 当前 PCB 的 PB8/PB9 物理网络接反，已按用户决定改为 Secure GPIO 开漏模拟
-I²C：`PB8=SW_I2C_SDA`、`PB9=SW_I2C_SCL`，无需飞线。ATECC608C 协议功能
-明确延期；目前只做总线释放、时钟拉伸超时和 9 个 SCL 脉冲恢复，故障会上报
-但不会阻止车辆基本功能。
+I²C：`PB8=SW_I2C_SDA`、`PB9=SW_I2C_SCL`，无需飞线。软件总线包含释放、
+时钟拉伸超时和 9 个 SCL 脉冲恢复；ATECC608C 已在 Secure 域完成探测、锁区、
+P-256 随机挑战和 MCU/安全芯片配对。总线、芯片、锁状态、配置 CRC、序列号、
+MCU UID 或签名任一不匹配都会禁止执行器 ARM 和 OTA 试运行确认。
 
 LwIP 在 STM32H5 当前 CubeMX 工程中作为项目自有中间件集成。CubeMX 继续生成
 ETH HAL、描述符和引脚初始化；LwIP、LAN8742 接口和 ECU UDP 应用放在生成目录
@@ -189,26 +190,29 @@ ECO 编号建议：`ECU-R2-I2C-001`。
 当前板代码和 UI 中均以 `SW_I2C_PCB_R1` capability 标识此临时方案，避免它
 被误认为下一版的长期设计。
 
-## 6. Option Bytes：CubeMX 外的人工步骤
+## 6. OEMiROT 与 Option Bytes：CubeMX 外的受控步骤
 
-Option Bytes 不属于 `.ioc`。烧录前先只读导出并核对：
+Option Bytes、OBKeys 和产品生命周期不属于 `.ioc`。当前 OEMiROT 台架基线为：
 
-- `TZEN` 已启用；
-- `SECBOOTADD=0x0C000000`，开发期 `SECBOOT_LOCK=0xC3`（未锁定）；
-- Bank1 secure watermark 覆盖 Secure/NSC 镜像；
-- Bank2 为 NonSecure，可从 `0x08100000` 启动；
-- 开发期保持 RDP Level 0 和可用 SWD；
-- 不在未备份、未核对 RM0481 的情况下修改 SECWM、RDP、BOOT_LOCK。
+- STM32H563 Device ID `0x484`，`TZEN=0xB4`，产品状态仍为 OPEN；
+- `BOOT_UBE=0xB4`，`SECBOOTADD=0x0C000000` 且 `SECBOOT_LOCK=0xB4`；
+- Bank1 全部 Secure、Bank2 NonSecure，禁止 Bank Swap；
+- WRP group 0..3 保护 OEMiROT，HDP Bank1 `0x00..0x17` 隐藏 boot+scratch；
+- DA OBK 只授权 Full Regression（整片擦除），不授权调试重开；
+- Secure SRAM2 在 reset 清除并启用 ECC。
 
-本工程的 `tools/program_ecu.sh provision-and-flash` 在首次写 Option Bytes 前强制
-核对芯片 ID/Product State，并备份完整 2 MiB Flash、Option Bytes 与 SHA-256；
-任何备份失败都中止迁移。该保护不替代对授权、能量隔离和目标序列号的人工复核。
+`tools/provision_oemirot_open.sh` 在任何破坏性迁移前核对芯片、探针和产品状态，
+备份完整 2 MiB Flash、Option Bytes、持久区及 SHA-256，并按阶段写日志。当前样件
+已经完成 OBKey provision；JP1 必须保持断开。`ReleaseOpen` 只是优化后的 OPEN
+台架引导配置，不会开启开发日志或停机错误处理；`ReleaseClosed` 才是最终 CLOSED
+镜像。不可逆转换的条件和操作边界见 `ECU_Security_and_OTA.md`。
 
-当前 linker：Secure `0x0C000000` 长 1000 KiB，Bank1 sectors 125/126 的
-`0x0C0FA000..0x0C0FDFFF` 保留给阀参数双扇区日志，NSC `0x0C0FE000` 长
-8 KiB；NonSecure `0x08100000` 长 1024 KiB。附加 linker ASSERT 即使 CubeMX
-重写主 linker，也会阻止镜像进入参数扇区。若实芯片 Option Bytes 与此布局不一致，
-停止烧录并先评审迁移；不得自动写入未知安全选项。
+OEMiROT 固定布局由 `Shared/ecu_flash_layout.h` 单点定义：boot 128 KiB、scratch
+64 KiB、Secure primary/secondary 各 192 KiB、NonSecure secondary/primary 各
+320 KiB，中间 `0x0C0E0000..0x0C0FFFFF` 的 128 KiB 专用于安全身份、OTA 日志
+和阀参数。应用 vector 分别为 `0x0C030400` 和 `0x08100400`。构建期 ASSERT 阻止
+镜像、trailer 或持久区互相越界；不得再用旧的直接 Secure/NonSecure linker 布局
+烧录 OEMiROT 样件。
 
 NonSecure `.bss` 中包含 ETH 描述符及全部 LwIP pool；链接片段
 `NonSecure/App/Linker/eth_dma_sram3_guard.ld` 强制它不超过
@@ -217,7 +221,9 @@ NonSecure `.bss` 中包含 ETH 描述符及全部 LwIP pool；链接片段
 
 ## 7. 明确保留项与工业化缺口
 
-- ATECC608C 按需求延期；当前只有软件 I²C 基础层和总线健康诊断。
+- ATECC608C 启动验证、MCU 配对、锁区和 OEMiROT/OTA 已实现；当前样件仍为 OPEN，
+  因此 ST-Link 防导出尚未最终生效。量产前必须按安全文档完成离线 PKI 备份、
+  安装 ReleaseClosed 并经双人复核转换 CLOSED。
 - CAN2 预留，不启动；车辆通信全部迁移到 CAN1。
 - 当前 PCB 无转向执行器、主电源继电器、电源锁存和 indicator1/2/3 对应输出；
   V2 继续接收这些兼容字段但无动作，状态固定为 0。
@@ -231,8 +237,10 @@ NonSecure `.bss` 中包含 ETH 描述符及全部 LwIP pool；链接片段
   阀电流已按原理图 1 mV/mA 基线实现可调增益/偏置、上电零点校准、过流、
   开路、非活动通道电流和 ADC 轨故障保护；这些阈值在量产前仍必须用标准电流表
   校准并做开短路故障注入，不能只依赖软件仿真。
-- Secure Boot、镜像签名、防回滚、持久化故障日志、量产密钥流程、诊断访问
-  控制尚未在本阶段需求中定义。
+- 控制/诊断 V2 UDP 仍面向隔离车辆网络，不具备端到端鉴权；只有 OTA 包有独立
+  ECDSA 传输签名和 OEMiROT 镜像认证。不可把 50001..50006 直接暴露到不可信网络。
+- 持久化故障事件日志尚未实现；量产还需为每块板建立唯一序列、ATECC 配对记录、
+  证书/密钥托管、工装权限和报废/返修流程。
 - 单路 MCU 急停输入和软件控制不能独立宣称 SIL/PL。最终车辆必须保留独立的
   硬件安全链，并依据目标法规完成风险分析、EMC、环境、电气和耐久验证。
 

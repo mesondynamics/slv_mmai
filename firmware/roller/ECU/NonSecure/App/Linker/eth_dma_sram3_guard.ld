@@ -6,3 +6,9 @@
  */
 ASSERT(__bss_end__ <= 0x20060000,
        "NonSecure .bss exceeds the reviewed 64 KiB ETH DMA SRAM3 window")
+
+ASSERT(!DEFINED(ECU_OEMIROT_LAYOUT) || __data_source_end <= 0x0814E000,
+       "NonSecure signed image body overlaps MCUboot trailer")
+
+ASSERT(ADDR(._user_heap_stack) + SIZEOF(._user_heap_stack) <= 0x2009C000,
+       "NonSecure heap reservation overlaps the reviewed 16 KiB stack")

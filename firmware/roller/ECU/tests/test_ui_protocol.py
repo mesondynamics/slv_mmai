@@ -22,6 +22,7 @@ class ProtocolV2Test(unittest.TestCase):
         self.assertEqual(struct.calcsize(UI.TELEMETRY_BATCH_FORMAT), 12)
         self.assertEqual(struct.calcsize(UI.TELEMETRY_SAMPLE_FORMAT), 20)
         self.assertEqual(struct.calcsize(UI.CHANNEL_CONFIG_FORMAT), 20)
+        self.assertEqual(UI.OTA_MAX_PACKAGE_SIZE, 2 * 1024 * 1024)
         self.assertEqual(len(UI.STATUS_FIELDS), 64)
         self.assertEqual(len(UI.DIAGNOSTIC_FIELDS), 32)
         self.assertEqual(len(UI.CONTROL_FIELDS), 29)
@@ -87,6 +88,7 @@ class ProtocolV2Test(unittest.TestCase):
         self.assertIn("valve_current_target_ma", html)
         self.assertIn("/api/valve/apply", html)
         self.assertIn("/api/valve/stream", html)
+        self.assertIn("/api/ota/upload", html)
         self.assertNotIn("throttle_percent", html)
 
 

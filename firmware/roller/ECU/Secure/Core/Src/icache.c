@@ -34,6 +34,16 @@ void MX_ICACHE_Init(void)
 
   /* USER CODE BEGIN ICACHE_Init 1 */
 
+  /* OEMiROT enables ICACHE while authenticating the paired images.  The HAL
+     refuses to change associativity while the cache is enabled, so make the
+     bootloader-to-application handoff idempotent before applying the CubeMX
+     DirectMappedCache setting below. */
+  if ((HAL_ICACHE_IsEnabled() != 0U) &&
+      (HAL_ICACHE_Disable() != HAL_OK))
+  {
+    Error_Handler();
+  }
+
   /* USER CODE END ICACHE_Init 1 */
 
   /** Enable instruction cache in 1-way (direct mapped cache)

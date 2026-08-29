@@ -29,6 +29,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "ecu_flash_layout.h"
 #include "safety_service.h"
 
 /* USER CODE END Includes */
@@ -48,7 +49,11 @@
 /* Non-secure Vector table to jump to (internal Flash Bank2 here)             */
 /* Caution: address must correspond to non-secure internal Flash where is     */
 /*          mapped in the non-secure vector table                             */
+#if defined(ECU_OEMIROT_LAYOUT)
+#define VTOR_TABLE_NS_START_ADDR  0x08100400U
+#else
 #define VTOR_TABLE_NS_START_ADDR  0x08100000U
+#endif
 
 /* USER CODE END VTOR_TABLE*/
 
@@ -74,6 +79,97 @@ static void MPU_Config(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
+#define SECURITY_SAU_UID_REGION          7U
+#define SECURITY_SAU_UID_WINDOW_SIZE     0x40U
+
+static void SecuritySau_SetRegion(uint32_t region, uint32_t base,
+                                  uint32_t limit, uint32_t nsc)
+{
+  SAU->RNR = region & SAU_RNR_REGION_Msk;
+  SAU->RBAR = base & SAU_RBAR_BADDR_Msk;
+  SAU->RLAR = (limit & SAU_RLAR_LADDR_Msk) |
+              ((nsc != 0U) ? SAU_RLAR_NSC_Msk : 0U) |
+              SAU_RLAR_ENABLE_Msk;
+}
+
+static void SecurityMpu_ClearOemirotInheritedRegions(void)
+{
+  uint32_t region;
+  uint32_t region_count =
+      (MPU->TYPE & MPU_TYPE_DREGION_Msk) >> MPU_TYPE_DREGION_Pos;
+
+  /*
+   * JumpHDPLvl3 deliberately hands the application an enabled MPU whose
+   * regions constrain the OEMiRoT execution surface.  CubeMX MPU_Config()
+   * overwrites region 0 but does not disable the remaining inherited regions.
+   * They therefore retain higher priority than the application region and can
+   * reject otherwise valid HDPL3 accesses.  Preserve the CubeMX-owned region 0
+   * and explicitly retire every boot-stage-only comparator before re-enabling
+   * the privileged background map.
+   */
+  HAL_MPU_Disable();
+  for (region = 1U; region < region_count; ++region)
+  {
+    MPU->RNR = region;
+    MPU->RLAR = 0U;
+  }
+  MPU->RNR = MPU_REGION_NUMBER0;
+  HAL_MPU_Enable(MPU_PRIVILEGED_DEFAULT);
+  __DSB();
+  __ISB();
+}
+
+static void SecuritySau_ConfigureOemirotApplication(void)
+{
+  /*
+   * JumpHDPLvl3 leaves RSS hand-off regions in the SAU, while the generic
+   * CubeMX SystemInit deliberately disables the SAU.  Rebuild the minimum
+   * HDPL3 application attribution here without rewriting RSS-owned region 2.
+   * On STM32H563 RSS uses region 2 while transitioning through HDPL1; direct
+   * replacement of that comparator makes the engineering-information bus
+   * window fault even if an overlapping region is subsequently installed.
+   * Region 7 therefore carries the runtime UID/flash-size window.
+   *
+   * This code is in a CubeMX USER CODE section because the CubeMX SAU page
+   * cannot express an OEMiROT hand-off that preserves an RSS-owned region.
+   */
+  SAU->CTRL = 0U;
+  __DSB();
+  __ISB();
+
+  SecuritySau_SetRegion(
+      0U,
+      ECU_FLASH_BASE_S + ECU_CMSE_VENEER_OFFSET,
+      ECU_FLASH_BASE_S + ECU_CMSE_VENEER_OFFSET +
+          ECU_CMSE_VENEER_SIZE - 1U,
+      1U);
+  SecuritySau_SetRegion(
+      1U,
+      ECU_FLASH_BASE_NS + ECU_NONSECURE_PRIMARY_OFFSET,
+      ECU_FLASH_BASE_NS + ECU_NONSECURE_PRIMARY_OFFSET +
+          ECU_NONSECURE_PRIMARY_SIZE - 1U,
+      0U);
+  SecuritySau_SetRegion(
+      3U,
+      PERIPH_BASE_NS,
+      PERIPH_BASE_NS + 0x0FFFFFFFUL,
+      0U);
+  SecuritySau_SetRegion(
+      4U,
+      SRAM3_BASE_NS,
+      SRAM3_BASE_NS + SRAM3_SIZE - 1U,
+      0U);
+  SecuritySau_SetRegion(
+      SECURITY_SAU_UID_REGION,
+      UID_BASE,
+      UID_BASE + SECURITY_SAU_UID_WINDOW_SIZE - 1U,
+      0U);
+
+  SAU->CTRL = SAU_CTRL_ENABLE_Msk;
+  __DSB();
+  __ISB();
+}
+
 /* USER CODE END 0 */
 
 /**
@@ -96,6 +192,12 @@ int main(void)
   HAL_Init();
 
   /* USER CODE BEGIN Init */
+
+  /* Retire OEMiRoT-only MPU regions, then restore the reviewed HDPL3
+     attribution before the first STM32 UID read.  Both changes are in a
+     CubeMX USER CODE block and therefore survive code regeneration. */
+  SecurityMpu_ClearOemirotInheritedRegions();
+  SecuritySau_ConfigureOemirotApplication();
 
   /* USER CODE END Init */
 
@@ -123,7 +225,6 @@ int main(void)
   {
     Error_Handler();
   }
-
   /* USER CODE END 2 */
 
   /*************** Setup and jump to non-secure *******************************/

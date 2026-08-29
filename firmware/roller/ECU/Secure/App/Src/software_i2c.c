@@ -4,6 +4,8 @@
 
 #define SOFTWARE_I2C_HALF_PERIOD_US       5UL
 #define SOFTWARE_I2C_STRETCH_TIMEOUT_US   1000UL
+#define SOFTWARE_I2C_WAKE_LOW_US            80UL
+#define SOFTWARE_I2C_WAKE_HIGH_US         2500UL
 
 static uint32_t cycles_per_us;
 
@@ -216,6 +218,28 @@ bool SoftwareI2C_Init(void)
     cycles_per_us = 1U;
   }
   return SoftwareI2C_RecoverBus();
+}
+
+bool SoftwareI2C_WakeToken(void)
+{
+  SoftwareI2C_SdaRelease();
+  if (!SoftwareI2C_WaitSclHigh())
+  {
+    return false;
+  }
+  SoftwareI2C_DelayUs(SOFTWARE_I2C_HALF_PERIOD_US);
+  if (!SoftwareI2C_SdaIsHigh())
+  {
+    return false;
+  }
+  /* CryptoAuthentication I2C wake token: SDA low for tWLO while SCL stays
+     high, followed by tWHI before reading the four-byte wake response. */
+  SoftwareI2C_SdaLow();
+  SoftwareI2C_DelayUs(SOFTWARE_I2C_WAKE_LOW_US);
+  SoftwareI2C_SdaRelease();
+  SoftwareI2C_DelayUs(SOFTWARE_I2C_WAKE_HIGH_US);
+  return SoftwareI2C_SdaIsHigh() &&
+         ((SW_I2C_SCL_GPIO_Port->IDR & SW_I2C_SCL_Pin) != 0U);
 }
 
 bool SoftwareI2C_Write(uint8_t address_7bit, const uint8_t *data, size_t length)

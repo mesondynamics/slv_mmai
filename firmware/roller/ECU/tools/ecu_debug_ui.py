@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import ipaddress
 import json
 import select
@@ -12,6 +13,7 @@ import socket
 import struct
 import threading
 import time
+import tempfile
 from collections import deque
 from dataclasses import dataclass, field
 from http import HTTPStatus
@@ -25,9 +27,11 @@ CONTROL_PORT = 50002
 DIAGNOSTIC_PORT = 50003
 TELEMETRY_PORT = 50004
 TUNING_PORT = 50005
+OTA_MAX_PACKAGE_SIZE = 2 * 1024 * 1024
 SEND_PERIOD_S = 0.05
 SUBSCRIBE_PERIOD_S = 1.0
 BROWSER_DEADMAN_S = 1.0
+TUNING_CLIENT_LEASE_S = 1.5
 
 V2_MAGIC = 0x32554345
 V2_VERSION = 2
@@ -39,6 +43,7 @@ MSG_CONTROL = 0x01
 MSG_STATUS = 0x02
 MSG_DIAGNOSTIC = 0x03
 MSG_TELEMETRY = 0x04
+MSG_SECURITY = 0x05
 MSG_CONFIG_GET = 0x10
 MSG_CONFIG_APPLY = 0x11
 MSG_CONFIG_SAVE = 0x12
@@ -46,6 +51,7 @@ MSG_CONFIG_RELOAD = 0x13
 MSG_CONFIG_REPLY = 0x14
 MSG_TELEMETRY_SUBSCRIBE = 0x15
 MSG_OPERATION_ACK = 0x16
+MSG_TELEMETRY_UNSUBSCRIBE = 0x17
 
 CONTROL_FLAG_CLEAR_FAULT = 1 << 0
 CONTROL_FLAG_RELEASE = 1 << 1
@@ -53,6 +59,7 @@ CONTROL_FLAG_RELEASE = 1 << 1
 CONTROL_FORMAT = "<BBH19BbhHBh5B"
 STATUS_FORMAT = "<IIHh9H20BbB7BHBBhHBhHhBBhhHHHHBBHII"
 DIAGNOSTIC_FORMAT = "<12I12Hb5BII"
+SECURITY_FORMAT = "<IIiI3I9s4s4B3xiI"
 TELEMETRY_BATCH_FORMAT = "<IIHH"
 TELEMETRY_SAMPLE_FORMAT = "<IhhHHHHHH"
 CHANNEL_CONFIG_FORMAT = "<6HihH"
@@ -253,6 +260,16 @@ def unpack_config_reply(payload: bytes) -> dict[str, Any]:
     }
 
 
+def load_ota_module() -> Any:
+    module_path = Path(__file__).with_name("ethernet_ota.py")
+    spec = importlib.util.spec_from_file_location("ecu_ethernet_ota", module_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("unable to load Ethernet OTA transport")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 @dataclass
 class BenchState:
     ecu_ip: str = "172.16.0.11"
@@ -262,6 +279,7 @@ class BenchState:
     control: dict[str, int] = field(default_factory=neutral_control)
     status: dict[str, Any] | None = None
     diagnostic: dict[str, Any] | None = None
+    security: dict[str, Any] | None = None
     valve_config: dict[str, Any] | None = None
     latest_telemetry: dict[str, Any] | None = None
     status_received_at: float = 0.0
@@ -275,6 +293,10 @@ class BenchState:
     engine_reset_at: float = 0.0
     tx_error: str = ""
     tuning_error: str = ""
+    ota: dict[str, Any] = field(default_factory=lambda: {
+        "active": False, "stage": "idle", "error": "",
+        "transferred": 0, "total": 0, "metadata": None,
+    })
 
 
 class BenchBridge:
@@ -295,6 +317,9 @@ class BenchBridge:
         self.awaited_replies: set[int] = set()
         self.telemetry_history: deque[dict[str, Any]] = deque(maxlen=10_000)
         self.telemetry_generation = 0
+        self.tuning_clients: dict[str, float] = {}
+        self.telemetry_subscribed = False
+        self.ota_thread: threading.Thread | None = None
         self.threads = [
             threading.Thread(target=self._sender_loop, name="ecu-control", daemon=True),
             threading.Thread(target=self._receiver_loop, name="ecu-rx", daemon=True),
@@ -313,6 +338,10 @@ class BenchBridge:
             thread.start()
 
     def close(self) -> None:
+        try:
+            self._send_unsubscribe()
+        except OSError:
+            pass
         try:
             self.release_control()
         except OSError:
@@ -380,6 +409,13 @@ class BenchBridge:
                 else:
                     packet = b""
                     target = ("0.0.0.0", 0)
+                self.tuning_clients = {
+                    client_id: expires_at
+                    for client_id, expires_at in self.tuning_clients.items()
+                    if expires_at > now
+                }
+                tuning_active = bool(self.tuning_clients)
+                telemetry_subscribed = self.telemetry_subscribed
             if packet:
                 try:
                     self.tx_socket.sendto(packet, target)
@@ -389,9 +425,11 @@ class BenchBridge:
                     with self.lock:
                         self.state.tx_error = str(error)
 
-            if now - last_subscribe >= SUBSCRIBE_PERIOD_S:
+            if tuning_active and now - last_subscribe >= SUBSCRIBE_PERIOD_S:
                 last_subscribe = now
                 self._send_subscription()
+            elif not tuning_active and telemetry_subscribed:
+                self._send_unsubscribe()
             deadline += SEND_PERIOD_S
             wait = deadline - time.monotonic()
             if wait < 0:
@@ -409,9 +447,27 @@ class BenchBridge:
                 encode_v2(MSG_TELEMETRY_SUBSCRIBE, 0, sequence, payload),
                 (ecu_ip, TUNING_PORT),
             )
+            with self.lock:
+                self.telemetry_subscribed = True
+                self.state.tuning_error = ""
         except OSError as error:
             with self.lock:
                 self.state.tuning_error = str(error)
+
+    def _send_unsubscribe(self) -> None:
+        with self.lock:
+            if not self.telemetry_subscribed:
+                return
+            sequence = self._next_tuning_sequence()
+            ecu_ip = self.state.ecu_ip
+        try:
+            self.tuning_socket.sendto(
+                encode_v2(MSG_TELEMETRY_UNSUBSCRIBE, 0, sequence, b""),
+                (ecu_ip, TUNING_PORT),
+            )
+        finally:
+            with self.lock:
+                self.telemetry_subscribed = False
 
     def _receiver_loop(self) -> None:
         while not self.stop_event.is_set():
@@ -442,6 +498,24 @@ class BenchBridge:
                         with self.lock:
                             self.state.diagnostic = dict(zip(DIAGNOSTIC_FIELDS, values))
                             self.state.diagnostic_received_at = received_at
+                    elif message_type == MSG_SECURITY and len(payload) == struct.calcsize(SECURITY_FORMAT):
+                        values = struct.unpack(SECURITY_FORMAT, payload)
+                        security = {
+                            "api_version": values[0], "flags": values[1],
+                            "atecc_result": values[2],
+                            "config_crc32c": values[3],
+                            "mcu_uid": "".join(f"{value:08x}" for value in values[4:7]),
+                            "serial": values[7].hex(),
+                            "revision": values[8].hex(),
+                            "i2c_address": values[9],
+                            "config_locked": values[10],
+                            "data_locked": values[11],
+                            "device_status": values[12],
+                            "auth_result": values[13],
+                            "pairing_generation": values[14],
+                        }
+                        with self.lock:
+                            self.state.security = security
                     elif message_type == MSG_TELEMETRY:
                         self._receive_telemetry(payload, received_at)
                     elif message_type == MSG_CONFIG_REPLY:
@@ -519,11 +593,16 @@ class BenchBridge:
     def snapshot(self) -> dict[str, Any]:
         now = time.monotonic()
         with self.lock:
+            tuning_clients = sum(
+                1 for expires_at in self.tuning_clients.values()
+                if expires_at > now
+            )
             return {
                 "ecu_ip": self.state.ecu_ip, "sender_id": self.state.sender_id,
                 "enabled": self.state.enabled, "emergency": self.state.emergency,
                 "control": dict(self.state.control), "status": self.state.status,
                 "diagnostic": self.state.diagnostic,
+                "security": self.state.security,
                 "valve_config": self.state.valve_config,
                 "latest_telemetry": self.state.latest_telemetry,
                 "status_age_ms": None if not self.state.status_received_at else
@@ -534,7 +613,88 @@ class BenchBridge:
                     int((now - self.state.telemetry_received_at) * 1000),
                 "tx_error": self.state.tx_error,
                 "tuning_error": self.state.tuning_error,
+                "tuning_active": tuning_clients > 0,
+                "tuning_clients": tuning_clients,
+                "ota": dict(self.state.ota),
             }
+
+    def start_ota(self, package_data: bytes) -> dict[str, Any]:
+        if not package_data or len(package_data) > OTA_MAX_PACKAGE_SIZE:
+            raise ValueError("OTA package must be 1 byte to 2 MiB")
+        ota = load_ota_module()
+        temporary = tempfile.NamedTemporaryFile(
+            prefix="roller-ecu-", suffix=".recu", delete=False
+        )
+        package_path = Path(temporary.name)
+        try:
+            temporary.write(package_data)
+            temporary.flush()
+            temporary.close()
+            _, _, _, metadata = ota.load_package(
+                package_path, ota.DEFAULT_PUBLIC_KEY
+            )
+        except Exception:
+            temporary.close()
+            package_path.unlink(missing_ok=True)
+            raise
+        with self.lock:
+            if self.state.ota["active"]:
+                package_path.unlink(missing_ok=True)
+                raise ValueError("an OTA transfer is already active")
+            self.state.control = neutral_control()
+            self.state.enabled = False
+            self.state.emergency = False
+            self.state.ota = {
+                "active": True, "stage": "queued", "error": "",
+                "transferred": 0,
+                "total": int(metadata["secure_size"]) +
+                         int(metadata["nonsecure_size"]),
+                "metadata": metadata,
+            }
+            ecu_ip = self.state.ecu_ip
+
+        def update(values: dict[str, Any]) -> None:
+            with self.lock:
+                self.state.ota.update(values)
+
+        def worker() -> None:
+            client = ota.OtaClient(ota.HOST_IP, ecu_ip)
+            try:
+                self.release_control()
+                ota.transfer(client, package_path, ota.DEFAULT_PUBLIC_KEY, update)
+                with self.lock:
+                    self.state.ota["active"] = False
+                    self.state.ota["stage"] = "complete"
+            except Exception as error:  # surfaced verbatim to local-only UI
+                with self.lock:
+                    self.state.ota["active"] = False
+                    self.state.ota["stage"] = "error"
+                    self.state.ota["error"] = str(error)
+            finally:
+                client.close()
+                package_path.unlink(missing_ok=True)
+
+        self.ota_thread = threading.Thread(
+            target=worker, name="ecu-ota", daemon=True
+        )
+        self.ota_thread.start()
+        with self.lock:
+            return dict(self.state.ota)
+
+    def set_tuning_session(self, client_id: Any, active: Any) -> None:
+        if not isinstance(client_id, str) or not client_id or len(client_id) > 128:
+            raise ValueError("valid client_id required")
+        if not all(character.isalnum() or character in "-_.:" for character in client_id):
+            raise ValueError("invalid client_id")
+        if not isinstance(active, bool):
+            raise ValueError("active must be boolean")
+        with self.lock:
+            if active:
+                self.tuning_clients[client_id] = (
+                    time.monotonic() + TUNING_CLIENT_LEASE_S
+                )
+            else:
+                self.tuning_clients.pop(client_id, None)
 
     def heartbeat(self) -> None:
         with self.lock:
@@ -658,6 +818,12 @@ class UiHandler(BaseHTTPRequestHandler):
             raise ValueError("JSON object required")
         return value
 
+    def _request_binary(self) -> bytes:
+        length = int(self.headers.get("Content-Length", "0"))
+        if length <= 0 or length > OTA_MAX_PACKAGE_SIZE:
+            raise ValueError("OTA package must be 1 byte to 2 MiB")
+        return self.rfile.read(length)
+
     def _sse(self) -> None:
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", "text/event-stream; charset=utf-8")
@@ -701,6 +867,12 @@ class UiHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:  # noqa: N802
         try:
+            if self.path == "/api/ota/upload":
+                if self.headers.get("Content-Type", "") != \
+                        "application/octet-stream":
+                    raise ValueError("application/octet-stream required")
+                self._json(self.bridge.start_ota(self._request_binary()))
+                return
             request = self._request_json()
             response: Any = None
             if self.path == "/api/config":
@@ -717,6 +889,10 @@ class UiHandler(BaseHTTPRequestHandler):
                 self.bridge.clear_fault()
             elif self.path == "/api/heartbeat":
                 self.bridge.heartbeat()
+            elif self.path == "/api/valve/tuning-session":
+                self.bridge.set_tuning_session(
+                    request.get("client_id"), request.get("active")
+                )
             elif self.path == "/api/valve/apply":
                 response = self.bridge.config_request(
                     MSG_CONFIG_APPLY, pack_valve_config(request)

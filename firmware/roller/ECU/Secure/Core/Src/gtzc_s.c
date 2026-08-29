@@ -148,6 +148,19 @@ void MX_GTZC_S_Init(void)
   }
   /* USER CODE BEGIN GTZC_S_Init 2 */
 
+  /* ATECC challenge generation and verification are Secure-only. Keep RNG and
+     PKA privileged even if a future CubeMX peripheral list changes defaults. */
+  if (HAL_GTZC_TZSC_ConfigPeriphAttributes(
+          GTZC_PERIPH_RNG, GTZC_TZSC_PERIPH_SEC | GTZC_TZSC_PERIPH_PRIV) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_GTZC_TZSC_ConfigPeriphAttributes(
+          GTZC_PERIPH_PKA, GTZC_TZSC_PERIPH_SEC | GTZC_TZSC_PERIPH_PRIV) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
   /* CubeMX regeneration-safe post-configuration for the ETH DMA SRAM window. */
   if (HAL_GTZC_MPCBB_GetConfigMem(SRAM3_BASE, &ethernet_dma_area_desc) != HAL_OK)
   {

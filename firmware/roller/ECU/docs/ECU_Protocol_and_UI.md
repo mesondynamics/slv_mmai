@@ -11,14 +11,17 @@
 | 诊断 | UDP 50003，ECU 广播，100 ms |
 | 阀遥测 | UDP 50004，订阅后 ECU 单播，1 kHz 样本、批量发送 |
 | 参数服务 | UDP 50005，GET/APPLY/SAVE/RELOAD 与遥测订阅 |
+| 固件升级 | UDP 50006，仅接受来自 `172.16.0.10` 的签名 OTA |
 
 所有端口只接受 V2 帧。V1 的 `0xA5...0x5A` 帧会被拒绝并计入
 `legacy_v1_frames_rejected`。车辆功能字段和控制权规则沿用上一版语义，但行驶量
 已由百分比改成有物理单位的 `valve_current_target_ma`，因此不能安全地继续复用
 旧帧 ABI。
 
-本协议用于隔离的车辆网络，没有加密、鉴权或跨重启防重放能力。不得把 UDP
-端口直接暴露到不可信网络；跨网段使用时应由受控网关提供身份认证和加密。
+控制、状态、诊断和调参协议用于隔离的车辆网络，没有加密、鉴权或跨重启防重放
+能力。OTA 是独立例外：包有 ECDSA P-256 传输签名，内部镜像另由 OEMiROT 根
+密钥认证并加密存放。IP 白名单不等同于身份认证；不得把任何 UDP 端口直接暴露到
+不可信网络，跨网段使用时应由受控网关提供访问控制、身份认证和加密。
 
 ## 2. V2 帧
 
@@ -51,6 +54,10 @@
 | 0x14 | VALVE_CONFIG_REPLY | 72 B |
 | 0x15 | TELEMETRY_SUBSCRIBE | 8 B |
 | 0x16 | OPERATION_ACK | 8 B |
+| 0x40 | OTA_STATUS | 请求 0 B，回复 44 B |
+| 0x41 | OTA_BEGIN | 192 B manifest+signature |
+| 0x42 | OTA_CHUNK | 532 B，最多 512 B 数据 |
+| 0x43 | OTA_FINISH | 4 B update_sequence |
 
 ABI 定义在 `NonSecure/App/Inc/ecu_protocol.h`。固件用 `_Static_assert` 锁定全部
 线上结构尺寸，主机端测试也独立校验同一组尺寸和 CRC 已知向量。
@@ -162,7 +169,32 @@ sudo ./tools/configure_ecu_network.sh
 控制 → 保存 Flash”的顺序。浏览器超过 1 s 无心跳时 Python 后端发送 RELEASE；
 页面关闭也会尝试发送 RELEASE，但 ECU 自身超时仍是最终安全边界。
 
-## 6. 继电器位映射
+## 6. Ethernet OTA
+
+OTA 只在 UDP 50006 上处理，来源必须为 `172.16.0.10`。ECU 在 BEGIN 时先释放
+全部输出，再验证固定 128 B manifest 的 P-256 签名与单调 `update_sequence`；
+CHUNK 按 16 B Flash 编程粒度、CRC-32C 和连续 offset 写入两个 secondary slot；
+FINISH 再核对成对镜像 SHA-256、加密标志和 MCUboot trailer。随后 OEMiROT 在
+reset 后独立验证镜像签名、依赖版本和 `security_counter`，以 test swap 启动。
+只有 ATECC 身份验证、Secure ADC 初始化和 NonSecure 通信初始化全部成功，应用
+才写入 `image_ok` 确认；否则 watchdog reset 后回滚。
+
+`update_sequence` 防止传输包重放，`security_counter` 防止已签名旧固件降级，两者
+用途不同且发布时都必须单调递增。一次签名正确、序号更新但 security counter 过低
+的包会被传输层接受并消耗该 sequence，之后应使用更大的 sequence 重新发布。完整
+操作与生命周期约束见 `ECU_Security_and_OTA.md`。
+
+主机命令：
+
+```sh
+python3 tools/ethernet_ota.py --status
+python3 tools/ethernet_ota.py artifacts/firmware/<version>/roller-ecu-<version>.recu
+```
+
+UI“固件升级”页调用相同的本机校验和传输实现；升级过程中控制权会释放且输出保持
+隔离。
+
+## 7. 继电器位映射
 
 | bit | 继电器 | 功能 |
 |---:|---|---|

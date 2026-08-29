@@ -18,6 +18,11 @@ extern "C" {
 #define SAFETY_VALVE_TARGET_MAX_MA     2000
 #define SAFETY_VALVE_TARGET_DEADBAND_MA 50
 #define SAFETY_VALVE_TELEMETRY_BATCH_MAX 16U
+#define SAFETY_SECURITY_API_VERSION      2UL
+#define SAFETY_OTA_API_VERSION           1UL
+#define SAFETY_OTA_MANIFEST_MAGIC        0x31544F52UL /* "ROT1" */
+#define SAFETY_OTA_MANIFEST_SCHEMA       1UL
+#define SAFETY_OTA_CHUNK_SIZE            512U
 
 #define SAFETY_ARM_TOKEN               0x41524D21UL /* "ARM!" */
 #define SAFETY_CLEAR_FAULT_TOKEN       0x434C5246UL /* "CLRF" */
@@ -42,7 +47,24 @@ enum
   SAFETY_STATUS_VALVE_DIRECTION_FAULT = (1UL << 15),
   SAFETY_STATUS_VALVE_CONFIG_DEFAULTED = (1UL << 16),
   SAFETY_STATUS_VALVE_CALIBRATING  = (1UL << 17),
-  SAFETY_STATUS_VALVE_LIMITED      = (1UL << 18)
+  SAFETY_STATUS_VALVE_LIMITED      = (1UL << 18),
+  SAFETY_STATUS_ATECC_MISSING      = (1UL << 19),
+  SAFETY_STATUS_ATECC_UNPAIRED     = (1UL << 20),
+  SAFETY_STATUS_ATECC_AUTH_FAILED  = (1UL << 21),
+  SAFETY_STATUS_ATECC_AUTHENTICATED = (1UL << 22),
+  SAFETY_STATUS_OTA_ACTIVE         = (1UL << 23),
+  SAFETY_STATUS_OTA_READY          = (1UL << 24)
+};
+
+enum
+{
+  SAFETY_SECURITY_ATECC_PRESENT       = (1UL << 0),
+  SAFETY_SECURITY_CONFIG_LOCKED       = (1UL << 1),
+  SAFETY_SECURITY_DATA_LOCKED         = (1UL << 2),
+  SAFETY_SECURITY_PAIRING_PRESENT     = (1UL << 3),
+  SAFETY_SECURITY_AUTHENTICATED       = (1UL << 4),
+  SAFETY_SECURITY_QUARANTINE          = (1UL << 5),
+  SAFETY_SECURITY_READ_ONLY_PROBE     = (1UL << 6)
 };
 
 typedef enum
@@ -163,7 +185,11 @@ typedef enum
   SAFETY_RESULT_TPIC_ERROR          = -12,
   SAFETY_RESULT_BUSY                = -13,
   SAFETY_RESULT_NOT_PERSISTED       = -14,
-  SAFETY_RESULT_RATE_LIMITED        = -15
+  SAFETY_RESULT_RATE_LIMITED        = -15,
+  SAFETY_RESULT_AUTHENTICATION      = -16,
+  SAFETY_RESULT_INTEGRITY           = -17,
+  SAFETY_RESULT_STORAGE             = -18,
+  SAFETY_RESULT_ROLLBACK            = -19
 } SAFETY_Result;
 
 typedef struct
@@ -235,6 +261,132 @@ typedef struct
   uint32_t valve_persisted_generation;
   uint32_t valve_fault_flags;
 } SAFETY_ActuatorSnapshot;
+
+typedef struct
+{
+  uint32_t api_version;
+  uint32_t flags;
+  int32_t atecc_result;
+  uint32_t config_crc32c;
+  uint32_t mcu_uid[3];
+  uint8_t serial[9];
+  uint8_t revision[4];
+  uint8_t i2c_address;
+  uint8_t config_locked;
+  uint8_t data_locked;
+  uint8_t device_status;
+  uint8_t reserved[3];
+  int32_t auth_result;
+  uint32_t pairing_generation;
+} SAFETY_SecurityStatus;
+
+enum
+{
+  SAFETY_OTA_FLAG_ENCRYPTED_IMAGES = (1UL << 0),
+  SAFETY_OTA_FLAG_TEST_SWAP = (1UL << 1)
+};
+
+typedef enum
+{
+  SAFETY_OTA_STATE_IDLE = 0,
+  SAFETY_OTA_STATE_RECEIVING,
+  SAFETY_OTA_STATE_READY,
+  SAFETY_OTA_STATE_ERROR
+} SAFETY_OtaState;
+
+/* The ECDSA signature in SAFETY_OtaBeginRequest covers the SHA-256 digest of
+ * every byte in this canonical 128-byte manifest.  A separate OEMiROT root
+ * authenticates each encrypted MCUboot image again before execution. */
+typedef struct
+{
+  uint32_t magic;
+  uint32_t schema;
+  uint32_t layout_version;
+  uint32_t update_sequence;
+  uint32_t version_major;
+  uint32_t version_minor;
+  uint32_t version_revision;
+  uint32_t version_build;
+  uint32_t security_counter;
+  uint32_t flags;
+  uint32_t secure_image_size;
+  uint32_t nonsecure_image_size;
+  uint8_t secure_sha256[32];
+  uint8_t nonsecure_sha256[32];
+  uint32_t reserved[4];
+} SAFETY_OtaManifest;
+
+typedef struct
+{
+  SAFETY_OtaManifest manifest;
+  uint8_t signature[64];
+} SAFETY_OtaBeginRequest;
+
+typedef struct
+{
+  uint32_t update_sequence;
+  uint8_t image_index;
+  uint8_t reserved0[3];
+  uint32_t offset;
+  uint16_t data_size;
+  uint16_t reserved1;
+  uint32_t data_crc32c;
+  uint8_t data[SAFETY_OTA_CHUNK_SIZE];
+} SAFETY_OtaChunk;
+
+typedef struct
+{
+  uint32_t api_version;
+  int32_t result;
+  uint32_t state;
+  uint32_t update_sequence;
+  uint32_t accepted_sequence;
+  uint32_t secure_received;
+  uint32_t nonsecure_received;
+  uint32_t secure_image_size;
+  uint32_t nonsecure_image_size;
+} SAFETY_OtaStatus;
+
+#if defined(ECU_FACTORY_PROVISIONING)
+#define SAFETY_FACTORY_PROVISION_TOKEN 0x4B434F4CUL /* "LOCK" */
+
+enum
+{
+  SAFETY_FACTORY_PHASE_PROBED = (1UL << 0),
+  SAFETY_FACTORY_PHASE_JOURNALED = (1UL << 1),
+  SAFETY_FACTORY_PHASE_CONFIG_LOCKED = (1UL << 2),
+  SAFETY_FACTORY_PHASE_DATA_LOCKED = (1UL << 3),
+  SAFETY_FACTORY_PHASE_SLOT_LOCKED = (1UL << 4),
+  SAFETY_FACTORY_PHASE_MANIFEST_SAVED = (1UL << 5),
+  SAFETY_FACTORY_PHASE_AUTHENTICATED = (1UL << 6)
+};
+
+typedef struct
+{
+  uint32_t authorization_token;
+  uint32_t expected_initial_config_crc32c;
+  uint32_t expected_mcu_uid[3];
+  uint8_t expected_atecc_serial[9];
+  uint8_t reserved[3];
+} SAFETY_FactoryProvisionRequest;
+
+typedef struct
+{
+  int32_t result;
+  uint32_t phase_flags;
+  uint32_t config_crc32c;
+  uint32_t mcu_uid[3];
+  uint16_t slot_locked_mask;
+  uint8_t config_locked;
+  uint8_t data_locked;
+  uint8_t device_status;
+  uint8_t private_key_slot;
+  uint8_t serial[9];
+  uint8_t revision[4];
+  uint8_t config[128];
+  uint8_t public_key[64];
+} SAFETY_FactoryStatus;
+#endif
 
 #ifdef __cplusplus
 }

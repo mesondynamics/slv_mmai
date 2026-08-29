@@ -24,15 +24,18 @@
 #define CONTROL_PRIORITY_EMERGENCY  255U
 #define CONTROL_MAX_SENDERS           6U
 #define TUNING_SUBSCRIPTION_MAX_MS  2000UL
+#define OTA_RESET_DELAY_MS           500UL
 
 #define ECU_CAP_V2_UDP            (1UL << 0)
 #define ECU_CAP_LWIP_STATIC       (1UL << 1)
 #define ECU_CAP_CAN1_J1939        (1UL << 2)
 #define ECU_CAP_CAN2_RESERVED     (1UL << 3)
 #define ECU_CAP_SW_I2C_PCB_R1     (1UL << 4)
+#define ECU_CAP_ATECC608_PROBE     (1UL << 5)
 #define ECU_CAP_RELAY_OUTPUTS     (1UL << 6)
 #define ECU_CAP_VALVE_CURRENT_PI  (1UL << 7)
 #define ECU_CAP_VALVE_TUNING      (1UL << 8)
+#define ECU_CAP_SIGNED_ETHERNET_OTA (1UL << 9)
 
 typedef struct
 {
@@ -50,6 +53,7 @@ static struct netif ecu_netif;
 static struct udp_pcb *control_pcb;
 static struct udp_pcb *transmit_pcb;
 static struct udp_pcb *tuning_pcb;
+static struct udp_pcb *ota_pcb;
 static ip_addr_t broadcast_address;
 static ControlSlot slots[CONTROL_MAX_SENDERS];
 static ControlSlot *active_slot;
@@ -67,6 +71,8 @@ static uint32_t telemetry_subscription_deadline;
 static uint32_t telemetry_dropped_baseline;
 static uint8_t telemetry_dropped_baseline_valid;
 static uint32_t transmit_sequence;
+static uint32_t ota_reset_deadline;
+static uint8_t ota_reset_pending;
 
 static bool Network_SequenceIsNewer(uint32_t value, uint32_t previous)
 {
@@ -492,8 +498,8 @@ static void Network_SendDiagnostic(void)
 
   diagnostic.capability_flags = ECU_CAP_V2_UDP | ECU_CAP_LWIP_STATIC |
       ECU_CAP_CAN1_J1939 | ECU_CAP_CAN2_RESERVED | ECU_CAP_SW_I2C_PCB_R1 |
-      ECU_CAP_RELAY_OUTPUTS | ECU_CAP_VALVE_CURRENT_PI |
-      ECU_CAP_VALVE_TUNING;
+      ECU_CAP_ATECC608_PROBE | ECU_CAP_RELAY_OUTPUTS | ECU_CAP_VALVE_CURRENT_PI |
+      ECU_CAP_VALVE_TUNING | ECU_CAP_SIGNED_ETHERNET_OTA;
   diagnostic.safety_status = actuator->status;
   diagnostic.requested_relay_mask = actuator->requested_relay_mask;
   diagnostic.applied_relay_mask = actuator->applied_relay_mask;
@@ -525,6 +531,33 @@ static void Network_SendDiagnostic(void)
   {
     ++counters.diagnostic_frames_sent;
   }
+}
+
+static void Network_SendSecurityStatus(void)
+{
+  ECU_SecurityPayloadV2 payload = {0};
+  SAFETY_SecurityStatus secure_status;
+
+  if (SECURE_SafetyGetSecurityStatus(&secure_status) != SAFETY_RESULT_OK)
+  {
+    return;
+  }
+  payload.api_version = secure_status.api_version;
+  payload.flags = secure_status.flags;
+  payload.atecc_result = secure_status.atecc_result;
+  payload.config_crc32c = secure_status.config_crc32c;
+  memcpy(payload.mcu_uid, secure_status.mcu_uid, sizeof(payload.mcu_uid));
+  memcpy(payload.serial, secure_status.serial, sizeof(payload.serial));
+  memcpy(payload.revision, secure_status.revision, sizeof(payload.revision));
+  payload.i2c_address = secure_status.i2c_address;
+  payload.config_locked = secure_status.config_locked;
+  payload.data_locked = secure_status.data_locked;
+  payload.device_status = secure_status.device_status;
+  payload.auth_result = secure_status.auth_result;
+  payload.pairing_generation = secure_status.pairing_generation;
+  (void)Network_SendV2(transmit_pcb, &broadcast_address,
+                       ECU_DIAGNOSTIC_PORT, ECU_MESSAGE_SECURITY_STATUS, 0U,
+                       &payload, sizeof(payload));
 }
 
 static bool Network_TuningAuthorized(const ip_addr_t *address)
@@ -567,6 +600,139 @@ static void Network_SendOperationAck(const ip_addr_t *address, uint16_t port,
                        ECU_MESSAGE_OPERATION_ACK, 0U, &ack, sizeof(ack));
 }
 
+static bool Network_OtaHostAuthorized(const ip_addr_t *address)
+{
+  ip_addr_t ota_host;
+  IP4_ADDR(ip_2_ip4(&ota_host), 172U, 16U, 0U, 10U);
+  IP_SET_TYPE_VAL(ota_host, IPADDR_TYPE_V4);
+  return ip_addr_cmp(address, &ota_host);
+}
+
+static void Network_SendOtaStatus(const ip_addr_t *address, uint16_t port,
+                                  uint32_t request_sequence, int32_t result,
+                                  const SAFETY_OtaStatus *status)
+{
+  ECU_OtaStatusPayload payload = {0};
+  payload.result = result;
+  payload.request_sequence = request_sequence;
+  if (status != NULL) { payload.status = *status; }
+  (void)Network_SendV2(ota_pcb, address, port, ECU_MESSAGE_OTA_STATUS, 0U,
+                       &payload, sizeof(payload));
+}
+
+static void Network_ReceiveOta(void *argument, struct udp_pcb *pcb,
+                               struct pbuf *packet,
+                               const ip_addr_t *address, u16_t port)
+{
+  union
+  {
+    SAFETY_OtaBeginRequest begin;
+    SAFETY_OtaChunk chunk;
+    uint32_t update_sequence;
+  } payload;
+  uint8_t frame[ECU_V2_MAX_FRAME_SIZE];
+  ECU_V2Header header;
+  SAFETY_OtaStatus status = {0};
+  uint16_t frame_length = packet->tot_len;
+  int32_t result = SAFETY_RESULT_BAD_ARGUMENT;
+
+  (void)argument;
+  (void)pcb;
+  if ((frame_length > sizeof(frame)) ||
+      (pbuf_copy_partial(packet, frame, frame_length, 0U) != frame_length))
+  {
+    pbuf_free(packet);
+    return;
+  }
+  pbuf_free(packet);
+  memset(&payload, 0, sizeof(payload));
+  if (!Network_OtaHostAuthorized(address) ||
+      !ECU_ProtocolDecodeV2(frame, frame_length, &header, &payload,
+                            sizeof(payload)))
+  {
+    return;
+  }
+  switch (header.message_type)
+  {
+    case ECU_MESSAGE_OTA_STATUS:
+      if (header.payload_size == 0U)
+      {
+        result = SECURE_SafetyOtaGetStatus(&status);
+      }
+      break;
+    case ECU_MESSAGE_OTA_BEGIN:
+      if (header.payload_size == sizeof(payload.begin))
+      {
+        result = SECURE_SafetyOtaBegin(&payload.begin, &status);
+      }
+      break;
+    case ECU_MESSAGE_OTA_CHUNK:
+      if (header.payload_size == sizeof(payload.chunk))
+      {
+        result = SECURE_SafetyOtaWrite(&payload.chunk, &status);
+      }
+      break;
+    case ECU_MESSAGE_OTA_FINISH:
+      if (header.payload_size == sizeof(payload.update_sequence))
+      {
+        result = SECURE_SafetyOtaFinish(payload.update_sequence, &status);
+        if ((result == SAFETY_RESULT_OK) &&
+            (status.state == SAFETY_OTA_STATE_READY))
+        {
+          ota_reset_deadline = HAL_GetTick() + OTA_RESET_DELAY_MS;
+          ota_reset_pending = 1U;
+        }
+      }
+      break;
+    default:
+      result = SAFETY_RESULT_UNSUPPORTED_VERSION;
+      break;
+  }
+  if (status.api_version == 0U)
+  {
+    (void)SECURE_SafetyOtaGetStatus(&status);
+  }
+  Network_SendOtaStatus(address, port, header.sequence, result, &status);
+}
+
+#if defined(ECU_FACTORY_PROVISIONING)
+static bool Network_FactoryHostAuthorized(const ip_addr_t *address)
+{
+  ip_addr_t factory_host;
+  IP4_ADDR(ip_2_ip4(&factory_host), 172U, 16U, 0U, 10U);
+  IP_SET_TYPE_VAL(factory_host, IPADDR_TYPE_V4);
+  return ip_addr_cmp(address, &factory_host);
+}
+
+static void Network_SendFactoryStatus(
+    const ip_addr_t *address, uint16_t port, uint32_t request_sequence,
+    int32_t result, const SAFETY_FactoryStatus *status)
+{
+  ECU_FactoryAteccStatusPayload payload = {0};
+
+  payload.result = result;
+  payload.request_sequence = request_sequence;
+  if (status != NULL)
+  {
+    payload.phase_flags = status->phase_flags;
+    payload.config_crc32c = status->config_crc32c;
+    memcpy(payload.mcu_uid, status->mcu_uid, sizeof(payload.mcu_uid));
+    payload.slot_locked_mask = status->slot_locked_mask;
+    payload.config_locked = status->config_locked;
+    payload.data_locked = status->data_locked;
+    payload.device_status = status->device_status;
+    payload.private_key_slot = status->private_key_slot;
+    memcpy(payload.serial, status->serial, sizeof(payload.serial));
+    memcpy(payload.revision, status->revision, sizeof(payload.revision));
+    memcpy(payload.config, status->config, sizeof(payload.config));
+    memcpy(payload.public_key, status->public_key, sizeof(payload.public_key));
+  }
+  (void)Network_SendV2(tuning_pcb, address, port,
+                       ECU_MESSAGE_FACTORY_ATECC_STATUS, 0U, &payload,
+                       sizeof(payload));
+}
+#endif
+
 static void Network_ReceiveTuning(void *argument, struct udp_pcb *pcb,
                                   struct pbuf *packet,
                                   const ip_addr_t *address, u16_t port)
@@ -575,6 +741,9 @@ static void Network_ReceiveTuning(void *argument, struct udp_pcb *pcb,
   {
     SAFETY_ValveConfig config;
     ECU_TelemetrySubscribePayload subscribe;
+#if defined(ECU_FACTORY_PROVISIONING)
+    SAFETY_FactoryProvisionRequest factory_request;
+#endif
     uint8_t bytes[sizeof(SAFETY_ValveConfig)];
   } payload;
   uint8_t frame[ECU_V2_MAX_FRAME_SIZE];
@@ -668,6 +837,50 @@ static void Network_ReceiveTuning(void *argument, struct udp_pcb *pcb,
       Network_SendOperationAck(address, port, header.sequence, result);
       break;
 
+    case ECU_MESSAGE_TELEMETRY_UNSUBSCRIBE:
+      if ((header.payload_size == 0U) &&
+          Network_TuningAuthorized(address) &&
+          ((telemetry_client_port == 0U) ||
+           ip_addr_cmp(address, &telemetry_client_address)))
+      {
+        telemetry_client_port = 0U;
+        telemetry_subscription_deadline = 0U;
+        telemetry_dropped_baseline_valid = 0U;
+        result = SAFETY_RESULT_OK;
+      }
+      else if (!Network_TuningAuthorized(address) ||
+               (telemetry_client_port != 0U))
+      {
+        result = SAFETY_RESULT_CONFLICT;
+      }
+      Network_SendOperationAck(address, port, header.sequence, result);
+      break;
+
+#if defined(ECU_FACTORY_PROVISIONING)
+    case ECU_MESSAGE_FACTORY_ATECC_STATUS:
+      if ((header.payload_size == 0U) &&
+          Network_FactoryHostAuthorized(address))
+      {
+        SAFETY_FactoryStatus factory_status;
+        result = SECURE_SafetyFactoryGetStatus(&factory_status);
+        Network_SendFactoryStatus(address, port, header.sequence, result,
+                                  &factory_status);
+      }
+      break;
+
+    case ECU_MESSAGE_FACTORY_ATECC_PROVISION:
+      if ((header.payload_size == sizeof(payload.factory_request)) &&
+          Network_FactoryHostAuthorized(address))
+      {
+        SAFETY_FactoryStatus factory_status;
+        result = SECURE_SafetyFactoryProvision(&payload.factory_request,
+                                                &factory_status);
+        Network_SendFactoryStatus(address, port, header.sequence, result,
+                                  &factory_status);
+      }
+      break;
+#endif
+
     default:
       Network_SendOperationAck(address, port, header.sequence,
                                SAFETY_RESULT_UNSUPPORTED_VERSION);
@@ -731,6 +944,8 @@ bool ECU_NetworkInit(void)
   telemetry_dropped_baseline_valid = 0U;
   last_telemetry_tick = HAL_GetTick();
   transmit_sequence = 0U;
+  ota_reset_deadline = 0U;
+  ota_reset_pending = 0U;
 
   lwip_init();
   IP4_ADDR(&ip, ECU_IP_ADDRESS_0, ECU_IP_ADDRESS_1,
@@ -750,15 +965,18 @@ bool ECU_NetworkInit(void)
   control_pcb = udp_new_ip_type(IPADDR_TYPE_V4);
   transmit_pcb = udp_new_ip_type(IPADDR_TYPE_V4);
   tuning_pcb = udp_new_ip_type(IPADDR_TYPE_V4);
+  ota_pcb = udp_new_ip_type(IPADDR_TYPE_V4);
   if ((control_pcb == NULL) || (transmit_pcb == NULL) ||
-      (tuning_pcb == NULL))
+      (tuning_pcb == NULL) || (ota_pcb == NULL))
   {
     if (control_pcb != NULL) { udp_remove(control_pcb); }
     if (transmit_pcb != NULL) { udp_remove(transmit_pcb); }
     if (tuning_pcb != NULL) { udp_remove(tuning_pcb); }
+    if (ota_pcb != NULL) { udp_remove(ota_pcb); }
     control_pcb = NULL;
     transmit_pcb = NULL;
     tuning_pcb = NULL;
+    ota_pcb = NULL;
     return false;
   }
   /* Keep UDP/50001 as both the status destination and source port so receivers
@@ -774,18 +992,25 @@ bool ECU_NetworkInit(void)
   {
     bind_result = udp_bind(tuning_pcb, IP_ANY_TYPE, ECU_TUNING_PORT);
   }
+  if (bind_result == ERR_OK)
+  {
+    bind_result = udp_bind(ota_pcb, IP_ANY_TYPE, ECU_OTA_PORT);
+  }
   if (bind_result != ERR_OK)
   {
     udp_remove(control_pcb);
     udp_remove(transmit_pcb);
     udp_remove(tuning_pcb);
+    udp_remove(ota_pcb);
     control_pcb = NULL;
     transmit_pcb = NULL;
     tuning_pcb = NULL;
+    ota_pcb = NULL;
     return false;
   }
   udp_recv(control_pcb, Network_ReceiveControl, NULL);
   udp_recv(tuning_pcb, Network_ReceiveTuning, NULL);
+  udp_recv(ota_pcb, Network_ReceiveOta, NULL);
   last_apply_tick = HAL_GetTick();
   last_status_tick = HAL_GetTick();
   last_diagnostic_tick = HAL_GetTick();
@@ -823,6 +1048,13 @@ void ECU_NetworkProcess(void)
   {
     last_diagnostic_tick = now;
     Network_SendDiagnostic();
+    Network_SendSecurityStatus();
+  }
+  if ((ota_reset_pending != 0U) &&
+      ((int32_t)(now - ota_reset_deadline) >= 0))
+  {
+    (void)SECURE_SafetyDisarmOutputs();
+    NVIC_SystemReset();
   }
 }
 

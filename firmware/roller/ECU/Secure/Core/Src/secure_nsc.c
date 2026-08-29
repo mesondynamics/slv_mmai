@@ -109,6 +109,109 @@ CMSE_NS_ENTRY int32_t SECURE_SafetyGetActuatorSnapshot(
   return Safety_GetActuatorSnapshot(checked_snapshot);
 }
 
+CMSE_NS_ENTRY int32_t SECURE_SafetyGetSecurityStatus(
+    SAFETY_SecurityStatus *status)
+{
+  SAFETY_SecurityStatus *checked_status;
+
+  checked_status = (SAFETY_SecurityStatus *)cmse_check_address_range(
+      status, sizeof(*status), CMSE_NONSECURE | CMSE_MPU_READWRITE);
+  if (checked_status == NULL)
+  {
+    return SAFETY_RESULT_BAD_ARGUMENT;
+  }
+  return Safety_GetSecurityStatus(checked_status);
+}
+
+CMSE_NS_ENTRY int32_t SECURE_SafetyOtaGetStatus(SAFETY_OtaStatus *status)
+{
+  SAFETY_OtaStatus *checked_status =
+      (SAFETY_OtaStatus *)cmse_check_address_range(
+          status, sizeof(*status), CMSE_NONSECURE | CMSE_MPU_READWRITE);
+  if (checked_status == NULL) { return SAFETY_RESULT_BAD_ARGUMENT; }
+  return Safety_OtaGetStatus(checked_status);
+}
+
+CMSE_NS_ENTRY int32_t SECURE_SafetyOtaBegin(
+    const SAFETY_OtaBeginRequest *request, SAFETY_OtaStatus *status)
+{
+  const SAFETY_OtaBeginRequest *checked_request =
+      (const SAFETY_OtaBeginRequest *)cmse_check_address_range(
+          (void *)request, sizeof(*request), CMSE_NONSECURE | CMSE_MPU_READ);
+  SAFETY_OtaStatus *checked_status =
+      (SAFETY_OtaStatus *)cmse_check_address_range(
+          status, sizeof(*status), CMSE_NONSECURE | CMSE_MPU_READWRITE);
+  SAFETY_OtaBeginRequest secure_request;
+  if ((checked_request == NULL) || (checked_status == NULL))
+  {
+    return SAFETY_RESULT_BAD_ARGUMENT;
+  }
+  secure_request = *checked_request;
+  return Safety_OtaBegin(&secure_request, checked_status);
+}
+
+CMSE_NS_ENTRY int32_t SECURE_SafetyOtaWrite(
+    const SAFETY_OtaChunk *chunk, SAFETY_OtaStatus *status)
+{
+  const SAFETY_OtaChunk *checked_chunk =
+      (const SAFETY_OtaChunk *)cmse_check_address_range(
+          (void *)chunk, sizeof(*chunk), CMSE_NONSECURE | CMSE_MPU_READ);
+  SAFETY_OtaStatus *checked_status =
+      (SAFETY_OtaStatus *)cmse_check_address_range(
+          status, sizeof(*status), CMSE_NONSECURE | CMSE_MPU_READWRITE);
+  SAFETY_OtaChunk secure_chunk;
+  if ((checked_chunk == NULL) || (checked_status == NULL))
+  {
+    return SAFETY_RESULT_BAD_ARGUMENT;
+  }
+  secure_chunk = *checked_chunk;
+  return Safety_OtaWrite(&secure_chunk, checked_status);
+}
+
+CMSE_NS_ENTRY int32_t SECURE_SafetyOtaFinish(
+    uint32_t update_sequence, SAFETY_OtaStatus *status)
+{
+  SAFETY_OtaStatus *checked_status =
+      (SAFETY_OtaStatus *)cmse_check_address_range(
+          status, sizeof(*status), CMSE_NONSECURE | CMSE_MPU_READWRITE);
+  if (checked_status == NULL) { return SAFETY_RESULT_BAD_ARGUMENT; }
+  return Safety_OtaFinish(update_sequence, checked_status);
+}
+
+CMSE_NS_ENTRY int32_t SECURE_SafetyOtaConfirmRunningImages(void)
+{
+  return Safety_OtaConfirmRunningImages();
+}
+
+#if defined(ECU_FACTORY_PROVISIONING)
+CMSE_NS_ENTRY int32_t SECURE_SafetyFactoryGetStatus(
+    SAFETY_FactoryStatus *status)
+{
+  SAFETY_FactoryStatus *checked_status =
+      (SAFETY_FactoryStatus *)cmse_check_address_range(
+          status, sizeof(*status), CMSE_NONSECURE | CMSE_MPU_READWRITE);
+  if (checked_status == NULL) { return SAFETY_RESULT_BAD_ARGUMENT; }
+  return Safety_FactoryGetStatus(checked_status);
+}
+
+CMSE_NS_ENTRY int32_t SECURE_SafetyFactoryProvision(
+    const SAFETY_FactoryProvisionRequest *request,
+    SAFETY_FactoryStatus *status)
+{
+  const SAFETY_FactoryProvisionRequest *checked_request =
+      (const SAFETY_FactoryProvisionRequest *)cmse_check_address_range(
+          (void *)request, sizeof(*request), CMSE_NONSECURE);
+  SAFETY_FactoryStatus *checked_status =
+      (SAFETY_FactoryStatus *)cmse_check_address_range(
+          status, sizeof(*status), CMSE_NONSECURE | CMSE_MPU_READWRITE);
+  if ((checked_request == NULL) || (checked_status == NULL))
+  {
+    return SAFETY_RESULT_BAD_ARGUMENT;
+  }
+  return Safety_FactoryProvision(checked_request, checked_status);
+}
+#endif
+
 CMSE_NS_ENTRY int32_t SECURE_SafetyGetValveConfig(
     SAFETY_ValveConfigSnapshot *snapshot)
 {

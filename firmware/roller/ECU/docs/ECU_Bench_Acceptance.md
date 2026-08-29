@@ -23,30 +23,38 @@ K1/K2/K5/K7/K9/K13/K12 等接管继电器才会释放。
 ./tools/test.sh
 ./tools/build.sh Debug
 ./tools/build.sh Release
-./tools/program_ecu.sh inspect
-./tools/program_ecu.sh flash
+./tools/build_oemirot.sh ReleaseOpen
+./tools/build_oemirot.sh ReleaseClosed
+./tools/build_signed_apps.sh Release
+STM32_PROGRAMMER_CLI=/home/plac/.local/share/stm32cube/bundles/programmer/2.22.0+st.1/bin/STM32_Programmer_CLI \
+  ./tools/provision_oemirot_open.sh inspect
 ```
 
-首次启用 TrustZone 才使用：
+当前样件已从旧的直接 TrustZone 布局迁移为 OEMiROT，不能再用
+`tools/program_ecu.sh flash` 覆盖 primary slot。日常升级使用 Ethernet：
 
 ```sh
-./tools/program_ecu.sh provision-and-flash --accept-existing-flash-erase
+python3 tools/ethernet_ota.py --status
+python3 tools/ethernet_ota.py \
+  artifacts/firmware/<version>/roller-ecu-<version>.recu
 ```
 
-该操作会先核对 STM32H563 ID `0x484`、Open 产品状态并备份完整 2 MiB Flash。
-正常 `flash` 要求既有 Option Bytes 已满足：
+当前 OPEN 台架 Option Bytes 必须满足：
 
 ```text
 TZEN=0xB4
-SECBOOTADD=0xC0000, SECBOOT_LOCK=0xC3
+PRODUCT_STATE=0xED (Open)
+BOOT_UBE=0xB4
+SECBOOTADD=0xC0000, SECBOOT_LOCK=0xB4
 SECWM1_STRT=0x00, SECWM1_END=0x7F
 SECWM2_STRT=0x01, SECWM2_END=0x00
+WRPSGn1=0xFFFFFFF0
+HDP1_STRT=0x00, HDP1_END=0x17
 ```
 
-Secure 镜像位于 Bank1，NonSecure 位于 Bank2。Bank1 sectors 125/126
-`0x080FA000..0x080FDFFF` 是阀参数日志，镜像 linker 不使用这 16 KiB；烧录脚本
-在普通升级前后读回比较该区域，若 Programmer 意外改动会报错并保留升级前备份。
-NSC 使用最后一个 sector `0x080FE000..0x080FFFFF`。
+完整布局、首次 provision、JP1/BOOT0 阶段和 CLOSED 门槛见
+`ECU_Security_and_OTA.md`。OPEN→CLOSED 是不可逆量产操作，不属于常规烧录；
+未完成离线私钥备份和 Ethernet OTA 验收时禁止执行。
 
 ## 3. 本机 Ethernet
 
@@ -196,3 +204,28 @@ NVM-04/05 会反复擦写或故意断电，只能在开发样件和受控供电�
 
 本记录没有把诊断 relay mask 当作触点电气验证。10 s 真实掉电后的参数保持已经
 通过；连接阀线圈并串联电流表完成电流闭环标定后，才能关闭剩余的阀带载验收。
+
+## 9. 2026-08-29 安全启动与 OTA 实测记录
+
+同一开发样件已安装去除临时启动 trace 的优化 `ReleaseOpen` OEMiROT；当前仍为
+OPEN 产品状态，JP1 断开。最终运行版本为 `1.0.4`，security counter=4，
+update sequence=4。
+
+| 项目 | 实测结果 | 结论 |
+|---|---|---|
+| ATECC608C | serial=`0123d47eb2ee0e9bee`，revision=`00006005`，config CRC32C=`0xEBB326F3`，Config/Data/slot 2 locked，P-256 随机挑战通过 | PASS |
+| MCU 配对 | UID=`003800613434511232383537`，pairing generation=1；OEMiROT handoff 带反码和 CRC32C | PASS |
+| 主机测试/审计 | 9 项协议测试、完整配置审计、`git diff --check` 通过 | PASS |
+| 完整 Ethernet OTA | 成对 Secure 192 KiB + NonSecure 320 KiB 下载、签名/哈希验证、test swap、应用确认成功 | PASS |
+| 中断恢复 | 传输 65536 B 后中断且未 FINISH，断电后旧 primary 正常启动、不误 swap | PASS |
+| 传输签名 | 篡改包拒绝，result=-16 | PASS |
+| 防重放 | 已接受 sequence=4 后再次发送同包，BEGIN 拒绝，result=-19 | PASS |
+| OEMiROT 防回滚 | 较低 security counter 的签名包可完成传输但不替换已确认 primary | PASS |
+| 最终复位状态 | ota_result=0、state=IDLE、accepted_sequence=4；ATECC auth=0；relay mask=0、两路 duty=0、调参未启用、遥测发送计数=0 | PASS |
+| 最终 Ethernet | 100 包、0% 丢包，RTT min/avg/max=`0.071/0.113/0.247 ms` | PASS |
+| ST-Link 防导出 | 当前产品状态仍为 OPEN，应用 Flash 仍可通过调试口读取 | **PENDING：CLOSED gate** |
+
+固件包 `artifacts/firmware/1.0.4/roller-ecu-1.0.4.recu` 的 SHA-256 为
+`405bc9eca5c87439ad2a7ac4ddf24cc7b6d34e94824797eb58fb136fbe8c4c4d`。
+量产 CLOSED 转换前必须再次复跑本节、确认 ReleaseClosed 引导镜像已安装，并由
+密钥负责人明确确认离线 PKI 备份可恢复。

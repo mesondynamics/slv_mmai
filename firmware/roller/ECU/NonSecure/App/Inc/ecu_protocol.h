@@ -27,13 +27,23 @@ typedef enum
   ECU_MESSAGE_STATUS = 0x02,
   ECU_MESSAGE_DIAGNOSTIC = 0x03,
   ECU_MESSAGE_VALVE_TELEMETRY = 0x04,
+  ECU_MESSAGE_SECURITY_STATUS = 0x05,
   ECU_MESSAGE_VALVE_CONFIG_GET = 0x10,
   ECU_MESSAGE_VALVE_CONFIG_APPLY = 0x11,
   ECU_MESSAGE_VALVE_CONFIG_SAVE = 0x12,
   ECU_MESSAGE_VALVE_CONFIG_RELOAD = 0x13,
   ECU_MESSAGE_VALVE_CONFIG_REPLY = 0x14,
   ECU_MESSAGE_TELEMETRY_SUBSCRIBE = 0x15,
-  ECU_MESSAGE_OPERATION_ACK = 0x16
+  ECU_MESSAGE_OPERATION_ACK = 0x16,
+  ECU_MESSAGE_TELEMETRY_UNSUBSCRIBE = 0x17,
+  ECU_MESSAGE_OTA_STATUS = 0x40,
+  ECU_MESSAGE_OTA_BEGIN = 0x41,
+  ECU_MESSAGE_OTA_CHUNK = 0x42,
+  ECU_MESSAGE_OTA_FINISH = 0x43,
+#if defined(ECU_FACTORY_PROVISIONING)
+  ECU_MESSAGE_FACTORY_ATECC_STATUS = 0x30,
+  ECU_MESSAGE_FACTORY_ATECC_PROVISION = 0x31
+#endif
 } ECU_MessageType;
 
 typedef struct __attribute__((packed))
@@ -187,6 +197,24 @@ typedef struct __attribute__((packed))
 
 typedef struct __attribute__((packed))
 {
+  uint32_t api_version;
+  uint32_t flags;
+  int32_t atecc_result;
+  uint32_t config_crc32c;
+  uint32_t mcu_uid[3];
+  uint8_t serial[9];
+  uint8_t revision[4];
+  uint8_t i2c_address;
+  uint8_t config_locked;
+  uint8_t data_locked;
+  uint8_t device_status;
+  uint8_t reserved[3];
+  int32_t auth_result;
+  uint32_t pairing_generation;
+} ECU_SecurityPayloadV2;
+
+typedef struct __attribute__((packed))
+{
   uint16_t destination_port;
   uint16_t sample_rate_hz;
   uint32_t ttl_ms;
@@ -204,6 +232,33 @@ typedef struct __attribute__((packed))
   int32_t result;
   uint32_t request_sequence;
 } ECU_OperationAckPayload;
+
+typedef struct __attribute__((packed))
+{
+  int32_t result;
+  uint32_t request_sequence;
+  SAFETY_OtaStatus status;
+} ECU_OtaStatusPayload;
+
+#if defined(ECU_FACTORY_PROVISIONING)
+typedef struct __attribute__((packed))
+{
+  int32_t result;
+  uint32_t request_sequence;
+  uint32_t phase_flags;
+  uint32_t config_crc32c;
+  uint32_t mcu_uid[3];
+  uint16_t slot_locked_mask;
+  uint8_t config_locked;
+  uint8_t data_locked;
+  uint8_t device_status;
+  uint8_t private_key_slot;
+  uint8_t serial[9];
+  uint8_t revision[4];
+  uint8_t config[128];
+  uint8_t public_key[64];
+} ECU_FactoryAteccStatusPayload;
+#endif
 
 uint32_t ECU_ProtocolCrc32c(const void *data, size_t length);
 size_t ECU_ProtocolEncodeV2(uint8_t message_type, uint16_t flags,

@@ -43,6 +43,21 @@ void SECURE_RegisterCallback(SECURE_CallbackIDTypeDef CallbackId, void *func);
 uint32_t SECURE_SafetyGetStatus(void);
 int32_t SECURE_SafetyGetAdcSnapshot(SAFETY_AdcSnapshot *snapshot);
 int32_t SECURE_SafetyGetActuatorSnapshot(SAFETY_ActuatorSnapshot *snapshot);
+int32_t SECURE_SafetyGetSecurityStatus(SAFETY_SecurityStatus *status);
+int32_t SECURE_SafetyOtaGetStatus(SAFETY_OtaStatus *status);
+int32_t SECURE_SafetyOtaBegin(const SAFETY_OtaBeginRequest *request,
+                              SAFETY_OtaStatus *status);
+int32_t SECURE_SafetyOtaWrite(const SAFETY_OtaChunk *chunk,
+                              SAFETY_OtaStatus *status);
+int32_t SECURE_SafetyOtaFinish(uint32_t update_sequence,
+                               SAFETY_OtaStatus *status);
+int32_t SECURE_SafetyOtaConfirmRunningImages(void);
+#if defined(ECU_FACTORY_PROVISIONING)
+int32_t SECURE_SafetyFactoryGetStatus(SAFETY_FactoryStatus *status);
+int32_t SECURE_SafetyFactoryProvision(
+    const SAFETY_FactoryProvisionRequest *request,
+    SAFETY_FactoryStatus *status);
+#endif
 int32_t SECURE_SafetyGetValveConfig(SAFETY_ValveConfigSnapshot *snapshot);
 int32_t SECURE_SafetyApplyValveConfig(const SAFETY_ValveConfig *config);
 int32_t SECURE_SafetySaveValveConfig(void);

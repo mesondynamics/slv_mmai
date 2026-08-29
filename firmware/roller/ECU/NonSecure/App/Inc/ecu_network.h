@@ -13,6 +13,7 @@
 #define ECU_DIAGNOSTIC_PORT   50003U
 #define ECU_TELEMETRY_PORT    50004U
 #define ECU_TUNING_PORT       50005U
+#define ECU_OTA_PORT          50006U
 
 typedef struct
 {

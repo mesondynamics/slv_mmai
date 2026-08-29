@@ -5,8 +5,13 @@
 #include <string.h>
 
 #include "adc.h"
+#include "atecc608.h"
 #include "iwdg.h"
 #include "main.h"
+#include "security_identity.h"
+#include "security_mcu_identity.h"
+#include "security_ota.h"
+#include "security_factory.h"
 #include "software_i2c.h"
 #include "spi.h"
 #include "tim.h"
@@ -62,6 +67,7 @@ static uint8_t command_sequence_valid;
 static uint8_t command_fresh;
 static uint8_t timer_ready;
 static uint8_t software_i2c_bus_ok;
+static SAFETY_SecurityStatus security_status;
 static uint8_t engine_start_active;
 static uint8_t engine_start_lockout;
 static uint8_t last_engine_start_request;
@@ -576,10 +582,75 @@ int32_t Safety_ServiceInit(void)
   software_i2c_bus_ok = SoftwareI2C_Init() ? 1U : 0U;
   if (software_i2c_bus_ok == 0U)
   {
-    /* ATECC608C support is intentionally deferred. A stuck temporary software
-       bus is reported but does not prevent the vehicle safety functions. */
+    /* The PCB-revision-1 software-I2C bus is part of the startup identity
+       check. Any electrical bus fault keeps every actuator quarantined. */
     safety_status |= SAFETY_STATUS_SW_I2C_BUS_FAULT;
   }
+  memset(&security_status, 0, sizeof(security_status));
+  security_status.api_version = SAFETY_SECURITY_API_VERSION;
+  security_status.flags = SAFETY_SECURITY_READ_ONLY_PROBE |
+                          SAFETY_SECURITY_QUARANTINE;
+  security_status.auth_result = SECURITY_IDENTITY_ATECC_UNAVAILABLE;
+  (void)SecurityMcuIdentity_Get(security_status.mcu_uid);
+  if (software_i2c_bus_ok != 0U)
+  {
+    ATECC608_ProbeResult probe;
+    security_status.atecc_result = ATECC608_Probe(&probe);
+    if (security_status.atecc_result == ATECC608_RESULT_OK)
+    {
+      security_status.flags |= SAFETY_SECURITY_ATECC_PRESENT;
+      security_status.config_crc32c = probe.config_crc32c;
+      memcpy(security_status.serial, probe.serial,
+             sizeof(security_status.serial));
+      memcpy(security_status.revision, probe.revision,
+             sizeof(security_status.revision));
+      security_status.i2c_address = probe.i2c_address;
+      security_status.config_locked = probe.config_locked;
+      security_status.data_locked = probe.data_locked;
+      security_status.device_status = probe.device_status;
+      if (probe.config_locked != 0U)
+      {
+        security_status.flags |= SAFETY_SECURITY_CONFIG_LOCKED;
+      }
+      if (probe.data_locked != 0U)
+      {
+        security_status.flags |= SAFETY_SECURITY_DATA_LOCKED;
+      }
+      security_status.auth_result = SecurityIdentity_Authenticate(
+          &probe, &security_status.device_status,
+          &security_status.pairing_generation);
+      if (security_status.pairing_generation != 0U)
+      {
+        security_status.flags |= SAFETY_SECURITY_PAIRING_PRESENT;
+      }
+      if (security_status.auth_result == SECURITY_IDENTITY_OK)
+      {
+        security_status.flags |= SAFETY_SECURITY_PAIRING_PRESENT |
+                                 SAFETY_SECURITY_AUTHENTICATED;
+        security_status.flags &= ~SAFETY_SECURITY_QUARANTINE;
+        safety_status |= SAFETY_STATUS_ATECC_AUTHENTICATED;
+      }
+      else if (security_status.auth_result ==
+               SECURITY_IDENTITY_NOT_PROVISIONED)
+      {
+        safety_status |= SAFETY_STATUS_ATECC_UNPAIRED;
+      }
+      else
+      {
+        safety_status |= SAFETY_STATUS_ATECC_AUTH_FAILED;
+      }
+    }
+    else
+    {
+      safety_status |= SAFETY_STATUS_ATECC_MISSING;
+    }
+  }
+  else
+  {
+    security_status.atecc_result = ATECC608_RESULT_BUS;
+    safety_status |= SAFETY_STATUS_ATECC_MISSING;
+  }
+  SecurityOta_Init();
 
   if ((HAL_ADCEx_Calibration_Start(&hadc1, ADC_SINGLE_ENDED) != HAL_OK) ||
       (HAL_ADCEx_Calibration_Start(&hadc2, ADC_SINGLE_ENDED) != HAL_OK))
@@ -717,6 +788,123 @@ int32_t Safety_GetActuatorSnapshot(SAFETY_ActuatorSnapshot *snapshot)
   Safety_ExitCritical(primask);
   return SAFETY_RESULT_OK;
 }
+
+int32_t Safety_GetSecurityStatus(SAFETY_SecurityStatus *status)
+{
+  uint32_t primask;
+
+  if (status == NULL)
+  {
+    return SAFETY_RESULT_BAD_ARGUMENT;
+  }
+  primask = Safety_EnterCritical();
+  *status = security_status;
+  Safety_ExitCritical(primask);
+  return SAFETY_RESULT_OK;
+}
+
+static void Safety_UpdateOtaStatusBits(const SAFETY_OtaStatus *status)
+{
+  safety_status &= ~(SAFETY_STATUS_OTA_ACTIVE | SAFETY_STATUS_OTA_READY);
+  if (status->state == SAFETY_OTA_STATE_RECEIVING)
+  {
+    safety_status |= SAFETY_STATUS_OTA_ACTIVE;
+  }
+  else if (status->state == SAFETY_OTA_STATE_READY)
+  {
+    safety_status |= SAFETY_STATUS_OTA_READY;
+  }
+}
+
+int32_t Safety_OtaGetStatus(SAFETY_OtaStatus *status)
+{
+  int32_t result = SecurityOta_GetStatus(status);
+  if (result == SAFETY_RESULT_OK) { Safety_UpdateOtaStatusBits(status); }
+  return result;
+}
+
+int32_t Safety_OtaBegin(const SAFETY_OtaBeginRequest *request,
+                        SAFETY_OtaStatus *status)
+{
+  int32_t result;
+  uint32_t primask;
+
+  if ((request == NULL) || (status == NULL))
+  {
+    return SAFETY_RESULT_BAD_ARGUMENT;
+  }
+  primask = Safety_EnterCritical();
+  Safety_ForceOutputsSafe();
+  Safety_ExitCritical(primask);
+  result = SecurityOta_Begin(request, status);
+  Safety_UpdateOtaStatusBits(status);
+  return result;
+}
+
+int32_t Safety_OtaWrite(const SAFETY_OtaChunk *chunk,
+                        SAFETY_OtaStatus *status)
+{
+  int32_t result;
+  uint32_t primask;
+  if ((chunk == NULL) || (status == NULL))
+  {
+    return SAFETY_RESULT_BAD_ARGUMENT;
+  }
+  primask = Safety_EnterCritical();
+  Safety_ForceOutputsSafe();
+  Safety_ExitCritical(primask);
+  result = SecurityOta_Write(chunk, status);
+  Safety_UpdateOtaStatusBits(status);
+  return result;
+}
+
+int32_t Safety_OtaFinish(uint32_t update_sequence,
+                         SAFETY_OtaStatus *status)
+{
+  int32_t result;
+  uint32_t primask;
+  if (status == NULL) { return SAFETY_RESULT_BAD_ARGUMENT; }
+  primask = Safety_EnterCritical();
+  Safety_ForceOutputsSafe();
+  Safety_ExitCritical(primask);
+  result = SecurityOta_Finish(update_sequence, status);
+  Safety_UpdateOtaStatusBits(status);
+  return result;
+}
+
+int32_t Safety_OtaConfirmRunningImages(void)
+{
+  if (((security_status.flags & SAFETY_SECURITY_AUTHENTICATED) == 0U) ||
+      ((safety_status & SAFETY_STATUS_READY) == 0U))
+  {
+    return SAFETY_RESULT_AUTHENTICATION;
+  }
+  return SecurityOta_ConfirmRunningImages();
+}
+
+#if defined(ECU_FACTORY_PROVISIONING)
+int32_t Safety_FactoryGetStatus(SAFETY_FactoryStatus *status)
+{
+  if (status == NULL) { return SAFETY_RESULT_BAD_ARGUMENT; }
+  return SecurityFactory_GetStatus(status);
+}
+
+int32_t Safety_FactoryProvision(
+    const SAFETY_FactoryProvisionRequest *request,
+    SAFETY_FactoryStatus *status)
+{
+  uint32_t primask;
+
+  if ((request == NULL) || (status == NULL))
+  {
+    return SAFETY_RESULT_BAD_ARGUMENT;
+  }
+  primask = Safety_EnterCritical();
+  Safety_ForceOutputsSafe();
+  Safety_ExitCritical(primask);
+  return SecurityFactory_Provision(request, status);
+}
+#endif
 
 int32_t Safety_GetValveConfig(SAFETY_ValveConfigSnapshot *snapshot)
 {
@@ -916,8 +1104,16 @@ int32_t Safety_ArmOutputs(uint32_t request_token)
   }
   primask = Safety_EnterCritical();
   if (((safety_status & SAFETY_STATUS_READY) == 0U) ||
-      (valve_control.calibrated == 0U))
+      (valve_control.calibrated == 0U) ||
+      ((safety_status & (SAFETY_STATUS_OTA_ACTIVE |
+                         SAFETY_STATUS_OTA_READY)) != 0U))
   {
+    Safety_ExitCritical(primask);
+    return SAFETY_RESULT_NOT_READY;
+  }
+  if ((security_status.flags & SAFETY_SECURITY_AUTHENTICATED) == 0U)
+  {
+    Safety_ForceOutputsSafe();
     Safety_ExitCritical(primask);
     return SAFETY_RESULT_NOT_READY;
   }
@@ -984,6 +1180,13 @@ int32_t Safety_SubmitActuatorCommand(const SAFETY_ActuatorCommand *command)
   }
 
   primask = Safety_EnterCritical();
+  if ((safety_status & (SAFETY_STATUS_OTA_ACTIVE |
+                        SAFETY_STATUS_OTA_READY)) != 0U)
+  {
+    Safety_ForceOutputsSafe();
+    Safety_ExitCritical(primask);
+    return SAFETY_RESULT_BUSY;
+  }
   if (HAL_GPIO_ReadPin(ESTOP_DETECT_GPIO_Port, ESTOP_DETECT_Pin) == GPIO_PIN_SET)
   {
     safety_status |= SAFETY_STATUS_ESTOP_ACTIVE | SAFETY_STATUS_FAULT_LATCHED;

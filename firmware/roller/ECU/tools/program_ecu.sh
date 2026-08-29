@@ -7,13 +7,19 @@ task_script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 task_project_dir="$(cd -- "${task_script_dir}/.." && pwd)"
 task_cli="${STM32_PROGRAMMER_CLI:-/home/plac/Applications/STMicroelectronics/STM32Cube/STM32CubeProgrammer/bin/STM32_Programmer_CLI}"
 task_probe="${STLINK_SERIAL:-066BFF565456857187210935}"
-task_secure_image="${task_project_dir}/Secure/build/Debug/ECU_S.elf"
-task_nonsecure_image="${task_project_dir}/NonSecure/build/Debug/ECU_NS.elf"
+task_build_type="${ECU_BUILD_TYPE:-Debug}"
+task_build_variant="${ECU_BUILD_VARIANT:-${task_build_type}}"
+task_secure_image="${task_project_dir}/Secure/build/${task_build_variant}/ECU_S.elf"
+task_nonsecure_image="${task_project_dir}/NonSecure/build/${task_build_variant}/ECU_NS.elf"
 task_backup_root="${ECU_BACKUP_DIR:-${task_project_dir}/artifacts/device-backups}"
 task_connect=( -c port=SWD "sn=${task_probe}" mode=UR reset=HWrst )
-task_valve_parameter_address="0x080FA000"
-task_valve_parameter_size="0x4000"
-task_valve_parameter_backup=""
+task_inspect_connect=( -c port=SWD "sn=${task_probe}" mode=Hotplug )
+task_persistent_address="0x080E0000"
+# The development linker places its NSC veneer in the final Bank-1 sector at
+# 0x080FE000. Identity, OTA journal, and valve records end immediately before
+# that sector; signed/OEMiROT builds relocate NSC but use the same data range.
+task_persistent_size="0x1E000"
+task_persistent_backup=""
 
 if [[ ! -x "${task_cli}" ]]; then
   echo "STM32CubeProgrammer CLI not found: ${task_cli}" >&2
@@ -22,6 +28,13 @@ fi
 
 display_option_bytes() {
   "${task_cli}" "${task_connect[@]}" -ob displ
+}
+
+display_option_bytes_running() {
+  # CubeProgrammer halts this H563 even in Hot Plug mode while reading option
+  # bytes. Reset in the same transaction so inspection never leaves the ECU
+  # paused. This is intentionally separate from the under-reset write path.
+  "${task_cli}" "${task_inspect_connect[@]}" -ob displ -rst
 }
 
 strip_terminal_sequences() {
@@ -60,7 +73,7 @@ backup_existing_flash() {
 
 check_images() {
   if [[ ! -f "${task_secure_image}" || ! -f "${task_nonsecure_image}" ]]; then
-    echo "Debug images are missing; run ./tools/build.sh Debug first." >&2
+    echo "${task_build_type} images are missing; run ./tools/build.sh ${task_build_type} first." >&2
     exit 2
   fi
 }
@@ -92,53 +105,53 @@ check_trustzone_layout() {
   fi
 }
 
-backup_valve_parameters() {
+backup_persistent_storage() {
   local task_timestamp
   task_timestamp="$(date -u +'%Y%m%dT%H%M%SZ')"
   umask 077
   mkdir -p -- "${task_backup_root}"
-  task_valve_parameter_backup="${task_backup_root}/stm32h563-${task_probe}-${task_timestamp}-valve-parameters-before.bin"
+  task_persistent_backup="${task_backup_root}/stm32h563-${task_probe}-${task_timestamp}-secure-persistent-before.bin"
   "${task_cli}" "${task_connect[@]}" -u \
-    "${task_valve_parameter_address}" "${task_valve_parameter_size}" \
-    "${task_valve_parameter_backup}"
-  sha256sum "${task_valve_parameter_backup}" > \
-    "${task_valve_parameter_backup}.sha256"
-  printf 'Valve parameter sectors backed up before firmware update:\n  %s\n' \
-    "${task_valve_parameter_backup}"
+    "${task_persistent_address}" "${task_persistent_size}" \
+    "${task_persistent_backup}"
+  sha256sum "${task_persistent_backup}" > \
+    "${task_persistent_backup}.sha256"
+  printf 'Secure identity, OTA journal, and valve parameters backed up before firmware update:\n  %s\n' \
+    "${task_persistent_backup}"
 }
 
-verify_valve_parameters_unchanged() {
+verify_persistent_storage_unchanged() {
   local task_after
-  task_after="${task_valve_parameter_backup%-before.bin}-after.bin"
+  task_after="${task_persistent_backup%-before.bin}-after.bin"
   "${task_cli}" "${task_connect[@]}" -u \
-    "${task_valve_parameter_address}" "${task_valve_parameter_size}" \
+    "${task_persistent_address}" "${task_persistent_size}" \
     "${task_after}"
   sha256sum "${task_after}" > "${task_after}.sha256"
-  if ! cmp -s -- "${task_valve_parameter_backup}" "${task_after}"; then
-    printf 'ERROR: firmware update changed reserved valve parameter sectors.\nPre-update data remains at:\n  %s\n' \
-      "${task_valve_parameter_backup}" >&2
+  if ! cmp -s -- "${task_persistent_backup}" "${task_after}"; then
+    printf 'ERROR: firmware update changed Secure persistent storage.\nPre-update data remains at:\n  %s\n' \
+      "${task_persistent_backup}" >&2
     exit 5
   fi
-  printf 'Valve parameter sectors verified unchanged after firmware update.\n'
+  printf 'Secure persistent storage verified unchanged after firmware update.\n'
 }
 
 flash_images() {
   local task_preserve_parameters="${1:-yes}"
   check_images
   if [[ "${task_preserve_parameters}" == "yes" ]]; then
-    backup_valve_parameters
+    backup_persistent_storage
   fi
   "${task_cli}" "${task_connect[@]}" -d "${task_secure_image}" -v
   "${task_cli}" "${task_connect[@]}" -d "${task_nonsecure_image}" -v
   if [[ "${task_preserve_parameters}" == "yes" ]]; then
-    verify_valve_parameters_unchanged
+    verify_persistent_storage_unchanged
   fi
   "${task_cli}" "${task_connect[@]}" -rst
 }
 
 case "${task_action}" in
   inspect)
-    display_option_bytes
+    display_option_bytes_running
     ;;
   backup)
     check_target_identity

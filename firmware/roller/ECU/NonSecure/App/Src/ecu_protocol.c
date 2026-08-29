@@ -25,6 +25,22 @@ _Static_assert(sizeof(ECU_OperationAckPayload) == 8U,
                "V2 operation acknowledgement ABI changed");
 _Static_assert(sizeof(SAFETY_ValveTelemetrySample) == 20U,
                "Valve telemetry sample ABI changed");
+_Static_assert(sizeof(SAFETY_OtaManifest) == 128U,
+               "OTA manifest ABI changed");
+_Static_assert(sizeof(SAFETY_OtaBeginRequest) == 192U,
+               "OTA begin ABI changed");
+_Static_assert(sizeof(SAFETY_OtaChunk) == 532U,
+               "OTA chunk ABI changed");
+_Static_assert(sizeof(SAFETY_OtaStatus) == 36U,
+               "OTA status ABI changed");
+_Static_assert(sizeof(ECU_OtaStatusPayload) == 44U,
+               "OTA status wire ABI changed");
+#if defined(ECU_FACTORY_PROVISIONING)
+_Static_assert(sizeof(SAFETY_FactoryProvisionRequest) == 32U,
+               "ATECC factory request ABI changed");
+_Static_assert(sizeof(ECU_FactoryAteccStatusPayload) == 239U,
+               "ATECC factory status ABI changed");
+#endif
 
 uint32_t ECU_ProtocolCrc32c(const void *data, size_t length)
 {

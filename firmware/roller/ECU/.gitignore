@@ -4,3 +4,5 @@ mx.scratch
 __pycache__/
 *.py[cod]
 /artifacts/device-backups/
+/artifacts/firmware/
+/artifacts/security-provisioning/

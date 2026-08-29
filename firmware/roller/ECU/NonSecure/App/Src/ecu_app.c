@@ -47,12 +47,38 @@ int32_t ECU_AppInit(void)
     return result;
   }
 
-  if (!ECU_DataModelInit() || !SpeedSensor_Init() || !J1939_Init() ||
-      !ECU_NetworkInit())
+  if (!ECU_DataModelInit())
   {
     (void)SECURE_SafetyDisarmOutputs();
     return SAFETY_RESULT_INTERNAL_ERROR;
   }
+  if (!SpeedSensor_Init())
+  {
+    (void)SECURE_SafetyDisarmOutputs();
+    return SAFETY_RESULT_INTERNAL_ERROR;
+  }
+  if (!J1939_Init())
+  {
+    (void)SECURE_SafetyDisarmOutputs();
+    return SAFETY_RESULT_INTERNAL_ERROR;
+  }
+  if (!ECU_NetworkInit())
+  {
+    (void)SECURE_SafetyDisarmOutputs();
+    return SAFETY_RESULT_INTERNAL_ERROR;
+  }
+#if defined(ECU_OEMIROT_LAYOUT)
+  /* Confirm a test swap only after Secure identity authentication and the
+     complete communications/ADC startup path have succeeded.  If this call
+     fails, the watchdog resets the board and OEMiROT restores the previous
+     images. */
+  result = SECURE_SafetyOtaConfirmRunningImages();
+  if (result != SAFETY_RESULT_OK)
+  {
+    (void)SECURE_SafetyDisarmOutputs();
+    return result;
+  }
+#endif
 
   watchdog_service_tick = HAL_GetTick();
   watchdog_heartbeat = 0U;

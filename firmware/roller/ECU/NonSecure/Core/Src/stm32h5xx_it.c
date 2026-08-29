@@ -64,6 +64,16 @@ extern TIM_HandleTypeDef htim2;
 /******************************************************************************/
 /*           Cortex Processor Interruption and Exception Handlers          */
 /******************************************************************************/
+void NMI_Handler(void)
+{
+  while (1) { }
+}
+
+void HardFault_Handler(void)
+{
+  while (1) { }
+}
+
 /**
   * @brief This function handles Memory management fault.
   */
@@ -77,6 +87,11 @@ void MemManage_Handler(void)
     /* USER CODE BEGIN W1_MemoryManagement_IRQn 0 */
     /* USER CODE END W1_MemoryManagement_IRQn 0 */
   }
+}
+
+void BusFault_Handler(void)
+{
+  while (1) { }
 }
 
 /**
