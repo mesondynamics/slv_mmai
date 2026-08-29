@@ -11,9 +11,12 @@ OEMiROT boot 区，但 OPEN 状态下 ST-Link 仍能读取应用区，因此“�
 固件”尚未最终满足。只有在预装 `ReleaseClosed` 引导镜像、完成全部验收、确认
 离线 PKI 备份可恢复并执行不可逆 CLOSED 产品状态转换后，才满足该项要求。
 
-本工程的 Debug Authentication 策略只允许证书认证的 **Full Regression**：发生
-售后恢复时整片擦除，不允许重开调试并保留客户固件。CLOSED 之后若 OTA 和应用均
-损坏，正常恢复路径会丢失设备数据；这正是防提取策略的一部分。
+Debug Authentication 使用产品自有的三层 P-256 证书链和最小权限 `0x4040`：
+`bit6` 允许工程师认证后临时打开 HDPL3 Secure+NonSecure 应用调试，`bit14`
+允许 Full Regression 回到 OPEN。没有授权 HDPL1/HDPL2 调试或 Partial Regression，
+因此售后调试不能越过 OEMiROT 的 HDP 边界。临时调试跨 reset 保持、断电或显式
+close-debug 后失效；Full Regression 则必然擦除全部用户 Flash、OBKeys 和安全
+存储，不是保留固件的生命周期切换。
 
 ## 2. 启动信任链
 
@@ -126,6 +129,27 @@ python3 tools/ethernet_ota.py \
 
 `--stop-after-bytes` 仅用于受控台架的掉电/中断恢复试验，不能出现在生产 SOP。
 
+售后 DA 命令：
+
+```sh
+# CLOSED 设备只读发现；列出实际允许的服务
+python3 tools/ecu_debug_auth.py discover --accept-closed-target
+
+# 临时开放 HDPL3 Secure+NonSecure 应用调试
+python3 tools/ecu_debug_auth.py open-app-debug --accept-closed-target
+
+# 维修结束立即关闭；完整断电也会恢复 CLOSED 默认调试状态
+python3 tools/ecu_debug_auth.py close-debug --accept-closed-target
+
+# 灾难恢复：整片擦除、OBKeys/安全存储失效并回到 OPEN
+python3 tools/ecu_debug_auth.py full-regression-to-open \
+  --accept-full-device-erase
+```
+
+工具只把解密后的 leaf 私钥短暂放入 `/dev/shm`、权限 0600，完成后覆盖并删除；
+工程师工作站仍必须使用全盘加密、最小账户权限和维修操作审计。Full Regression
+后必须按新板流程重新 provision，旧 DHUK 包装的资产和旧安全存储不能复用。
+
 ## 6. Provision、备份与 CLOSED 门槛
 
 当前板 OEMiROT/OBKeys 已 provision，JP1 必须保持断开。OPEN 状态只读检查使用：
@@ -159,10 +183,12 @@ CLOSED 转换必须同时满足：
 4. 目标探针序列、MCU UID、ATECC serial、整机序列和固件 hash 经双人复核。
 5. 用户明确授权本块板执行不可逆 CLOSED 转换。
 
-本工程当前没有自动执行 CLOSED 的命令，避免把“构建完成”误变成硬件不可逆授权。
-在上述条件全部确认前不得手工写 PRODUCT_STATE。转换后应验证普通 ST-Link 无法
-读取 Flash、Ethernet OTA 仍可升级，以及 DA 只能执行 Full Regression、不能重开
-保留数据的调试。
+转换使用 `tools/finalize_oemirot_closed.sh`，必须显式传入
+`--accept-irreversible-closed`。脚本先做零输出/身份/OTA 预检和完整备份，再安装
+ReleaseClosed，按 ST H563 顺序进入 PROVISIONING、写入全部 HDPL1 OBKeys，最后
+请求 CLOSED。在上述条件全部确认前不得手工写 PRODUCT_STATE。转换后必须验证：
+普通 ST-Link 不能读取 Flash、Ethernet OTA 正常、DA discovery 同时列出 Full
+Regression 和 HDPL3 S/NS debug、临时调试能认证打开并能显式关闭。
 
 ## 7. 本轮实板验证证据
 

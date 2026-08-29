@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate product OEMiROT and regression-only Debug Authentication assets."""
+"""Generate OEMiROT and least-privilege field-service DA assets."""
 
 from __future__ import annotations
 
@@ -29,7 +29,10 @@ PSA_ADAC_SOURCE = Path(
 )
 DEFAULT_PKI = Path("/home/plac/.local/share/roller-ecu-pki")
 DEFAULT_OUTPUT = PROJECT / "artifacts/security-provisioning"
-FULL_REGRESSION_ONLY = 0x00004000
+DA_FULL_REGRESSION = 1 << 14
+DA_DEBUG_HDPL3_SECURE_NONSECURE = 1 << 6
+FIELD_SERVICE_PERMISSION = (DA_FULL_REGRESSION |
+                            DA_DEBUG_HDPL3_SECURE_NONSECURE)
 
 
 def private_bytes(key: ec.EllipticCurvePrivateKey, password: bytes) -> bytes:
@@ -117,7 +120,7 @@ lifecycle: 0x0000
 oem_constraint: 0
 soc_class: 0
 soc_id: 0
-permissions_mask: 0x00000000_00000000_00000000_{FULL_REGRESSION_ONLY:08x}
+permissions_mask: 0x00000000_00000000_00000000_{FIELD_SERVICE_PERMISSION:08x}
 """
 
 
@@ -173,11 +176,11 @@ def main() -> int:
         da_body = "<DA></DA>" + file_element(
             "Debug Authentication root key",
             args.pki_dir / "da-root-public.pem") + f"""
-<Permission><Name>Permission</Name><Value>0x{FULL_REGRESSION_ONLY:08x}</Value>
-<Width>4</Width><Default>0x{FULL_REGRESSION_ONLY:08x}</Default>
-<Tooltip>Full regression only; all debug reopening disabled</Tooltip></Permission>"""
+<Permission><Name>Permission</Name><Value>0x{FIELD_SERVICE_PERMISSION:08x}</Value>
+<Width>4</Width><Default>0x{FIELD_SERVICE_PERMISSION:08x}</Default>
+<Tooltip>HDPL3 S/NS temporary debug and destructive full regression</Tooltip></Permission>"""
         da_xml.write_text(obk_xml(
-            "Roller ECU regression-only Debug Authentication", "0x0FFD0100",
+            "Roller ECU field-service Debug Authentication", "0x0FFD0100",
             args.output_dir / "DA_Config.obk", da_body))
         run([str(TPC), "-obk", str(da_xml)])
 
@@ -216,8 +219,10 @@ def main() -> int:
         decoded = subprocess.run(
             [str(psa_adac), "decode", str(args.output_dir / "cert-leaf-chain.b64")],
             check=True, text=True, capture_output=True).stdout
-        if decoded.count("permissions_mask:") != 3 or decoded.count("00004000") != 3:
-            raise RuntimeError("generated DA chain is not regression-only")
+        expected_mask = f"{FIELD_SERVICE_PERMISSION:08x}"
+        if (decoded.count("permissions_mask:") != 3 or
+                decoded.lower().count(expected_mask) != 3):
+            raise RuntimeError("generated DA chain has unexpected permissions")
 
     expected_sizes = {"OEMiRoT_Config.obk": 300, "OEMiRoT_Data.obk": 204,
                       "DA_Config.obk": 108}
@@ -226,9 +231,13 @@ def main() -> int:
         if path.stat().st_size != expected:
             raise RuntimeError(f"unexpected {name} size: {path.stat().st_size}")
     manifest = {
-        "policy": "CLOSED with certificate-authenticated full regression only",
-        "debug_reopening": False,
-        "permission_mask": f"0x{FULL_REGRESSION_ONLY:08x}",
+        "policy": ("CLOSED with certificate-authenticated HDPL3 S/NS debug "
+                   "and destructive full regression"),
+        "debug_reopening": True,
+        "debug_scope": "HDPL3 secure and nonsecure",
+        "full_regression": True,
+        "partial_regression": False,
+        "permission_mask": f"0x{FIELD_SERVICE_PERMISSION:08x}",
         "files": {path.name: sha256(path) for path in outputs[:-1]},
     }
     (args.output_dir / "security-assets.json").write_text(
@@ -236,7 +245,7 @@ def main() -> int:
     for path in outputs:
         path.chmod(stat.S_IRUSR | stat.S_IWUSR)
     print(f"Generated product security assets: {args.output_dir}")
-    print("DA policy: full regression (mass erase) only; debug reopening disabled")
+    print("DA policy: HDPL3 S/NS temporary debug + destructive full regression")
     return 0
 
 

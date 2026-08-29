@@ -10,7 +10,7 @@ task_action="${1:-inspect}"
 task_confirmation="${2:-}"
 task_script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 task_project_dir="$(cd -- "${task_script_dir}/.." && pwd)"
-task_cli="${STM32_PROGRAMMER_CLI:-/home/plac/Applications/STMicroelectronics/STM32Cube/STM32CubeProgrammer/bin/STM32_Programmer_CLI}"
+task_cli="${STM32_PROGRAMMER_CLI:-/home/plac/.local/share/stm32cube/bundles/programmer/2.23.0/bin/STM32_Programmer_CLI}"
 task_probe="${STLINK_SERIAL:-066BFF565456857187210935}"
 task_version="${ECU_INITIAL_VERSION:-1.0.1}"
 task_pki_dir="${ECU_PKI_DIR:-/home/plac/.local/share/roller-ecu-pki}"
@@ -256,9 +256,13 @@ for name in ("DA_Config.obk", "OEMiRoT_Config.obk", "OEMiRoT_Data.obk"):
     actual = hashlib.sha256((root / name).read_bytes()).hexdigest()
     if manifest["files"].get(name) != actual:
         raise SystemExit(f"security asset hash mismatch: {name}")
-if manifest.get("debug_reopening") is not False or manifest.get("permission_mask") != "0x00004000":
-    raise SystemExit("DA policy is not regression-only")
-print("OEMiROT images, OBKeys, and regression-only DA policy verified")
+if (manifest.get("debug_reopening") is not True or
+        manifest.get("debug_scope") != "HDPL3 secure and nonsecure" or
+        manifest.get("full_regression") is not True or
+        manifest.get("partial_regression") is not False or
+        manifest.get("permission_mask") != "0x00004040"):
+    raise SystemExit("DA field-service policy is not the reviewed minimum")
+print("OEMiROT images, OBKeys, and field-service DA policy verified")
 PY
 }
 

@@ -198,7 +198,8 @@ Option Bytes、OBKeys 和产品生命周期不属于 `.ioc`。当前 OEMiROT 台
 - `BOOT_UBE=0xB4`，`SECBOOTADD=0x0C000000` 且 `SECBOOT_LOCK=0xB4`；
 - Bank1 全部 Secure、Bank2 NonSecure，禁止 Bank Swap；
 - WRP group 0..3 保护 OEMiROT，HDP Bank1 `0x00..0x17` 隐藏 boot+scratch；
-- DA OBK 只授权 Full Regression（整片擦除），不授权调试重开；
+- DA OBK 权限为 `0x4040`：仅允许证书认证的 HDPL3 S/NS 临时调试和破坏性
+  Full Regression；不开放 HDPL1/2，也不允许 Partial Regression；
 - Secure SRAM2 在 reset 清除并启用 ECC。
 
 `tools/provision_oemirot_open.sh` 在任何破坏性迁移前核对芯片、探针和产品状态，
