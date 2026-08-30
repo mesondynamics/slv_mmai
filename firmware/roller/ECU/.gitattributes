@@ -7,3 +7,4 @@
 /Secure_nsclib/secure_nsc.h whitespace=cr-at-eol
 /Secure/mx-generated.cmake whitespace=cr-at-eol
 /NonSecure/mx-generated.cmake whitespace=cr-at-eol
+/Secure/STM32H563xx_FLASH_s.ld whitespace=cr-at-eol

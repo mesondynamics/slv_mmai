@@ -37,6 +37,8 @@ done
 task_nonsecure_elf="${task_project_dir}/NonSecure/build/OEMiROT/${task_build_type}/ECU_NS.elf"
 python3 "${task_script_dir}/check_nsc_abi.py" \
   --abi-source "${task_project_dir}/Secure_nsclib/secure_nsc_abi_v1.s" \
+  --abi-v2-source "${task_project_dir}/Secure_nsclib/secure_nsc_abi_v2.s" \
+  --abi-v3-source "${task_project_dir}/Secure_nsclib/secure_nsc_abi_v3.s" \
   --import-library "${task_oemirot_import_library}" \
   --secure-elf "${task_secure_elf}" \
   --nonsecure-elf "${task_nonsecure_elf}" \

@@ -11,6 +11,9 @@
 4. 主机 UI、自动测试脚本和其他控制器不能同时占用控制权。
 5. 只具备万用表/电流表时，不把 PWM 频率、开关瞬态、过冲和 EMC 判为已验证；
    这些项目必须在后续示波器和故障注入试验中补齐。
+6. 转向主动测试前，车轮/铰接必须离地或与危险机械能量脱离，行程两端
+   留有充足余量，人员离开夹挤区，并可立即切断电机供电。断电测量 J7-13
+   `CAN2_H` 到 J7-16 `CAN2_L` 的总终端约为 60 Ω，然后才允许非零速度。
 
 控制值归零仍保持原车线路接管；只有发送 RELEASE、关闭 UI 或等待控制超时，
 K1/K2/K5/K7/K9/K13/K12 等接管继电器才会释放。
@@ -176,6 +179,52 @@ mask 只证明软件要求的 TPIC 位，不证明触点、电磁阀或线束实
 UI 波形包含请求目标、斜坡目标、带符号反馈、两路占空比，支持 CSV 导出。原始
 文件应随测试编号、固件 commit、板号和仪表信息归档。
 
+### 5.1 UI CAN2 转向分阶段验收
+
+转向无本地角度反馈，必须把“通信零动作”与“低能量实动”分开记录。
+第一阶段不勾选转向使能：
+
+1. 确认 UI 每 100 ms 收到 52 B `STEERING_STATUS`，状态年龄 <500 ms，
+   请求速度、已确认命令速度（非反馈）、速度命令千分比和电机速度反馈原始值为 0，
+   `motor_enable_confirmed=0`。
+2. 上电时 CAN 分析仪应看到先发 `0x2000=0`、再发 `0x200C=0`；禁止在
+   启动序列中出现非零 `0x2000`。使能 `0x200D` 未收到严格 SDO ACK 时，
+   状态不得进入 ACTIVE；节点 1 的厂商规定 ACK 是
+   `ID=0x05800001, data=60 0D 20 00 00 00 00 00`，第 4 字节不是命令中的 1。
+3. 分别在闲置、持续普通控制和打开 PI 波形三种情况执行
+   `./tools/check_ecu_latency.sh`；均须满足无丢包、平均≤1 ms、最大≤5 ms，不得重现
+   20 ms 级阻塞峰值。
+4. 抓包确认 V2/V1 状态各为 20 Hz，转向/诊断/安全状态各为 10 Hz，周期类报文按
+   0/10/25/35/60 ms 相位分散，同一 HAL 毫秒最多提交一类周期应用帧；调参未打开时
+   UDP 50004 必须没有高速遥测。
+5. 从 `172.16.0.10` 以外的受控测试地址发送普通控制、GET/APPLY/SUBSCRIBE，确认
+   ECU 不动作且不回复；再发送结构及校验正确的零输出急停，确认其仍进入安全停止。
+   该项只验证纵深 IP 策略，不得记录为密码学鉴权测试。
+6. 在 `172.16.0.10` 上用第二个受控测试进程和不同 UDP 源端口发送更新 sequence，
+   记录它属于同一主机信任域而可接管 sender；确认生产主机进程隔离和点对点二层
+   隔离措施已纳入系统验收，不能把源端口或 CRC 当作身份认证。
+
+只有本文第 1 节与转向附加安全条件均已由现场人员确认，才进入第二阶段：
+
+1. 将 UI sender 设为 1 或 2，输入小速度（建议首次 0.6°/s，换算后约为 1‰
+   额定转速命令），勾选转向使能并确认风险对话；保持不按方向键，确认使能
+   ACK 后速度命令仍为 0。电机参数 0002 必须先核对为 80 rpm；否则禁止实动。
+   断开或屏蔽 ACK 时，ARM 必须在 750 ms 内自动失能；已确认后即使保持零速度，
+   丢失 ACTIVE/command-enable/motor-enable 任一确认也必须自动失能。
+2. 点按正向不超过 200 ms 后松开，确认方向与整车定义一致、松手立即回零；
+   反向重复。若方向错误，立即停止并修正受版本控制的方向配置，不得靠现场记忆补偿。
+3. 按住某方向不松，确认 2 s 到期后自动零速度/禁用、置位
+   `MANUAL_LIMIT|REARM_REQUIRED`，且持续非零包不能重启；必须先 STOP 才能再次 ARM。
+4. 在零速度下测试页面失焦、切换 sender、断开上位端网络和 CAN 节点掉线；
+   分别确认零速度/禁用序列、250/300 ms 双看门狗、bus-off/timeout 故障可见，
+   且转向局部故障不破坏 Ethernet、CAN1 和无关继电器的调度。
+   另用 251 ms、299 ms 周期发送同一 sender 的非零包，确认控制权仍在过期瞬间
+   IDLE/Disarm，非零帧被拒绝；只有全中性禁用帧、完整 20 ms 安全轮和 Secure
+   接受后才能重新 ARM。反复每 1 ms 请求安全或每 20 ms发送 disable-zero 时，
+   延迟 45 ms 的零速/禁用 SDO ACK 仍必须完成原事务，不能被刷新丢弃。
+5. 结束后点击 STOP、取消使能、释放控制，确认零速度、电机未使能、
+   控制模式 IDLE，并归档 CAN 抓包、UI 截图、延迟报告和固件 hash。
+
 ## 6. 参数存储专项测试
 
 | 测试 | 操作 | 通过标准 |
@@ -203,8 +252,8 @@ NVM-04/05 会反复擦写或故意断电，只能在开发样件和受控供电�
 | HW-06 | 阀故障注入 | 过流、开路、反馈轨故障、非活动电流均锁存并全局关断 |
 | HW-07 | 速度 PA0 | 20000 pulse/km 换算正确，1500 ms 后信号丢失 |
 | HW-08 | 慢 ADC | 各通道顺序、电压换算、开短路行为符合传感器规范 |
-| HW-09 | CAN1/J1939 | 250 kbit/s 六 PGN 解析与旧车一致，1000 ms 过期，其他 ID 拒绝 |
-| HW-10 | CAN2 | 保持预留，不启动、不发送、不接受车辆控制 |
+| HW-09 | Secure CAN1/J1939 | 250 kbit/s 六 PGN 解析与旧车一致，1000 ms 有效/1001 ms 过期，非法格式/其他 ID 拒绝；NonSecure 仅见 NSC 快照；warning/passive/bus-off 置 bit27，恢复后清除且不影响 Ethernet/CAN2 |
+| HW-10 | CAN2 转向 | 250 kbit/s；只接收节点 1 SDO/heartbeat；零速度/禁用先行；使能 ACK 前无非零 TX；正反向短脉冲、手动 2 s 限时和通信故障安全停机全部通过 |
 | HW-11 | PB8/PB9 软件 I²C/ATECC reset recovery | PB9=SCL、PB8=SDA；启动无条件 START+9 clocks+START+STOP，随后 reset/sleep；最长 725 ms 有界重试期间服务 IWDG；当前 R1 无飞线 |
 | HW-12 | IWDG/CSS | NonSecure 停止或 HSE 故障时先关输出，约 2 s 复位 |
 | HW-13 | 电源/EMC/热/耐久 | 无非预期吸合，等级符合整机风险分析和目标标准 |
@@ -258,16 +307,16 @@ loader 源码与发布 hash 的**发布/型式鉴定矩阵**，只在具备完�
 | OTA-P16 | 以已双确认、当次双侧完整验签且身份一致的 primary pair，注入单侧及双侧坏 staging/FAIL | 只有该 trusted pair 允许幂等 FAIL 清理；flag 保持 `0x01`、发布身份和 NV counter 不被伪造或意外改变，最终仍只启动同一 trusted pair | HW-FI |
 
 OTA-P01 必须在待转换板或 CLOSED 后唯一发布形成独立实测记录；第 10 节历史
-OTA PASS 不能替代第 11.2 节的 1.0.15 转换基线或第 11.3 节的 1.0.16
-CLOSED Ethernet OTA。第 11.1 节的 1.0.14 三次无探针
+OTA PASS 不能替代第 11.2 节的 1.0.15 转换基线、第 11.3 节的 1.0.16
+完整终验或第 11.4 节的 1.0.17 CLOSED Ethernet OTA。第 11.1 节的 1.0.14 三次无探针
 冷启动保留为历史证据，不能冒充当前发布。OTA-P02..P16 的发布/型式鉴定记录
 必须精确绑定固件包 SHA-256、S/NS version/counter、update sequence、loader 源码和
 硬件版本；相关断电记录还应包含注入时刻、掉电保持时间、重启后的
 swap/flag/counter、零输出和网络状态。已批准且绑定相同发布基线的型式试验证据可供
 该批量产板 CLOSED 评审引用，不在每块生产板上重做破坏性注入。
 
-不得刷写已撤销的 1.0.13，也不得为了补测而复用已经接受的 1.0.14、1.0.15
-或 1.0.16
+不得刷写已撤销的 1.0.13，也不得为了补测而复用已经接受的 1.0.14、1.0.15、
+1.0.16 或 1.0.17
 identity；尚未
 完成的 OTA-P02..P16 必须在下一唯一发布身份或专用测试发布上执行，并明确记录为
 PENDING，不能写成 PASS。OTA-P15/P16 会故意破坏 rollback/staging，只能使用具备
@@ -324,10 +373,11 @@ trace 的 `ReleaseClosed` OEMiROT，JP1 断开，产品状态为 CLOSED (`0x72`)
 
 ## 11. 2026-08-30 OPEN→CLOSED 样件回归记录
 
-本节只记录已取得的实测证据。当前产品状态为 CLOSED (`0x72`)，
-运行 1.0.16/counter16/`accepted_sequence=16`，JP1 断开。1.0.15 的不可变
-CLOSED 转换、普通未认证读取拒绝与 DA 售后边界继续作为转换/恢复基线；
-1.0.16 的发布后 DA 回读、关闭调试和最终无探针冷启动也已独立完成。
+本节只记录已取得的实测证据。当前产品状态为 CLOSED (`0x72`)，已接受唯一签名的
+1.0.17/counter17/`accepted_sequence=17`，JP1 断开。1.0.15 的不可变 CLOSED
+转换、普通未认证读取拒绝与 DA 售后边界继续作为转换/恢复基线；1.0.16 的发布后
+DA 回读、关闭调试和最终无探针冷启动也已独立完成。1.0.17 的 DA 精确回读、
+关闭调试、关闭后读取拒绝和最终无探针冷启动均已完成。
 
 ### 11.1 1.0.14 OPEN loader 替换与无探针冷启动历史证据
 
@@ -383,10 +433,27 @@ CLOSED 转换、普通未认证读取拒绝与 DA 售后边界继续作为转换
 | 1.0.16 close-debug | `close-debug` PASS；严格 CLOSED/VALID 复核 PASS；关闭后普通未认证读取再次 rc=1/拒绝；本轮未执行 Full Regression | PASS |
 | DA 后最终无探针冷启动 | 完整移除 ST-Link，ECU 断电至少 10 s 后仅 ECU 上电；MCU/ATECC/pairing、no-quarantine、relay/PWM 全零、`tuning_active=false`、telemetry=0，OTA `state=IDLE/result=0/ota_result=0/accepted_sequence=16`；100 包 0% 丢包，RTT min/avg/max=`0.060/0.116/0.331 ms` | PASS |
 
+### 11.4 1.0.17 CLOSED Ethernet OTA、DA、冷启动与转向失联安全状态
+
+| 项目 | 2026-08-30 实测结果 | 结论 |
+|---|---|---|
+| 唯一发布 | version 1.0.17/counter17/update-sequence17；package SHA-256=`75948795f39d898795b85841e4ad2e06c47738240184ff9ffbdc729fc11ab599`；双 initial 与 transport 签名离线验证通过 | PASS；身份已消耗 |
+| CLOSED Ethernet OTA | 未接 ST-Link 完成传输、FINISH、reset、成对 TEST swap 和确认；最终 `state=IDLE/result=0/ota_result=0/accepted_sequence=17`，全部 session 字段为 0 | PASS |
+| post-OTA runtime | MCU/ATECC/pairing/no-quarantine 通过；relay mask、两路阀目标/PWM、转向请求/应用速度及 motor-enable 均为 0；调参和高速 telemetry 关闭 | PASS |
+| CAN2 电机失联 | 当前 `rx_frames=0`、protocol fault、bus passive、`SAFE_DISABLE_PENDING`，控制器持续请求安全禁用且所有转向控制量为零 | PASS（fail-closed）；主动电机控制 PENDING |
+| Ethernet 性能 | OTA 前 100 包 0% 丢包，RTT min/avg/max=`0.068/0.099/0.157 ms`；OTA 后=`0.065/0.104/0.144 ms` | PASS |
+| 非侵入证据 | `artifacts/hardware-regression/20260830T150744Z-closed-ota-1.0.17-runtime/` 含摘要及 SHA-256 manifest | PASS |
+| 1.0.17 DA 默认拒绝与认证 | 证据目录=`artifacts/hardware-regression/20260830T154340Z-closed-da-readback-1.0.17/`；认证前普通读取 rc=1/无文件；严格 discovery 为 target `0x484`、SDA `2.4.0`、CLOSED、integrity VALID；仅 permission `c` 认证 PASS，本轮未执行 Full Regression | PASS |
+| 1.0.17 primary 精确回读 | Secure `0x0C030000/0x30000`、NonSecure `0x08100000/0x50000` 六段回读完成；verifier 证明 `1.0.17+0`/counter17、`image_ok=copy_done=0x01/0x01`、S swap=`0x2DDE8`、NS swap=`0x8D38`；审计 JSON SHA-256=`8edbfecbccfbce61d724299d6dd23845eb576f457555a65cd7dc6a1b4cfb8401` | PASS |
+| 1.0.17 close-debug | `Locking Debug` 和严格 CLOSED/VALID 复核 PASS；关闭后同一普通读取再次 rc=1/无文件 | PASS |
+| DA 后最终仅 ECU 冷启动 | 完整移除 ST-Link、保持 JP1 断开并断电至少 10 s；MCU/ATECC/pairing/no-quarantine、relay/阀/PWM/转向零输出、调参关闭、telemetry=0；OTA IDLE/result=0/accepted17；100 包 0% 丢包，RTT min/avg/max=`0.066/0.103/0.146 ms` | PASS |
+| DA 证据外部备份 | 已复制到 `/home/plac/Documents/ECU_PKI/artifacts/hardware-regression/20260830T154340Z-closed-da-readback-1.0.17/`；0700/0600、逐字节 diff 和 manifest 均通过 | PASS |
+
 以下项目仍为 PENDING，不得继承历史记录或把软件 mask 当作硬件 PASS：
 
 - 阀体到货后的真实前进/后退电流闭环、PI 标定、开路/短路/过流和换向故障注入；
 - K1..K27 实际触点、车辆负载、急停/驻车/启动/高低转速/龟兔档失电恢复；
 - CAN1/J1939 车辆报文、速度输入和油温/油压/水位等传感器实信号；
+- 接入真实转向电机后的 CAN2 enable/速度/停止/超时/DTC/bus-off/急停测试；
 - 电源瞬态、IWDG/CSS、PHY 故障、EMC、环境、热和耐久型式试验；
 - 第 8.2 节 OTA-P02..P16 专用可恢复样件发布/型式鉴定。

@@ -13,5 +13,6 @@
 
 bool EthernetPhy_IdentityIsValid(uint32_t identifier1,
                                  uint32_t identifier2);
+bool EthernetPhy_DeviceAddressIsAllowed(uint32_t device_address);
 
 #endif /* ECU_ETHERNET_PHY_POLICY_H */

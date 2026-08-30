@@ -431,7 +431,7 @@
 //   <o.3>  IWDG_IRQn             <0=> Secure state
 //   <o.5>  ADC1_IRQn             <0=> Secure state
 //   <o.6>  DAC1_IRQn             <0=> Secure state
-//   <o.7>  FDCAN1_IT0_IRQn       <1=> Non-Secure state
+//   <o.7>  FDCAN1_IT0_IRQn       <0=> Secure state
 //   <o.8>  FDCAN1_IT1_IRQn       <0=> Secure state
 //   <o.9>  TIM1_BRK_IRQn         <0=> Secure state
 //   <o.10> TIM1_UP_IRQn          <0=> Secure state
@@ -457,7 +457,7 @@
 //   <o.30> UART5_IRQn            <0=> Secure state
 //   <o.31> LPUART1_IRQn          <0=> Secure state
 */
-#define NVIC_INIT_ITNS1_VAL      0x00002080
+#define NVIC_INIT_ITNS1_VAL      0x00002000
 
 /*
 //   </e>

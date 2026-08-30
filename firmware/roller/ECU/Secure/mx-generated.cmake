@@ -20,6 +20,7 @@ set(MX_Application_Src
     ${CMAKE_CURRENT_SOURCE_DIR}/Core/Src/main.c
     ${CMAKE_CURRENT_SOURCE_DIR}/Core/Src/gpio.c
     ${CMAKE_CURRENT_SOURCE_DIR}/Core/Src/adc.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/Core/Src/fdcan.c
     ${CMAKE_CURRENT_SOURCE_DIR}/Core/Src/gpdma.c
     ${CMAKE_CURRENT_SOURCE_DIR}/Core/Src/gtzc_s.c
     ${CMAKE_CURRENT_SOURCE_DIR}/Core/Src/icache.c
@@ -51,6 +52,7 @@ set(STM32_Drivers_Src
     ${CMAKE_CURRENT_SOURCE_DIR}/../Drivers/STM32H5xx_HAL_Driver/Src/stm32h5xx_hal_cortex.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../Drivers/STM32H5xx_HAL_Driver/Src/stm32h5xx_hal.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../Drivers/STM32H5xx_HAL_Driver/Src/stm32h5xx_hal_exti.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../Drivers/STM32H5xx_HAL_Driver/Src/stm32h5xx_hal_fdcan.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../Drivers/STM32H5xx_HAL_Driver/Src/stm32h5xx_hal_gtzc.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../Drivers/STM32H5xx_HAL_Driver/Src/stm32h5xx_hal_icache.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../Drivers/STM32H5xx_HAL_Driver/Src/stm32h5xx_hal_iwdg.c

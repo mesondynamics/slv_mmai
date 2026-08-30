@@ -7,3 +7,8 @@ bool EthernetPhy_IdentityIsValid(uint32_t identifier1,
          ((identifier2 & ECU_ETH_PHY_ID2_MASK) ==
           ECU_ETH_PHY_ID2_EXPECTED);
 }
+
+bool EthernetPhy_DeviceAddressIsAllowed(uint32_t device_address)
+{
+  return device_address == ECU_ETH_PHY_ADDRESS;
+}

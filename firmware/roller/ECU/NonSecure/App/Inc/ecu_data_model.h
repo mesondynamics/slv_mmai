@@ -19,11 +19,15 @@ typedef enum
 
 bool ECU_DataModelInit(void);
 int32_t ECU_DataModelApplyControl(const ECU_ControlPayloadV2 *control,
+                                  uint16_t control_flags,
+                                  uint8_t sender_id,
                                   uint32_t secure_sequence);
 void ECU_DataModelControlLost(void);
 void ECU_DataModelSetAuthority(ECU_ControlMode mode, uint8_t sender_id);
 void ECU_DataModelUpdateStatus(void);
+bool ECU_DataModelUpdateSteeringStatus(void);
 const ECU_StatusPayloadV2 *ECU_DataModelGetStatus(void);
+const ECU_SteeringStatusPayloadV2 *ECU_DataModelGetSteeringStatus(void);
 const ECU_ControlPayloadV2 *ECU_DataModelGetControl(void);
 const SAFETY_AdcSnapshot *ECU_DataModelGetAdcSnapshot(void);
 const SAFETY_ActuatorSnapshot *ECU_DataModelGetActuatorSnapshot(void);

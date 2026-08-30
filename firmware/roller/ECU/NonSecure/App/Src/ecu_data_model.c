@@ -1,5 +1,6 @@
 #include "ecu_data_model.h"
 
+#include <limits.h>
 #include <string.h>
 
 #include "j1939.h"
@@ -9,6 +10,15 @@
 
 #define ECU_ADC_REFERENCE_MV          3360UL
 #define ECU_ENGINE_RUN_THRESHOLD_MV   3200U
+
+_Static_assert(SAFETY_ACTUATOR_API_VERSION == 3UL,
+               "Steering command mapping requires actuator API v3");
+_Static_assert(SAFETY_STEERING_API_VERSION == 1UL,
+               "Unsupported steering snapshot API");
+_Static_assert(sizeof(SAFETY_ActuatorSnapshot) == 60U,
+               "Frozen actuator snapshot ABI changed");
+_Static_assert(sizeof(SAFETY_SteeringSnapshot) == 72U,
+               "Steering snapshot ABI changed");
 
 enum
 {
@@ -24,6 +34,7 @@ enum
 };
 
 static ECU_StatusPayloadV2 status_payload;
+static ECU_SteeringStatusPayloadV2 steering_status_payload;
 static ECU_ControlPayloadV2 current_control;
 static SAFETY_AdcSnapshot adc_snapshot;
 static SAFETY_ActuatorSnapshot actuator_snapshot;
@@ -40,9 +51,38 @@ static bool ECU_RelayIsOn(uint32_t mask)
   return (actuator_snapshot.applied_relay_mask & mask) != 0U;
 }
 
+static uint8_t ECU_SteeringSourceFromSender(uint8_t sender_id)
+{
+  switch (sender_id)
+  {
+    case 1U:
+      return SAFETY_STEERING_SOURCE_REMOTE;
+
+    case 3U:
+      return SAFETY_STEERING_SOURCE_AUTONOMOUS;
+
+    case 2U:
+    default:
+      /* Custom/unknown senders are deliberately treated as an operator
+         source so they cannot inherit the longer autonomous authority path. */
+      return SAFETY_STEERING_SOURCE_OPERATOR;
+  }
+}
+
+static bool ECU_SenderCanControlSteering(uint8_t sender_id)
+{
+  return (sender_id >= 1U) && (sender_id <= 3U);
+}
+
+static uint16_t ECU_SaturateU32ToU16(uint32_t value)
+{
+  return (value > UINT16_MAX) ? UINT16_MAX : (uint16_t)value;
+}
+
 bool ECU_DataModelInit(void)
 {
   memset(&status_payload, 0, sizeof(status_payload));
+  memset(&steering_status_payload, 0, sizeof(steering_status_payload));
   memset(&current_control, 0, sizeof(current_control));
   memset(&adc_snapshot, 0, sizeof(adc_snapshot));
   memset(&actuator_snapshot, 0, sizeof(actuator_snapshot));
@@ -53,9 +93,13 @@ bool ECU_DataModelInit(void)
 }
 
 int32_t ECU_DataModelApplyControl(const ECU_ControlPayloadV2 *control,
+                                  uint16_t control_flags,
+                                  uint8_t sender_id,
                                   uint32_t secure_sequence)
 {
   SAFETY_ActuatorCommand command = {0};
+  ECU_ControlPayloadV2 accepted_control;
+  bool steering_rate_mode;
   int32_t result;
 
   if (control == NULL)
@@ -66,6 +110,31 @@ int32_t ECU_DataModelApplyControl(const ECU_ControlPayloadV2 *control,
       (control->valve_current_target_ma > SAFETY_VALVE_TARGET_MAX_MA))
   {
     return SAFETY_RESULT_RANGE;
+  }
+  if ((control_flags & ~ECU_CONTROL_FLAG_STEERING_RATE) != 0U)
+  {
+    return SAFETY_RESULT_BAD_ARGUMENT;
+  }
+
+  accepted_control = *control;
+  steering_rate_mode =
+      (control_flags & ECU_CONTROL_FLAG_STEERING_RATE) != 0U;
+  if (!ECU_SenderCanControlSteering(sender_id) &&
+      (steering_rate_mode ||
+       (accepted_control.steering_enable != 0U) ||
+       (accepted_control.steering_target_tdeg != 0) ||
+       (accepted_control.steering_speed_tdeg_per_s != 0U)))
+  {
+    /* Defense in depth if a future transport bypasses ecu_network.c. Reject
+       obsolete nonzero fields too, rather than silently acknowledging a
+       custom sender whose steering request will be discarded. */
+    return SAFETY_RESULT_BAD_ARGUMENT;
+  }
+  if (!steering_rate_mode || (accepted_control.steering_enable == 0U))
+  {
+    accepted_control.steering_target_tdeg = 0;
+    accepted_control.steering_speed_tdeg_per_s = 0U;
+    accepted_control.steering_enable = 0U;
   }
 
   command.api_version = SAFETY_ACTUATOR_API_VERSION;
@@ -93,11 +162,17 @@ int32_t ECU_DataModelApplyControl(const ECU_ControlPayloadV2 *control,
   command.run_permit_on = (control->emergency_stop_request == 0U) ? 1U : 0U;
   command.turn_signal_right_on = control->turn_signal_right_on;
   command.turn_signal_left_on = control->turn_signal_left_on;
+  command.steering_velocity_tdeg_per_s =
+      accepted_control.steering_target_tdeg;
+  command.steering_enable = accepted_control.steering_enable;
+  command.steering_source = ECU_SteeringSourceFromSender(sender_id);
+  command.steering_flags = steering_rate_mode ?
+      SAFETY_STEERING_FLAG_RATE_MODE : 0U;
 
   result = SECURE_SafetySubmitActuatorCommand(&command);
   if (result == SAFETY_RESULT_OK)
   {
-    current_control = *control;
+    current_control = accepted_control;
   }
   return result;
 }
@@ -221,9 +296,63 @@ void ECU_DataModelUpdateStatus(void)
 
 }
 
+bool ECU_DataModelUpdateSteeringStatus(void)
+{
+  SAFETY_SteeringSnapshot snapshot = {0};
+
+  /* Version and capacity are scalar NSC inputs. Treat every snapshot field as
+     Secure-owned output and validate its echoed layout before publishing. */
+  if ((SECURE_SafetyGetSteeringSnapshot(SAFETY_STEERING_API_VERSION,
+                                        &snapshot, sizeof(snapshot)) !=
+       SAFETY_RESULT_OK) ||
+      (snapshot.api_version != SAFETY_STEERING_API_VERSION) ||
+      (snapshot.size != sizeof(snapshot)))
+  {
+    /* Never publish stale or layout-ambiguous steering feedback. The legacy
+       100-byte status remains available to mixed/unsupported peers. */
+    memset(&steering_status_payload, 0, sizeof(steering_status_payload));
+    return false;
+  }
+
+  /* sequence_id identifies the accepted Secure command sampled here; the V2
+     frame header supplies a separate monotonically increasing TX sequence. */
+  steering_status_payload.sequence_id = snapshot.command_sequence;
+  steering_status_payload.timestamp_ms = snapshot.timestamp_ms;
+  steering_status_payload.requested_velocity_tdeg_per_s =
+      snapshot.requested_velocity_tdeg_per_s;
+  steering_status_payload.applied_velocity_tdeg_per_s =
+      snapshot.applied_velocity_tdeg_per_s;
+  steering_status_payload.speed_command_permille =
+      snapshot.speed_command_permille;
+  steering_status_payload.rx_age_ms = ECU_SaturateU32ToU16(
+      snapshot.rx_age_ms);
+  steering_status_payload.motor_fault_code =
+      snapshot.motor_fault_code;
+  steering_status_payload.motor_speed_feedback_raw =
+      snapshot.motor_speed_feedback_raw;
+  steering_status_payload.status_flags = snapshot.status_flags;
+  steering_status_payload.fault_flags = snapshot.fault_flags;
+  steering_status_payload.tx_frames = snapshot.tx_frames;
+  steering_status_payload.rx_frames = snapshot.rx_frames;
+  steering_status_payload.tx_errors = snapshot.tx_errors;
+  steering_status_payload.rx_errors = snapshot.rx_errors;
+  steering_status_payload.bus_off_events = snapshot.bus_off_events;
+  steering_status_payload.state = snapshot.state;
+  steering_status_payload.bus_state = snapshot.bus_state;
+  steering_status_payload.command_enable = snapshot.command_enable;
+  steering_status_payload.motor_enable_confirmed =
+      snapshot.motor_enable_confirmed;
+  return true;
+}
+
 const ECU_StatusPayloadV2 *ECU_DataModelGetStatus(void)
 {
   return &status_payload;
+}
+
+const ECU_SteeringStatusPayloadV2 *ECU_DataModelGetSteeringStatus(void)
+{
+  return &steering_status_payload;
 }
 
 const ECU_ControlPayloadV2 *ECU_DataModelGetControl(void)

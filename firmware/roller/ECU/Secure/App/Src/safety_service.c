@@ -15,9 +15,12 @@
 #include "secure_timebase.h"
 #include "software_i2c.h"
 #include "spi.h"
+#include "steering_can.h"
+#include "steering_control.h"
 #include "tim.h"
 #include "valve_config_store.h"
 #include "valve_control.h"
+#include "vehicle_can.h"
 
 #define TPIC_SPI_TIMEOUT_US          1000UL
 #define TPIC_LATCH_PULSE_US             1UL
@@ -29,6 +32,52 @@
 #define VALVE_CONFIG_SAVE_INTERVAL_MS 10000UL
 #define OTA_CONFIRM_WATCHDOG_GRACE_MS  5000UL
 #define ADC_VREFINT_INDEX                7U
+
+_Static_assert(sizeof(SAFETY_ActuatorCommand) == 36U,
+               "SAFETY_ActuatorCommand ABI must remain 36 bytes");
+_Static_assert(offsetof(SAFETY_ActuatorCommand, steering_enable) == 31U,
+               "steering_enable ABI offset changed");
+_Static_assert(offsetof(SAFETY_ActuatorCommand, steering_source) == 32U,
+               "steering_source ABI offset changed");
+_Static_assert(offsetof(SAFETY_ActuatorCommand, steering_flags) == 33U,
+               "steering_flags ABI offset changed");
+_Static_assert(offsetof(SAFETY_ActuatorCommand,
+                        steering_velocity_tdeg_per_s) == 34U,
+               "steering_velocity ABI offset changed");
+_Static_assert(sizeof(SAFETY_ActuatorSnapshot) == 60U,
+               "frozen actuator snapshot ABI changed");
+_Static_assert(sizeof(SAFETY_SteeringSnapshot) == 72U,
+               "steering snapshot ABI changed");
+_Static_assert(offsetof(SAFETY_SteeringSnapshot,
+                        requested_velocity_tdeg_per_s) == 56U,
+               "steering requested velocity ABI offset changed");
+_Static_assert(offsetof(SAFETY_SteeringSnapshot,
+                        applied_velocity_tdeg_per_s) == 58U,
+               "steering applied velocity ABI offset changed");
+_Static_assert(offsetof(SAFETY_SteeringSnapshot,
+                        speed_command_permille) == 60U,
+               "steering speed command ABI offset changed");
+_Static_assert(offsetof(SAFETY_SteeringSnapshot,
+                        motor_speed_feedback_raw) == 62U,
+               "steering motor feedback ABI offset changed");
+_Static_assert(offsetof(SAFETY_SteeringSnapshot,
+                        motor_fault_code) == 64U,
+               "steering motor fault ABI offset changed");
+_Static_assert(offsetof(SAFETY_SteeringSnapshot, source) == 66U,
+               "steering source ABI offset changed");
+_Static_assert(offsetof(SAFETY_SteeringSnapshot, state) == 67U,
+               "steering state ABI offset changed");
+_Static_assert(offsetof(SAFETY_SteeringSnapshot, bus_state) == 68U,
+               "steering bus state ABI offset changed");
+_Static_assert(offsetof(SAFETY_SteeringSnapshot, command_enable) == 69U,
+               "steering command enable ABI offset changed");
+_Static_assert(offsetof(SAFETY_SteeringSnapshot,
+                        motor_enable_confirmed) == 70U,
+               "steering enable confirmation ABI offset changed");
+_Static_assert(offsetof(SAFETY_SteeringSnapshot, reserved) == 71U,
+               "steering reserved tail ABI offset changed");
+_Static_assert(sizeof(SAFETY_J1939Snapshot) == 84U,
+               "J1939 snapshot ABI changed");
 
 typedef enum
 {
@@ -239,6 +288,7 @@ static void Safety_ResetCommandState(void)
   engine_start_lockout = 0U;
   last_engine_start_request = 0U;
   engine_start_deadline = 0U;
+  SteeringCan_RequestSafe(secure_uptime_ms);
 }
 
 static void Safety_ForceOutputsSafe(void)
@@ -306,13 +356,6 @@ static bool Safety_AllBooleanFieldsValid(const SAFETY_ActuatorCommand *command)
       return false;
     }
   }
-  for (index = 0U; index < sizeof(command->reserved); ++index)
-  {
-    if (command->reserved[index] != 0U)
-    {
-      return false;
-    }
-  }
   return true;
 }
 
@@ -348,6 +391,19 @@ static int32_t Safety_ValidateCommand(const SAFETY_ActuatorCommand *command)
     return SAFETY_RESULT_CONFLICT;
   }
   return SAFETY_RESULT_OK;
+}
+
+static bool Safety_SteeringCommandValuesValid(
+    const SAFETY_ActuatorCommand *command)
+{
+  return (command->steering_source >=
+          (uint8_t)SAFETY_STEERING_SOURCE_REMOTE) &&
+         (command->steering_source <=
+          (uint8_t)SAFETY_STEERING_SOURCE_AUTONOMOUS) &&
+         SteeringControl_CommandValuesValid(
+             command->steering_velocity_tdeg_per_s,
+             command->steering_enable, command->steering_flags,
+             command->run_permit_on);
 }
 
 static uint32_t Safety_BuildBaseRelayMask(const SAFETY_ActuatorCommand *command)
@@ -516,10 +572,38 @@ static bool Safety_AdvanceEngineSpeed(void)
 
 static void Safety_OneMillisecondTick(void)
 {
-  uint32_t primask = Safety_EnterCritical();
+  uint32_t primask;
   bool relay_change = false;
+  bool steering_active_fault;
 
   ++secure_uptime_ms;
+  /* FDCAN polling and bounded nonblocking register writes run outside the
+     global safety critical section. ADC/EXTI fault paths only post an atomic
+     steering-safe request, consumed here by the single state-machine owner. */
+  SteeringCan_Process(secure_uptime_ms);
+  /* Vehicle CAN is passive telemetry and always runs after the safety-critical
+     steering state machine. Its parser and FIFO drain both have fixed budgets. */
+  VehicleCan_Process(secure_uptime_ms);
+  steering_active_fault = SteeringCan_ConsumeActiveFault();
+
+  primask = Safety_EnterCritical();
+  if (VehicleCan_IsHealthy())
+  {
+    safety_status &= ~SAFETY_STATUS_VEHICLE_CAN_FAULT;
+  }
+  else
+  {
+    /* CAN1 telemetry health is a live, isolated diagnostic. It deliberately
+       neither latches the global fault nor forces unrelated outputs safe. */
+    safety_status |= SAFETY_STATUS_VEHICLE_CAN_FAULT;
+  }
+  if (steering_active_fault)
+  {
+    /* A steering transport fault is isolated to that actuator. The steering
+       service has already scheduled zero-then-disable; unrelated vehicle
+       relays and valve control remain under the normal Secure watchdog. */
+    safety_status |= SAFETY_STATUS_STEERING_CAN_FAULT;
+  }
   if (HAL_GPIO_ReadPin(ESTOP_DETECT_GPIO_Port, ESTOP_DETECT_Pin) == GPIO_PIN_SET)
   {
     safety_status |= SAFETY_STATUS_ESTOP_ACTIVE | SAFETY_STATUS_FAULT_LATCHED;
@@ -615,6 +699,19 @@ int32_t Safety_ServiceInit(void)
   valve_config_snapshot.persisted_valid = persisted_valid ? 1U : 0U;
   valve_config_snapshot.using_defaults = persisted_valid ? 0U : 1U;
   Safety_ForceOutputsSafe();
+  if (VehicleCan_Init(secure_uptime_ms) != SAFETY_RESULT_OK)
+  {
+    /* CAN1 is read-only vehicle telemetry. Keep Ethernet/OTA and unrelated
+       actuators available while publishing the isolated diagnostic fault. */
+    safety_status |= SAFETY_STATUS_VEHICLE_CAN_FAULT;
+  }
+  if (SteeringCan_Init(secure_uptime_ms) != SAFETY_RESULT_OK)
+  {
+    /* CAN2 steering is an isolated actuator domain. A missing/unavailable
+       motor or local controller startup failure keeps steering fail-safe and
+       visible in diagnostics without preventing Ethernet or other outputs. */
+    safety_status |= SAFETY_STATUS_STEERING_CAN_FAULT;
+  }
   if (HAL_GPIO_ReadPin(ESTOP_DETECT_GPIO_Port, ESTOP_DETECT_Pin) == GPIO_PIN_SET)
   {
     safety_status |= SAFETY_STATUS_ESTOP_ACTIVE | SAFETY_STATUS_FAULT_LATCHED;
@@ -848,6 +945,36 @@ int32_t Safety_GetActuatorSnapshot(SAFETY_ActuatorSnapshot *snapshot)
   snapshot->valve_fault_flags = valve_control.fault_flags;
   Safety_ExitCritical(primask);
   return SAFETY_RESULT_OK;
+}
+
+int32_t Safety_GetSteeringSnapshot(SAFETY_SteeringSnapshot *snapshot)
+{
+  uint32_t primask;
+
+  if (snapshot == NULL)
+  {
+    return SAFETY_RESULT_BAD_ARGUMENT;
+  }
+  primask = Safety_EnterCritical();
+  SteeringCan_GetSnapshot(snapshot, secure_uptime_ms,
+                          last_command_sequence);
+  Safety_ExitCritical(primask);
+  return SAFETY_RESULT_OK;
+}
+
+int32_t Safety_GetJ1939Snapshot(SAFETY_J1939Snapshot *snapshot)
+{
+  int32_t result;
+  uint32_t primask;
+
+  if (snapshot == NULL)
+  {
+    return SAFETY_RESULT_BAD_ARGUMENT;
+  }
+  primask = Safety_EnterCritical();
+  result = VehicleCan_GetSnapshot(snapshot, secure_uptime_ms);
+  Safety_ExitCritical(primask);
+  return result;
 }
 
 int32_t Safety_GetSecurityStatus(SAFETY_SecurityStatus *status)
@@ -1193,6 +1320,11 @@ int32_t Safety_ClearFault(uint32_t request_token)
   }
   valve_control.fault_flags = 0U;
   ValveControl_ForceSafe(&valve_control);
+  if (SteeringCan_CanClearFault())
+  {
+    SteeringCan_ClearFaults();
+    safety_status &= ~SAFETY_STATUS_STEERING_CAN_FAULT;
+  }
   safety_status &= ~(SAFETY_STATUS_ESTOP_ACTIVE |
                      SAFETY_STATUS_FAULT_LATCHED |
                      SAFETY_STATUS_COMMAND_TIMEOUT |
@@ -1286,6 +1418,9 @@ int32_t Safety_SubmitActuatorCommand(const SAFETY_ActuatorCommand *command)
 {
   uint32_t primask;
   uint32_t new_mask;
+  int32_t steering_result;
+  bool steering_rejected = false;
+  bool steering_values_valid;
   int32_t result = Safety_ValidateCommand(command);
 
   if (ota_running_images_confirmed == 0U)
@@ -1297,9 +1432,11 @@ int32_t Safety_SubmitActuatorCommand(const SAFETY_ActuatorCommand *command)
   {
     primask = Safety_EnterCritical();
     safety_status |= SAFETY_STATUS_COMMAND_REJECTED;
+    SteeringCan_RequestSafe(secure_uptime_ms);
     Safety_ExitCritical(primask);
     return result;
   }
+  steering_values_valid = Safety_SteeringCommandValuesValid(command);
 
   primask = Safety_EnterCritical();
   if ((safety_status & (SAFETY_STATUS_OTA_ACTIVE |
@@ -1336,6 +1473,26 @@ int32_t Safety_SubmitActuatorCommand(const SAFETY_ActuatorCommand *command)
 
   Safety_ApplyEngineRequest(command->engine_speed_level);
   Safety_ApplyStartRequest(command->engine_start_request);
+  if (!steering_values_valid)
+  {
+    SteeringCan_RecordCommandRejected(secure_uptime_ms);
+    steering_rejected = true;
+  }
+  else
+  {
+    steering_result = SteeringCan_SetCommand(
+        command->steering_velocity_tdeg_per_s,
+        command->steering_enable, command->steering_source,
+        command->steering_flags, secure_uptime_ms);
+    if (steering_result != SAFETY_RESULT_OK)
+    {
+      /* Stateful steering rejection (source handover, manual two-second
+         limit, missing ACK or bus fault) clamps only CAN2 to zero/disable.
+         Other validated actuators remain live under the global watchdog. */
+      SteeringCan_RecordCommandRejected(secure_uptime_ms);
+      steering_rejected = true;
+    }
+  }
   new_mask = Safety_BuildBaseRelayMask(command);
   requested_relay_mask = new_mask;
   new_mask = Safety_ApplyDynamicRelayBits(new_mask);
@@ -1362,8 +1519,15 @@ int32_t Safety_SubmitActuatorCommand(const SAFETY_ActuatorCommand *command)
   command_sequence_valid = 1U;
   command_fresh = 1U;
   last_command_tick = secure_uptime_ms;
-  safety_status &= ~(SAFETY_STATUS_COMMAND_TIMEOUT |
-                     SAFETY_STATUS_COMMAND_REJECTED);
+  safety_status &= ~SAFETY_STATUS_COMMAND_TIMEOUT;
+  if (steering_rejected)
+  {
+    safety_status |= SAFETY_STATUS_COMMAND_REJECTED;
+  }
+  else
+  {
+    safety_status &= ~SAFETY_STATUS_COMMAND_REJECTED;
+  }
   Safety_ExitCritical(primask);
   return SAFETY_RESULT_OK;
 }

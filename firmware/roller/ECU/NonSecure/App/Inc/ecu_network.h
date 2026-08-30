@@ -8,6 +8,10 @@
 #define ECU_IP_ADDRESS_1        16U
 #define ECU_IP_ADDRESS_2         0U
 #define ECU_IP_ADDRESS_3        11U
+#define ECU_TRUSTED_HOST_ADDRESS_0 172U
+#define ECU_TRUSTED_HOST_ADDRESS_1  16U
+#define ECU_TRUSTED_HOST_ADDRESS_2   0U
+#define ECU_TRUSTED_HOST_ADDRESS_3  10U
 #define ECU_STATUS_PORT       50001U
 #define ECU_CONTROL_PORT      50002U
 #define ECU_DIAGNOSTIC_PORT   50003U
@@ -23,9 +27,14 @@ typedef struct
   uint32_t authority_switches;
   uint32_t status_frames_sent;
   uint32_t diagnostic_frames_sent;
+  uint32_t legacy_v1_frames_accepted;
   uint32_t legacy_v1_frames_rejected;
+  uint32_t legacy_v1_status_frames_sent;
   uint32_t telemetry_frames_sent;
   uint32_t telemetry_dropped_samples;
+  uint32_t steering_status_frames_sent;
+  uint32_t security_status_frames_sent;
+  uint32_t transmit_failures;
 } ECU_NetworkCounters;
 
 bool ECU_NetworkInit(void);

@@ -44,6 +44,14 @@ NSC_ABI_V1_SYMBOLS = (
     ("SECURE_SafetyReloadValveConfig", 0x0C05DCA1),
 )
 NSC_ABI_V1_BY_NAME = dict(NSC_ABI_V1_SYMBOLS)
+NSC_ABI_V2_ADDITIONS = (
+    ("SECURE_SafetyGetSteeringSnapshot", 0x0C05DCA9),
+)
+NSC_ABI_V2_BY_NAME = dict(NSC_ABI_V2_ADDITIONS)
+NSC_ABI_V3_ADDITIONS = (
+    ("SECURE_SafetyGetJ1939Snapshot", 0x0C05DCB1),
+)
+NSC_ABI_V3_BY_NAME = dict(NSC_ABI_V3_ADDITIONS)
 
 _SOURCE_INVOCATION = re.compile(
     r"^\s*nsc_v1_symbol\s+([A-Za-z_][A-Za-z0-9_]*)\s*,\s*"
@@ -124,6 +132,36 @@ def validate_abi_source(text: str) -> None:
             )
     if errors:
         raise AbiCheckError("ABI source mismatch: " + "; ".join(errors))
+
+
+def validate_abi_v2_source(text: str) -> None:
+    """Validate the append-only v2 map without redefining the frozen v1 map."""
+    parsed = parse_abi_source(text)
+    errors: list[str] = []
+    if text.count('.include "secure_nsc_abi_v1.s"') != 1:
+        errors.append("v2 map must include secure_nsc_abi_v1.s exactly once")
+    if parsed != NSC_ABI_V2_BY_NAME:
+        errors.append(
+            "v2 additions are " + repr(parsed) + ", expected " +
+            repr(NSC_ABI_V2_BY_NAME)
+        )
+    if errors:
+        raise AbiCheckError("ABI v2 source mismatch: " + "; ".join(errors))
+
+
+def validate_abi_v3_source(text: str) -> None:
+    """Validate the append-only v3 map without redefining v1 or v2."""
+    parsed = parse_abi_source(text)
+    errors: list[str] = []
+    if text.count('.include "secure_nsc_abi_v2.s"') != 1:
+        errors.append("v3 map must include secure_nsc_abi_v2.s exactly once")
+    if parsed != NSC_ABI_V3_BY_NAME:
+        errors.append(
+            "v3 additions are " + repr(parsed) + ", expected " +
+            repr(NSC_ABI_V3_BY_NAME)
+        )
+    if errors:
+        raise AbiCheckError("ABI v3 source mismatch: " + "; ".join(errors))
 
 
 def parse_readelf_symbols(text: str) -> list[ElfSymbol]:
@@ -255,6 +293,79 @@ def validate_secure_elf(
                 f"[{_format_address(sg_section.address)}, "
                 f"{_format_address(sg_section.address + sg_section.size)})"
             )
+    if errors:
+        raise AbiCheckError("; ".join(errors))
+
+
+def validate_v2_additions(
+    import_symbols: Iterable[ElfSymbol],
+    elf_symbols: Iterable[ElfSymbol],
+    sections: Iterable[ElfSection],
+) -> None:
+    """Pin every append-only v2 veneer in both signed linker outputs."""
+    _validate_additions(
+        NSC_ABI_V2_ADDITIONS, import_symbols, elf_symbols, sections
+    )
+
+
+def validate_v3_additions(
+    import_symbols: Iterable[ElfSymbol],
+    elf_symbols: Iterable[ElfSymbol],
+    sections: Iterable[ElfSection],
+) -> None:
+    """Pin every append-only v3 veneer in both signed linker outputs."""
+    _validate_additions(
+        NSC_ABI_V3_ADDITIONS, import_symbols, elf_symbols, sections
+    )
+
+
+def _validate_additions(
+    additions: Iterable[tuple[str, int]],
+    import_symbols: Iterable[ElfSymbol],
+    elf_symbols: Iterable[ElfSymbol],
+    sections: Iterable[ElfSection],
+) -> None:
+    import_by_name = _symbols_by_name(import_symbols)
+    elf_by_name = _symbols_by_name(elf_symbols)
+    sg_sections = [section for section in sections if section.name == ".gnu.sgstubs"]
+    if len(sg_sections) != 1:
+        raise AbiCheckError(
+            f"Secure ELF contains {len(sg_sections)} .gnu.sgstubs sections, expected 1"
+        )
+    sg_section = sg_sections[0]
+    errors: list[str] = []
+    for name, expected in additions:
+        imports = import_by_name.get(name, [])
+        definitions = elf_by_name.get(name, [])
+        if len(imports) != 1:
+            errors.append(
+                f"import library contains {len(imports)} definitions of {name}, expected 1"
+            )
+            continue
+        if len(definitions) != 1:
+            errors.append(
+                f"Secure ELF contains {len(definitions)} definitions of {name}, expected 1"
+            )
+            continue
+        imported = imports[0]
+        defined = definitions[0]
+        errors.extend(_validate_common_symbol(imported, name, expected, "import"))
+        errors.extend(_validate_common_symbol(defined, name, expected, "ELF"))
+        if imported.section_index != "ABS":
+            errors.append(
+                f"import {name} section is {imported.section_index}, expected ABS"
+            )
+        if defined.section_index != str(sg_section.index):
+            errors.append(
+                f"ELF {name} section is {defined.section_index}, expected "
+                f".gnu.sgstubs index {sg_section.index}"
+            )
+        code_address = defined.value & ~1
+        if not (
+            sg_section.address <= code_address <
+            sg_section.address + sg_section.size
+        ):
+            errors.append(f"ELF {name} is outside .gnu.sgstubs")
     if errors:
         raise AbiCheckError("; ".join(errors))
 
@@ -406,11 +517,14 @@ def _default_readelf() -> str:
 
 
 def check_files(
-    abi_source: Path, import_library: Path, secure_elf: Path, readelf: str,
+    abi_source: Path, abi_v2_source: Path, abi_v3_source: Path,
+    import_library: Path, secure_elf: Path, readelf: str,
     nonsecure_elf: Path | None = None,
 ) -> None:
     for label, path in (
         ("ABI source", abi_source),
+        ("ABI v2 source", abi_v2_source),
+        ("ABI v3 source", abi_v3_source),
         ("import library", import_library),
         ("Secure ELF", secure_elf),
     ):
@@ -422,6 +536,20 @@ def check_files(
     except (OSError, UnicodeError) as exc:
         raise AbiCheckError(f"cannot read ABI source {abi_source}: {exc}") from exc
     validate_abi_source(source_text)
+    try:
+        v2_source_text = abi_v2_source.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        raise AbiCheckError(
+            f"cannot read ABI v2 source {abi_v2_source}: {exc}"
+        ) from exc
+    validate_abi_v2_source(v2_source_text)
+    try:
+        v3_source_text = abi_v3_source.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        raise AbiCheckError(
+            f"cannot read ABI v3 source {abi_v3_source}: {exc}"
+        ) from exc
+    validate_abi_v3_source(v3_source_text)
 
     import_symbols = parse_readelf_symbols(
         _run_readelf(readelf, "-sW", import_library)
@@ -433,6 +561,8 @@ def check_files(
         _run_readelf(readelf, "-SW", secure_elf)
     )
     validate_secure_elf(elf_symbols, elf_sections)
+    validate_v2_additions(import_symbols, elf_symbols, elf_sections)
+    validate_v3_additions(import_symbols, elf_symbols, elf_sections)
     validate_output_pair(import_symbols, elf_symbols, elf_sections)
     if nonsecure_elf is not None:
         if not nonsecure_elf.is_file():
@@ -454,6 +584,16 @@ def build_argument_parser() -> argparse.ArgumentParser:
         "--abi-source",
         type=Path,
         default=PROJECT_ROOT / "Secure_nsclib" / "secure_nsc_abi_v1.s",
+    )
+    parser.add_argument(
+        "--abi-v2-source",
+        type=Path,
+        default=PROJECT_ROOT / "Secure_nsclib" / "secure_nsc_abi_v2.s",
+    )
+    parser.add_argument(
+        "--abi-v3-source",
+        type=Path,
+        default=PROJECT_ROOT / "Secure_nsclib" / "secure_nsc_abi_v3.s",
     )
     parser.add_argument(
         "--import-library",
@@ -479,17 +619,20 @@ def main(argv: list[str] | None = None) -> int:
     try:
         check_files(
             args.abi_source,
+            args.abi_v2_source,
+            args.abi_v3_source,
             import_library,
             args.secure_elf,
             args.readelf,
             args.nonsecure_elf,
         )
     except AbiCheckError as exc:
-        print(f"NSC ABI v1 check failed: {exc}", file=sys.stderr)
+        print(f"NSC ABI check failed: {exc}", file=sys.stderr)
         return 1
     print(
-        "NSC ABI v1 check passed: 21 firmware 1.0.12 veneer addresses are "
-        "stable in source, import library, and Secure ELF."
+        "NSC ABI check passed: 21 firmware 1.0.12 v1 veneers and the "
+        "actuator-v3 steering and read-only J1939 veneers are stable in source, import library, "
+        "Secure ELF, and paired NonSecure ELF when supplied."
     )
     return 0
 

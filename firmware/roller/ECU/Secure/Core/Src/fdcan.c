@@ -2,18 +2,7 @@
 /**
   ******************************************************************************
   * @file    fdcan.c
-  * @brief   This file provides code for the configuration
-  *          of the FDCAN instances.
-  ******************************************************************************
-  * @attention
-  *
-  * Copyright (c) 2026 STMicroelectronics.
-  * All rights reserved.
-  *
-  * This software is licensed under terms that can be found in the LICENSE file
-  * in the root directory of this software component.
-  * If no LICENSE file comes with this software, it is provided AS-IS.
-  *
+  * @brief   This file provides code for the configuration of FDCAN2.
   ******************************************************************************
   */
 /* USER CODE END Header */
@@ -80,7 +69,7 @@ void MX_FDCAN2_Init(void)
   hfdcan2.Init.ClockDivider = FDCAN_CLOCK_DIV1;
   hfdcan2.Init.FrameFormat = FDCAN_FRAME_CLASSIC;
   hfdcan2.Init.Mode = FDCAN_MODE_NORMAL;
-  hfdcan2.Init.AutoRetransmission = ENABLE;
+  hfdcan2.Init.AutoRetransmission = DISABLE;
   hfdcan2.Init.TransmitPause = ENABLE;
   hfdcan2.Init.ProtocolException = DISABLE;
   hfdcan2.Init.NominalPrescaler = 4;
@@ -92,7 +81,7 @@ void MX_FDCAN2_Init(void)
   hfdcan2.Init.DataTimeSeg1 = 1;
   hfdcan2.Init.DataTimeSeg2 = 1;
   hfdcan2.Init.StdFiltersNbr = 0;
-  hfdcan2.Init.ExtFiltersNbr = 0;
+  hfdcan2.Init.ExtFiltersNbr = 2;
   hfdcan2.Init.TxFifoQueueMode = FDCAN_TX_FIFO_OPERATION;
   if (HAL_FDCAN_Init(&hfdcan2) != HAL_OK)
   {
@@ -149,6 +138,11 @@ void HAL_FDCAN_MspInit(FDCAN_HandleTypeDef* fdcanHandle)
     HAL_NVIC_EnableIRQ(FDCAN1_IT0_IRQn);
   /* USER CODE BEGIN FDCAN1_MspInit 1 */
 
+    /* Defense in depth for warm development resets: both FDCAN instances
+       and their pins must retain identical Secure/non-privileged ownership
+       as required by STM32H563 erratum ES0565 section 2.2.34. */
+    HAL_GPIO_ConfigPinAttributes(GPIOD, CAN1_RX_Pin|CAN1_TX_Pin, GPIO_PIN_SEC);
+
   /* USER CODE END FDCAN1_MspInit 1 */
   }
   else if(fdcanHandle->Instance==FDCAN2)
@@ -184,7 +178,14 @@ void HAL_FDCAN_MspInit(FDCAN_HandleTypeDef* fdcanHandle)
     GPIO_InitStruct.Alternate = GPIO_AF9_FDCAN2;
     HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
+    /* FDCAN2 interrupt Init */
+    HAL_NVIC_SetPriority(FDCAN2_IT0_IRQn, 2, 0);
+    HAL_NVIC_EnableIRQ(FDCAN2_IT0_IRQn);
   /* USER CODE BEGIN FDCAN2_MspInit 1 */
+
+    /* Defense in depth for warm development resets: CAN2 is a Secure actuator
+       path and must never inherit a NonSecure pin attribution. */
+    HAL_GPIO_ConfigPinAttributes(GPIOB, CAN2_RX_Pin|CAN2_TX_Pin, GPIO_PIN_SEC);
 
   /* USER CODE END FDCAN2_MspInit 1 */
   }
@@ -233,6 +234,8 @@ void HAL_FDCAN_MspDeInit(FDCAN_HandleTypeDef* fdcanHandle)
     */
     HAL_GPIO_DeInit(GPIOB, CAN2_RX_Pin|CAN2_TX_Pin);
 
+    /* FDCAN2 interrupt Deinit */
+    HAL_NVIC_DisableIRQ(FDCAN2_IT0_IRQn);
   /* USER CODE BEGIN FDCAN2_MspDeInit 1 */
 
   /* USER CODE END FDCAN2_MspDeInit 1 */

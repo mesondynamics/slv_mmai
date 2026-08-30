@@ -92,6 +92,10 @@ endif()
 # even when CubeMX regenerates the system source.
 target_compile_definitions(STM32_Drivers PRIVATE
     $<$<BOOL:${ECU_OEMIROT_LAYOUT}>:VECT_TAB_OFFSET=0x00100400U>
+    # A valid Clause-22 transaction takes only tens of microseconds.  Bound a
+    # stuck MDIO bus to milliseconds so link-health polling cannot stall the
+    # no-RTOS safety/control loop for the HAL default of one second.
+    ETH_MDIO_BUS_TIMEOUT=5U
 )
 
 
@@ -148,6 +152,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/App/Src/speed_sensor.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/Network/ethernetif.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/Network/ethernet_phy_policy.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/App/Network/ethernet_tx_scheduler.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../Drivers/BSP/Components/lan8742/lan8742.c
 
     ${ECU_LWIP_ROOT}/src/core/init.c

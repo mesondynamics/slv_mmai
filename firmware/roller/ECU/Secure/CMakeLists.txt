@@ -69,9 +69,9 @@ file(WRITE "${ECU_LINKER_OUTPUT}" "${ECU_LINKER_TEXT}")
 file(RELATIVE_PATH STM32_LINKER_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}"
      "${ECU_LINKER_OUTPUT}")
 set(ECU_NSC_ABI_BASELINE_SOURCE
-    "${CMAKE_CURRENT_SOURCE_DIR}/../Secure_nsclib/secure_nsc_abi_v1.s")
+    "${CMAKE_CURRENT_SOURCE_DIR}/../Secure_nsclib/secure_nsc_abi_v3.s")
 set(ECU_NSC_ABI_BASELINE_OBJECT
-    "${CMAKE_CURRENT_BINARY_DIR}/secure_nsc_abi_v1.o")
+    "${CMAKE_CURRENT_BINARY_DIR}/secure_nsc_abi_v3.o")
 if(ECU_OEMIROT_LAYOUT)
     # Keep the release import library private to this build tree. Development
     # and CubeMX/CubeIDE builds use a different NSC address window and must
@@ -96,6 +96,146 @@ add_executable(${CMAKE_PROJECT_NAME})
 
 # Include mx-generated
 include("mx-generated.cmake")
+
+# Keep the Secure ownership and timing contract persistent across CubeMX
+# regeneration. ES0565 section 2.2.34 requires identical security and
+# privilege attribution for both FDCAN instances because their message RAM
+# crosses a 1 KiB TrustZone boundary.
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/../ECU.ioc" ECU_IOC_TEXT)
+foreach(ECU_FDCAN_IOC_REQUIRED IN ITEMS
+    "FDCAN1.AutoRetransmission=ENABLE"
+    "FDCAN1.CalculateBaudRateNominal=250000"
+    "FDCAN1.NominalPrescaler=4"
+    "FDCAN1.NominalSyncJumpWidth=4"
+    "FDCAN1.NominalTimeSeg1=19"
+    "FDCAN1.NominalTimeSeg2=5"
+    "FDCAN1.TransmitPause=ENABLE"
+    "FDCAN1.StdFiltersNbr=0"
+    "FDCAN1.ExtFiltersNbr=6"
+    "FDCAN2.AutoRetransmission=DISABLE"
+    "FDCAN2.CalculateBaudRateNominal=250000"
+    "FDCAN2.NominalPrescaler=4"
+    "FDCAN2.NominalSyncJumpWidth=4"
+    "FDCAN2.NominalTimeSeg1=19"
+    "FDCAN2.NominalTimeSeg2=5"
+    "FDCAN2.TransmitPause=ENABLE"
+    "FDCAN2.StdFiltersNbr=0"
+    "FDCAN2.ExtFiltersNbr=2"
+    "GTZC_S.FDCAN1_Secure=GTZC_TZSC_PERIPH_SEC"
+    "GTZC_S.FDCAN1_Illegal_Access_Interrupt=Enabled"
+    "GTZC_S.FDCAN2_Secure=GTZC_TZSC_PERIPH_SEC"
+    "GTZC_S.FDCAN2_Illegal_Access_Interrupt=Enabled"
+    "PD0.ContextOwner=CortexM33S"
+    "PD0.PinAttribute=CortexM33S"
+    "PD0.Signal=FDCAN1_RX"
+    "PD1.ContextOwner=CortexM33S"
+    "PD1.PinAttribute=CortexM33S"
+    "PD1.Signal=FDCAN1_TX"
+    "PB12.ContextOwner=CortexM33S"
+    "PB12.PinAttribute=CortexM33S"
+    "PB12.Signal=FDCAN2_RX"
+    "PB13.ContextOwner=CortexM33S"
+    "PB13.PinAttribute=CortexM33S"
+    "PB13.Signal=FDCAN2_TX"
+    "PB6.PinAttribute=CortexM33S"
+    "PB6.Signal=S_TIM4_CH1"
+    "NVIC1.FDCAN1_IT0_IRQn=true\\:5"
+    "NVIC1.FDCAN2_IT0_IRQn=true\\:2")
+    string(FIND "${ECU_IOC_TEXT}" "${ECU_FDCAN_IOC_REQUIRED}"
+           ECU_FDCAN_IOC_REQUIRED_POS)
+    if(ECU_FDCAN_IOC_REQUIRED_POS EQUAL -1)
+        message(FATAL_ERROR
+            "Secure FDCAN .ioc contract missing: ${ECU_FDCAN_IOC_REQUIRED}")
+    endif()
+endforeach()
+
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/Core/Src/fdcan.c"
+     ECU_FDCAN_GENERATED_TEXT)
+foreach(ECU_FDCAN_GENERATED_REQUIRED IN ITEMS
+    "hfdcan1.Init.ClockDivider = FDCAN_CLOCK_DIV1;"
+    "hfdcan1.Init.FrameFormat = FDCAN_FRAME_CLASSIC;"
+    "hfdcan1.Init.Mode = FDCAN_MODE_NORMAL;"
+    "hfdcan1.Init.AutoRetransmission = ENABLE;"
+    "hfdcan1.Init.TransmitPause = ENABLE;"
+    "hfdcan1.Init.NominalPrescaler = 4;"
+    "hfdcan1.Init.NominalSyncJumpWidth = 4;"
+    "hfdcan1.Init.NominalTimeSeg1 = 19;"
+    "hfdcan1.Init.NominalTimeSeg2 = 5;"
+    "hfdcan1.Init.StdFiltersNbr = 0;"
+    "hfdcan1.Init.ExtFiltersNbr = 6;"
+    "hfdcan2.Init.ClockDivider = FDCAN_CLOCK_DIV1;"
+    "hfdcan2.Init.FrameFormat = FDCAN_FRAME_CLASSIC;"
+    "hfdcan2.Init.Mode = FDCAN_MODE_NORMAL;"
+    "hfdcan2.Init.AutoRetransmission = DISABLE;"
+    "hfdcan2.Init.TransmitPause = ENABLE;"
+    "hfdcan2.Init.NominalPrescaler = 4;"
+    "hfdcan2.Init.NominalSyncJumpWidth = 4;"
+    "hfdcan2.Init.NominalTimeSeg1 = 19;"
+    "hfdcan2.Init.NominalTimeSeg2 = 5;"
+    "hfdcan2.Init.StdFiltersNbr = 0;"
+    "hfdcan2.Init.ExtFiltersNbr = 2;"
+    "static uint32_t HAL_RCC_FDCAN_CLK_ENABLED=0;"
+    "RCC_FDCANCLKSOURCE_HSE"
+    "HAL_GPIO_ConfigPinAttributes(GPIOD, CAN1_RX_Pin|CAN1_TX_Pin, GPIO_PIN_SEC);"
+    "HAL_GPIO_ConfigPinAttributes(GPIOB, CAN2_RX_Pin|CAN2_TX_Pin, GPIO_PIN_SEC);")
+    string(FIND "${ECU_FDCAN_GENERATED_TEXT}"
+           "${ECU_FDCAN_GENERATED_REQUIRED}"
+           ECU_FDCAN_GENERATED_REQUIRED_POS)
+    if(ECU_FDCAN_GENERATED_REQUIRED_POS EQUAL -1)
+        message(FATAL_ERROR
+            "Generated Secure FDCAN contract missing: ${ECU_FDCAN_GENERATED_REQUIRED}")
+    endif()
+endforeach()
+
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/Core/Src/main.c" ECU_SECURE_MAIN_TEXT)
+string(FIND "${ECU_SECURE_MAIN_TEXT}" "MX_FDCAN1_Init();"
+       ECU_FDCAN1_INIT_POS)
+string(FIND "${ECU_SECURE_MAIN_TEXT}" "MX_FDCAN2_Init();"
+       ECU_FDCAN2_INIT_POS)
+if(ECU_FDCAN1_INIT_POS EQUAL -1 OR ECU_FDCAN2_INIT_POS EQUAL -1 OR
+   NOT ECU_FDCAN1_INIT_POS LESS ECU_FDCAN2_INIT_POS)
+    message(FATAL_ERROR
+        "Secure initialization must keep shared-clock FDCAN1 before FDCAN2")
+endif()
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/Core/Inc/partition_stm32h563xx.h"
+     ECU_PARTITION_TEXT)
+string(FIND "${ECU_PARTITION_TEXT}"
+       "#define NVIC_INIT_ITNS1_VAL      0x00002000"
+       ECU_FDCAN1_ITNS_POS)
+string(FIND "${ECU_PARTITION_TEXT}"
+       "#define NVIC_INIT_ITNS3_VAL      0x00000000"
+       ECU_FDCAN2_ITNS_POS)
+if(ECU_FDCAN1_ITNS_POS EQUAL -1)
+    message(FATAL_ERROR
+        "FDCAN1 IRQ39 must remain Secure (ITNS1 bit 7 clear)")
+endif()
+if(ECU_FDCAN2_ITNS_POS EQUAL -1)
+    message(FATAL_ERROR
+        "FDCAN2 IRQ109 must remain Secure (ITNS3 bit 13 clear)")
+endif()
+
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/mx-generated.cmake"
+     ECU_SECURE_MX_GENERATED_TEXT)
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/../NonSecure/mx-generated.cmake"
+     ECU_NONSECURE_MX_GENERATED_TEXT)
+foreach(ECU_SECURE_FDCAN_BUILD_REQUIRED IN ITEMS
+    "Core/Src/fdcan.c"
+    "stm32h5xx_hal_fdcan.c")
+    string(FIND "${ECU_SECURE_MX_GENERATED_TEXT}"
+           "${ECU_SECURE_FDCAN_BUILD_REQUIRED}"
+           ECU_SECURE_FDCAN_BUILD_REQUIRED_POS)
+    if(ECU_SECURE_FDCAN_BUILD_REQUIRED_POS EQUAL -1)
+        message(FATAL_ERROR
+            "Secure CubeMX source list lost FDCAN: ${ECU_SECURE_FDCAN_BUILD_REQUIRED}")
+    endif()
+    string(FIND "${ECU_NONSECURE_MX_GENERATED_TEXT}"
+           "${ECU_SECURE_FDCAN_BUILD_REQUIRED}"
+           ECU_NONSECURE_FDCAN_BUILD_FORBIDDEN_POS)
+    if(NOT ECU_NONSECURE_FDCAN_BUILD_FORBIDDEN_POS EQUAL -1)
+        message(FATAL_ERROR
+            "NonSecure CubeMX source list must not contain FDCAN: ${ECU_SECURE_FDCAN_BUILD_REQUIRED}")
+    endif()
+endforeach()
 
 
 # In order to use CMake for cross-compiling
@@ -132,7 +272,8 @@ enable_language(C ASM)
 
 add_custom_command(
     OUTPUT "${ECU_NSC_ABI_BASELINE_OBJECT}"
-    COMMAND ${CMAKE_ASM_COMPILER} -mcpu=cortex-m33 -mthumb -c
+    COMMAND ${CMAKE_ASM_COMPILER} -mcpu=cortex-m33 -mthumb
+            -I${CMAKE_CURRENT_SOURCE_DIR}/../Secure_nsclib -c
             "${ECU_NSC_ABI_BASELINE_SOURCE}"
             -o "${ECU_NSC_ABI_BASELINE_OBJECT}"
     COMMAND ${CMAKE_OBJCOPY}
@@ -143,6 +284,8 @@ add_custom_command(
             --remove-section=.ARM.attributes
             "${ECU_NSC_ABI_BASELINE_OBJECT}"
     DEPENDS "${ECU_NSC_ABI_BASELINE_SOURCE}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/../Secure_nsclib/secure_nsc_abi_v2.s"
+            "${CMAKE_CURRENT_SOURCE_DIR}/../Secure_nsclib/secure_nsc_abi_v1.s"
     VERBATIM)
 add_custom_target(ECU_NSC_ABI_BASELINE
     DEPENDS "${ECU_NSC_ABI_BASELINE_OBJECT}")
@@ -178,6 +321,11 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/App/Src/secure_flash_guard.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/Src/secure_timebase.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/Src/software_i2c.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/App/Src/fdcan_callbacks.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/App/Src/steering_control.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/App/Src/steering_can.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/App/Src/vehicle_can.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/App/Src/vehicle_j1939.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/Src/valve_control.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/Src/valve_config_store.c
 )

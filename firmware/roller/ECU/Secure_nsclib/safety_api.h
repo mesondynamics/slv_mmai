@@ -11,9 +11,16 @@ extern "C" {
 #define SAFETY_CURRENT_ADC_COUNT       2U
 #define SAFETY_PWM_PERIOD_COUNTS       6250U
 #define SAFETY_PWM_MAX_COMPARE         (SAFETY_PWM_PERIOD_COUNTS - 1U)
-#define SAFETY_ACTUATOR_API_VERSION    2UL
+#define SAFETY_ACTUATOR_API_VERSION    3UL
 #define SAFETY_COMMAND_TIMEOUT_MS      300UL
 #define SAFETY_ENGINE_START_MAX_MS     3000UL
+#define SAFETY_STEERING_VELOCITY_MAX_TDEG_PER_S 6000
+#define SAFETY_STEERING_MANUAL_MAX_MS  2000UL
+#define SAFETY_STEERING_FLAG_RATE_MODE (1U << 0)
+#define SAFETY_STEERING_ALLOWED_FLAGS  SAFETY_STEERING_FLAG_RATE_MODE
+#define SAFETY_STEERING_API_VERSION    1UL
+#define SAFETY_J1939_API_VERSION       1UL
+#define SAFETY_J1939_DATA_TIMEOUT_MS   1000UL
 #define SAFETY_VALVE_CONFIG_VERSION    1UL
 #define SAFETY_VALVE_TARGET_MAX_MA     2000
 #define SAFETY_VALVE_TARGET_DEADBAND_MA 50
@@ -56,7 +63,88 @@ enum
   SAFETY_STATUS_OTA_READY          = (1UL << 24),
   /* Positive indication of a test-swap state. Older Secure firmware leaves
      this reserved bit clear, which is intentionally backward-compatible. */
-  SAFETY_STATUS_OTA_UNCONFIRMED    = (1UL << 25)
+  SAFETY_STATUS_OTA_UNCONFIRMED    = (1UL << 25),
+  SAFETY_STATUS_STEERING_CAN_FAULT = (1UL << 26),
+  SAFETY_STATUS_VEHICLE_CAN_FAULT  = (1UL << 27)
+};
+
+enum
+{
+  SAFETY_J1939_VALID_EEC1   = (1UL << 0),
+  SAFETY_J1939_VALID_EEC2   = (1UL << 1),
+  SAFETY_J1939_VALID_ET1    = (1UL << 2),
+  SAFETY_J1939_VALID_EFL_P1 = (1UL << 3),
+  SAFETY_J1939_VALID_AMB    = (1UL << 4),
+  SAFETY_J1939_VALID_DM1    = (1UL << 5)
+};
+
+enum
+{
+  SAFETY_J1939_STATUS_READY       = (1UL << 0),
+  SAFETY_J1939_STATUS_INIT_FAULT  = (1UL << 1),
+  SAFETY_J1939_STATUS_RX_ERROR    = (1UL << 2),
+  SAFETY_J1939_STATUS_RX_DROPPED  = (1UL << 3),
+  SAFETY_J1939_STATUS_BUS_WARNING = (1UL << 4),
+  SAFETY_J1939_STATUS_BUS_PASSIVE = (1UL << 5),
+  SAFETY_J1939_STATUS_BUS_OFF     = (1UL << 6)
+};
+
+typedef enum
+{
+  SAFETY_J1939_BUS_STOPPED = 0,
+  SAFETY_J1939_BUS_ACTIVE,
+  SAFETY_J1939_BUS_WARNING,
+  SAFETY_J1939_BUS_PASSIVE,
+  SAFETY_J1939_BUS_OFF
+} SAFETY_J1939BusState;
+
+typedef enum
+{
+  SAFETY_STEERING_SOURCE_REMOTE = 1,
+  SAFETY_STEERING_SOURCE_OPERATOR = 2,
+  SAFETY_STEERING_SOURCE_AUTONOMOUS = 3
+} SAFETY_SteeringSource;
+
+typedef enum
+{
+  SAFETY_STEERING_STATE_DISABLED = 0,
+  SAFETY_STEERING_STATE_SAFE_ZERO_PENDING,
+  SAFETY_STEERING_STATE_SAFE_DISABLE_PENDING,
+  SAFETY_STEERING_STATE_ENABLE_PENDING,
+  SAFETY_STEERING_STATE_ENABLE_WAIT_ACK,
+  SAFETY_STEERING_STATE_ACTIVE
+} SAFETY_SteeringState;
+
+typedef enum
+{
+  SAFETY_STEERING_BUS_STOPPED = 0,
+  SAFETY_STEERING_BUS_ACTIVE,
+  SAFETY_STEERING_BUS_WARNING,
+  SAFETY_STEERING_BUS_PASSIVE,
+  SAFETY_STEERING_BUS_OFF
+} SAFETY_SteeringBusState;
+
+enum
+{
+  SAFETY_STEERING_STATUS_READY          = (1UL << 0),
+  SAFETY_STEERING_STATUS_ENABLE_REQUEST = (1UL << 1),
+  SAFETY_STEERING_STATUS_ENABLE_CONFIRMED = (1UL << 2),
+  SAFETY_STEERING_STATUS_RATE_MODE      = (1UL << 3),
+  SAFETY_STEERING_STATUS_TX_PENDING     = (1UL << 4),
+  SAFETY_STEERING_STATUS_REARM_REQUIRED = (1UL << 5),
+  SAFETY_STEERING_STATUS_MANUAL_LIMIT   = (1UL << 6),
+  SAFETY_STEERING_STATUS_SOURCE_SWITCH  = (1UL << 7),
+  SAFETY_STEERING_STATUS_COMMAND_REJECTED = (1UL << 8)
+};
+
+enum
+{
+  SAFETY_STEERING_FAULT_INIT     = (1UL << 0),
+  SAFETY_STEERING_FAULT_TX       = (1UL << 1),
+  SAFETY_STEERING_FAULT_PROTOCOL = (1UL << 2),
+  SAFETY_STEERING_FAULT_BUS_OFF  = (1UL << 3),
+  SAFETY_STEERING_FAULT_RAM      = (1UL << 4),
+  SAFETY_STEERING_FAULT_MOTOR_DTC = (1UL << 5)
 };
 
 enum
@@ -235,7 +323,10 @@ typedef struct
   uint8_t run_permit_on;
   uint8_t turn_signal_right_on;
   uint8_t turn_signal_left_on;
-  uint8_t reserved[5];
+  uint8_t steering_enable;
+  uint8_t steering_source;
+  uint8_t steering_flags;
+  int16_t steering_velocity_tdeg_per_s;
 } SAFETY_ActuatorCommand;
 
 typedef struct
@@ -264,6 +355,75 @@ typedef struct
   uint32_t valve_persisted_generation;
   uint32_t valve_fault_flags;
 } SAFETY_ActuatorSnapshot;
+
+/* Versioned separately from SAFETY_ActuatorSnapshot so a mixed Secure/
+   NonSecure development image can never overrun the frozen 60-byte v1
+   actuator object. The dedicated NSC call receives the requested version and
+   output capacity as scalar arguments before validating this object. */
+typedef struct
+{
+  uint32_t api_version;
+  uint32_t size;
+  uint32_t status_flags;
+  uint32_t fault_flags;
+  uint32_t command_sequence;
+  uint32_t timestamp_ms;
+  uint32_t command_age_ms;
+  uint32_t rx_age_ms;
+  uint32_t tx_frames;
+  uint32_t rx_frames;
+  uint32_t tx_errors;
+  uint32_t rx_errors;
+  uint32_t tx_deferred;
+  uint32_t bus_off_events;
+  int16_t requested_velocity_tdeg_per_s;
+  int16_t applied_velocity_tdeg_per_s;
+  int16_t speed_command_permille;
+  int16_t motor_speed_feedback_raw;
+  uint16_t motor_fault_code;
+  uint8_t source;
+  uint8_t state;
+  uint8_t bus_state;
+  uint8_t command_enable;
+  uint8_t motor_enable_confirmed;
+  uint8_t reserved[1];
+} SAFETY_SteeringSnapshot;
+
+/* Versioned read-only vehicle-bus boundary. Raw CAN frames and transmit
+   primitives never cross into NonSecure; only the six reviewed J1939 PGNs
+   are decoded in Secure and copied through the dedicated NSC service. */
+typedef struct
+{
+  uint32_t api_version;
+  uint32_t size;
+  uint32_t sequence;
+  uint32_t timestamp_ms;
+  uint32_t status_flags;
+  uint32_t valid_mask;
+  uint32_t rx_frames;
+  uint32_t rx_errors;
+  uint32_t rx_dropped;
+  uint32_t bus_off_events;
+  uint32_t eec1_age_ms;
+  uint32_t eec2_age_ms;
+  uint32_t et1_age_ms;
+  uint32_t eflp1_age_ms;
+  uint32_t amb_age_ms;
+  uint32_t dm1_age_ms;
+  uint16_t engine_rpm;
+  uint16_t oil_pressure_kpa;
+  uint16_t fuel_pressure_kpa;
+  int16_t coolant_temp_cdeg;
+  int16_t fuel_temp_cdeg;
+  int16_t ambient_temp_cdeg;
+  uint8_t engine_torque_percent;
+  uint8_t driver_demand_percent;
+  uint8_t accelerator_pedal_percent;
+  uint8_t engine_load_percent;
+  uint8_t dtc_count;
+  uint8_t bus_state;
+  uint8_t reserved[2];
+} SAFETY_J1939Snapshot;
 
 typedef struct
 {

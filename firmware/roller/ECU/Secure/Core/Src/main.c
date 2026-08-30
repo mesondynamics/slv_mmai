@@ -19,6 +19,7 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "adc.h"
+#include "fdcan.h"
 #include "gpdma.h"
 #include "gtzc_s.h"
 #include "icache.h"
@@ -29,6 +30,8 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include <stdbool.h>
+
 #include "safety_service.h"
 #include "secure_timebase.h"
 
@@ -106,6 +109,21 @@ static void SecurityMpu_ClearOemirotInheritedRegions(void)
   __ISB();
 }
 
+static bool SecurityFDCAN_AttributesAreValid(void)
+{
+  uint32_t fdcan1_attributes = 0U;
+  uint32_t fdcan2_attributes = 0U;
+  const uint32_t expected =
+      GTZC_TZSC_PERIPH_SEC | GTZC_TZSC_PERIPH_NPRIV;
+
+  return (HAL_GTZC_TZSC_GetConfigPeriphAttributes(
+              GTZC_PERIPH_FDCAN1, &fdcan1_attributes) == HAL_OK) &&
+         (HAL_GTZC_TZSC_GetConfigPeriphAttributes(
+              GTZC_PERIPH_FDCAN2, &fdcan2_attributes) == HAL_OK) &&
+         (fdcan1_attributes == expected) &&
+         (fdcan2_attributes == expected);
+}
+
 /* USER CODE END 0 */
 
 /**
@@ -143,6 +161,14 @@ int main(void)
 
   /* USER CODE BEGIN SysInit */
 
+  /* The two 848-byte message-RAM windows straddle a 1 KiB TrustZone boundary.
+     Verify ST's mandatory ES0565 2.2.34 workaround before either peripheral
+     is initialized; a stale/mismatched attribution must fail closed. */
+  if (!SecurityFDCAN_AttributesAreValid())
+  {
+    Error_Handler();
+  }
+
   /* USER CODE END SysInit */
 
   /* Initialize all configured peripherals */
@@ -152,6 +178,8 @@ int main(void)
   MX_ADC1_Init();
   MX_ADC2_Init();
   MX_SPI4_Init();
+  MX_FDCAN1_Init();
+  MX_FDCAN2_Init();
   MX_TIM4_Init();
   MX_TIM6_Init();
   MX_ICACHE_Init();

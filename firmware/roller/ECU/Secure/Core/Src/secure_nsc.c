@@ -24,6 +24,7 @@
 #include "secure_nsc.h"
 #include "safety_service.h"
 #include <arm_cmse.h>
+#include <string.h>
 /** @addtogroup STM32H5xx_HAL_Examples
 
   * @{
@@ -302,6 +303,88 @@ CMSE_NS_ENTRY int32_t SECURE_SafetySubmitActuatorCommand(
 CMSE_NS_ENTRY int32_t SECURE_SafetyKickWatchdog(uint32_t heartbeat)
 {
   return Safety_KickWatchdog(heartbeat);
+}
+
+CMSE_NS_ENTRY int32_t SECURE_SafetyGetSteeringSnapshot(
+    uint32_t requested_version, SAFETY_SteeringSnapshot *snapshot,
+    uint32_t snapshot_capacity)
+{
+  SAFETY_SteeringSnapshot *checked_snapshot;
+  SAFETY_SteeringSnapshot secure_snapshot = {0};
+  int32_t result;
+
+  if (requested_version != SAFETY_STEERING_API_VERSION)
+  {
+    return SAFETY_RESULT_UNSUPPORTED_VERSION;
+  }
+  if (snapshot_capacity != sizeof(SAFETY_SteeringSnapshot))
+  {
+    return SAFETY_RESULT_RANGE;
+  }
+  if ((snapshot == NULL) ||
+      (((uintptr_t)snapshot & (_Alignof(SAFETY_SteeringSnapshot) - 1U)) != 0U))
+  {
+    return SAFETY_RESULT_BAD_ARGUMENT;
+  }
+  checked_snapshot = (SAFETY_SteeringSnapshot *)cmse_check_address_range(
+      snapshot, sizeof(*checked_snapshot),
+      CMSE_NONSECURE | CMSE_MPU_READWRITE);
+  if (checked_snapshot == NULL)
+  {
+    return SAFETY_RESULT_BAD_ARGUMENT;
+  }
+
+  secure_snapshot.api_version = SAFETY_STEERING_API_VERSION;
+  secure_snapshot.size = sizeof(secure_snapshot);
+  result = Safety_GetSteeringSnapshot(&secure_snapshot);
+  if (result == SAFETY_RESULT_OK)
+  {
+    *checked_snapshot = secure_snapshot;
+  }
+  return result;
+}
+
+CMSE_NS_ENTRY int32_t SECURE_SafetyGetJ1939Snapshot(
+    uint32_t requested_version, SAFETY_J1939Snapshot *snapshot,
+    uint32_t snapshot_capacity)
+{
+  SAFETY_J1939Snapshot *checked_snapshot;
+  SAFETY_J1939Snapshot secure_snapshot = {0};
+  int32_t result;
+
+  /* Validate all scalar metadata and the raw address before any typed
+     dereference. This keeps a malformed NonSecure pointer outside Secure's
+     fault surface and prevents a time-of-check/time-of-use payload race. */
+  if (requested_version != SAFETY_J1939_API_VERSION)
+  {
+    return SAFETY_RESULT_UNSUPPORTED_VERSION;
+  }
+  if (snapshot_capacity != sizeof(SAFETY_J1939Snapshot))
+  {
+    return SAFETY_RESULT_RANGE;
+  }
+  if ((snapshot == NULL) ||
+      (((uintptr_t)snapshot & (_Alignof(SAFETY_J1939Snapshot) - 1U)) != 0U))
+  {
+    return SAFETY_RESULT_BAD_ARGUMENT;
+  }
+  checked_snapshot = (SAFETY_J1939Snapshot *)cmse_check_address_range(
+      snapshot, sizeof(SAFETY_J1939Snapshot),
+      CMSE_NONSECURE | CMSE_MPU_READWRITE);
+  if (checked_snapshot == NULL)
+  {
+    return SAFETY_RESULT_BAD_ARGUMENT;
+  }
+
+  secure_snapshot.api_version = SAFETY_J1939_API_VERSION;
+  secure_snapshot.size = sizeof(secure_snapshot);
+  result = Safety_GetJ1939Snapshot(&secure_snapshot);
+  if (result == SAFETY_RESULT_OK)
+  {
+    memset(secure_snapshot.reserved, 0, sizeof(secure_snapshot.reserved));
+    *checked_snapshot = secure_snapshot;
+  }
+  return result;
 }
 
 /**

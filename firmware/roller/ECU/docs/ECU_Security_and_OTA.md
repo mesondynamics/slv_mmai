@@ -12,13 +12,15 @@
 再次完成 ReleaseClosed 写入和 `PRODUCT_STATE=0x72` CLOSED 验证。事务 UUID 为
 `0f3537fe-c04d-4298-ba50-995773e07a6a`，最终 phase 为
 `product_state_closed_verified`。在保持 CLOSED 的情况下，样件已通过 Ethernet
-安装唯一签名的 `1.0.16+0` Secure/NonSecure 成对发布，security counter=16，
-OTA `accepted_sequence=16`。1.0.16 已完成普通未认证读取拒绝、permission `c`
-DA 临时调试、Secure/NonSecure primary 精确回读、close-debug、关闭后的再次
-未认证读取拒绝，以及完整移除 ST-Link 后的最终仅 ECU 冷启动；生命周期和
-provisioning integrity 在 DA 前后均严格复核为 CLOSED/VALID。
-离线 PKI 已完成双备份；私钥、口令和可解密备份均不得进入仓库或随
-ECU 交付。
+安装唯一签名的 `1.0.17+0` Secure/NonSecure 成对发布，security counter=17，
+OTA `accepted_sequence=17`。升级后的 ATECC/MCU 配对、无 quarantine、零输出、
+CAN2 失联安全状态和 Ethernet 延迟已经验证；1.0.17 的 DA 主槽精确回读、
+close-debug、关闭后未认证读取拒绝和完整无探针冷启动也已 PASS。真实转向
+电机尚未接入，主动控制测试仍为 PENDING。
+PKI 已建立受控工作副本、本机精确镜像和不可覆盖恢复快照；私钥、口令和可解密
+备份均不得进入仓库或随 ECU 交付。密钥负责人已确认将 `ECU_PKI.zip` 备份到多个
+设备；各副本仍应使用加密介质，解锁口令与 `key-passphrase.txt` 分开保管，并至少
+保持一份离线/异地副本。
 
 Debug Authentication 使用产品自有的三层 P-256 证书链和最小权限 `0x4040`：
 `bit6` 允许工程师认证后临时打开 HDPL3 Secure+NonSecure 应用调试，`bit14`
@@ -92,6 +94,14 @@ R1 PCB 因 PB8/PB9 网络交换，使用 Secure 开漏软件 I²C：PB8=SDA、PB
 PB8=SCL、PB9=SDA 的硬件 I²C1，并按 `ECU_CubeMX_KiCad_Audit.md` 执行 ECO；
 当前代码和 UI capability 均标记 `SW_I2C_PCB_R1`，不能把临时方案带入 R2。
 
+STM32H563 ES0565 §2.2.34 要求两个 FDCAN instance 使用相同 security/privilege
+属性；本工程因此把车辆 CAN1 与转向 CAN2 均固定为 `SEC|NPRIV`，Secure IRQ
+和 Secure GPIO，并在初始化前读取 GTZC 属性 fail closed。CAN1 是只读车辆遥测
+域：仅在 Secure 解析六个允许 PGN，通过固定 84 B、版本/容量/对齐受检的 NSC
+快照向 NonSecure 提供工程量，不开放 raw frame 或 TX。CAN1 运行故障只置位实时
+bit27 诊断并允许 Ethernet/OTA 继续，不能借遥测故障阻断恢复通道；CAN2 的本地
+零速/禁用状态机仍优先于 CAN1 worker。
+
 ## 3. Flash 与保护布局
 
 | 区域 | Secure alias / physical address | 大小 | 用途 |
@@ -114,9 +124,13 @@ OEMiROT 签名应用的 NSC 窗口固定为 `0x0C05DC00..0x0C05DFFF`。
 `Secure_nsclib/secure_nsc_abi_v1.s` 保存固件 1.0.12 已交付导入库的 veneer
 地址（函数指针值含 Thumb bit），签名 Secure 构建通过 `--in-implib` 锁定既有
 地址。例如 `SECURE_SafetyGetStatus()` 保持在 `0x0C05DC59`，既有的
-`SECURE_SafetyOtaConfirmRunningImages()` 保持在 `0x0C05DC89`。本轮只在
-`GetStatus` 返回的 32 bit 保留位中定义 `SAFETY_STATUS_OTA_UNCONFIRMED`，
-没有添加 `SECURE_SafetyOtaRunningImagesConfirmed` 之类的 NSC veneer。开发直连镜像使用
+`SECURE_SafetyOtaConfirmRunningImages()` 保持在 `0x0C05DC89`。后续 ABI 采用
+严格追加：v2 在 `0x0C05DCA9` 固定转向快照，v3 在 `0x0C05DCB1` 固定只读
+J1939 快照；v3 include v2、v2 include v1，旧地址不改写。signed build 会在
+source map、Secure ELF、私有 import object 与最终 NonSecure ELF 四处核对每个
+地址。OTA 确认状态仍只在 `GetStatus` 的 32 bit 保留位定义
+`SAFETY_STATUS_OTA_UNCONFIRMED`，没有添加
+`SECURE_SafetyOtaRunningImagesConfirmed` 之类的 query veneer。开发直连镜像使用
 另一 NSC 布局，不是 OTA 兼容性基准。
 
 确认服务在写任一 flag 前先获取 Secure 和 NonSecure 两个 Flash controller，
@@ -235,8 +249,14 @@ FINISH 并核对 `accepted_sequence`，不得把“只传输不 FINISH”作为�
 签名有效但 counter 过低的包仍可能消耗 transport sequence，发布系统必须再用更大的
 version、counter 和 sequence 生成新发布，不得覆盖原发布。
 
-控制/诊断/PI 调参端口没有端到端鉴权，必须只位于隔离车辆网络。OTA 的源 IP
-限制只是缩小攻击面，真正授权来自 transport ECDSA 和内部 OEMiROT image roots。
+非紧急控制与 PI 调参现和 OTA 一样只接受 `172.16.0.10`，活动 sender 还绑定源
+地址；结构正确的急停为保证安全停车而在该过滤前主导。控制/诊断/调参仍没有
+端到端密码学鉴权，源 IP 在同一二层网络可被伪造，必须只位于隔离点对点车辆网络。
+OTA 的源 IP 也只是缩小攻击面，真正升级授权来自 transport ECDSA 和内部
+OEMiROT image roots。
+UDP 授权没有绑定源端口；`172.16.0.10` 上所有进程共享控制/调参信任边界，OTA
+客户端也只校验应答源 IP。生产控制器必须限制本机进程与原始套接字权限，并保持
+二层链路隔离；这些残余风险不得记录为端到端会话认证已通过。
 
 ## 5. 构建、发布和升级命令
 
@@ -264,40 +284,44 @@ version、counter 和 sequence 生成新发布，不得覆盖原发布。
 | `1.0.14` | 14 | 14 | 已安装并完成 OPEN loader 替换后的历史无探针冷启动基线；身份已消耗，不得复用 |
 | `1.0.15` | 15 | 15 | 已安装、双确认并完成 fresh audit；当前 CLOSED 不可变转换与 schema-v4 Full Regression recovery 基线，身份已消耗不得复用 |
 | `1.0.16` | 16 | 16 | 已唯一签名并经 CLOSED Ethernet OTA 安装；成对 TEST swap/确认、runtime 和一次无探针冷启动 PASS，身份已消耗不得复用 |
+| `1.0.17` | 17 | 17 | 已唯一签名并经 CLOSED Ethernet OTA 接受；DA 精确回读/重锁、无探针冷启动、runtime/零输出/CAN2 失联 fail-closed/网络延迟 PASS；电机主动测试 PENDING；身份已消耗不得复用 |
 
 `1.0.13` 不得通过 Ethernet OTA、ST-Link、factory initial image 或任何恢复流程
 写入 ECU，也不得修改内容后重新使用 version 1.0.13 或 counter 13。打包工具在
 编译和签名前扫描 `artifacts/firmware/*/metadata.json`，任一已用 version、已用
 counter、不完整/不可信发布历史或指向旧发布的 output directory 都 fail closed；
 `--force` 不能绕过身份门禁。`1.0.15` 仍是不可变 CLOSED 转换和恢复
-基线，禁止重新打包、改写或重放。当前目标已接受 sequence16，`1.0.16`
-身份同样已消耗，不得通过改写内容或任何绕过手段复用。
+基线，禁止重新打包、改写或重放。当前目标已接受 sequence17，`1.0.16` 和
+`1.0.17` 身份均已消耗，不得通过改写内容或任何绕过手段复用。
 
 ```sh
 sha256sum artifacts/firmware/1.0.15/roller-ecu-1.0.15.recu
 sha256sum artifacts/firmware/1.0.16/roller-ecu-1.0.16.recu
+sha256sum artifacts/firmware/1.0.17/roller-ecu-1.0.17.recu
 ```
 
 固定的 1.0.15 转换/恢复基线包 SHA-256 为
 `9980acbf248f242c77c7044f48d627ca862d6714221f5835c0a21b7a24bf9e54`。已唯一签名并安装的
 1.0.16/counter16/update-sequence16 包 SHA-256 为
-`3e5ab07c7b6127dcedb46a1b4b1a695740904dd940d7128631f714d959a0b623`。
+`3e5ab07c7b6127dcedb46a1b4b1a695740904dd940d7128631f714d959a0b623`。已唯一签名并
+安装的 1.0.17/counter17/update-sequence17 包 SHA-256 为
+`75948795f39d898795b85841e4ad2e06c47738240184ff9ffbdc729fc11ab599`。
 
 主机网络和升级：
 
 ```sh
 sudo ./tools/configure_ecu_network.sh
 python3 tools/ethernet_ota.py --status
-# 1.0.16 的已完成历史命令；当前 accepted_sequence=16，禁止重放
+# 1.0.17 的已完成历史命令；当前 accepted_sequence=17，禁止重放
 python3 tools/ethernet_ota.py \
-  artifacts/firmware/1.0.16/roller-ecu-1.0.16.recu
+  artifacts/firmware/1.0.17/roller-ecu-1.0.17.recu
 ```
 
 也可在 `./tools/ecu_debug_ui.py --ecu-ip 172.16.0.11` 的固件升级页选择 `.recu`。
-1.0.16 传输、reset/test swap 和应用确认已完成；最终 OTA 为
-`state=IDLE/result=0/ota_result=0/accepted_sequence=16`，全部 session 字段为 0。
-post-OTA ATECC/MCU/配对身份、无 quarantine、零输出和调参关闭均 PASS；详细的
-无探针冷启动、网络、29 项回归和 telemetry 结果见第 8.3 节。
+1.0.17 传输、reset/test swap 和应用确认已完成；最终 OTA 为
+`state=IDLE/result=0/ota_result=0/accepted_sequence=17`，全部 session 字段为 0。
+post-OTA ATECC/MCU/配对身份、无 quarantine、零输出和调参关闭均 PASS；完整
+1.0.17 DA/重锁/冷启动、当前网络及 CAN2 失联安全状态见第 8.4 节。
 
 `--stop-after-bytes` 仅用于受控台架的掉电/中断恢复试验，不能出现在生产 SOP。
 
@@ -395,6 +419,58 @@ PKI 工作副本位于 `/home/plac/.local/share/roller-ecu-pki`，目录权限 0
 两份独立、加密、离线介质，并实际演练读取公钥/签名验证：OEMiROT Secure/NS
 认证私钥、image encryption 私钥、OTA transport 私钥、DA root/intermediate/leaf
 私钥及其 passphrase。仓库中的 OBK、公钥证书和 hash manifest 不能替代私钥备份。
+
+必须作为一个恢复集合保留的工作路径为
+`/home/plac/.local/share/roller-ecu-pki/`，其中关键文件是：
+
+- `oemirot-auth-s.pem`、`oemirot-auth-ns.pem`：Secure/NonSecure 镜像签名；
+- `oemirot-encryption.pem`：MCUboot image encryption；
+- `ota-transport.pem`：Ethernet `.recu` transport manifest 签名；
+- `da-root.pem`、`da-intermediate.pem`、`da-leaf.pem`：售后 Debug Authentication；
+- `key-passphrase.txt`：上述加密私钥的口令；
+- 同目录全部 `*-public.pem` 和 `ota-transport-public.der`：恢复后的独立配对校验。
+
+三份 OBK、DA 证书链和策略清单位于
+`artifacts/security-provisioning/`；它们是 provisioning 输入，不是私钥的替代品。
+包含 `key-passphrase.txt` 的目录或可解密快照等同于完整发布、OTA 和售后 DA 权限，
+必须保持 0700/0600，并建议在第二份离线介质中把口令与密钥密文分开保管。
+
+2026-08-30 已在用户指定的 `/home/plac/Documents/ECU_PKI` 中建立不覆盖恢复快照：
+
+```text
+/home/plac/Documents/ECU_PKI/roller-ecu-recovery-20260830T095026Z/
+```
+
+快照包含完整加密 PKI、security-provisioning/firmware/device-backups/
+hardware-regression 证据、与当前 CLOSED 基线匹配的 ReleaseOpen/
+ReleaseClosed bootloader、全 Git bundle、工具环境标识、恢复说明和
+`MANIFEST.sha256`。目录为 0700，manifest 在备份后重新验证全部 PASS；
+从 Git bundle 和快照还原到临时目录后，已离线执行
+`preflight-full-regression-recovery` 并重生成字节一致的 OBK，过程不访问目标
+Flash。使用前必须先执行 `sha256sum -c MANIFEST.sha256`；快照仍只是本机
+一份恢复副本，不能替代用户负责的两份独立加密离线介质。
+
+同一备份根目录还包含工作 PKI 的 16 文件精确镜像
+`roller-ecu-pki/`，以及多个不可覆盖的 1.0.17 签名前历史快照。完成 Secure
+FDCAN/J1939、CAN2 转向控制、网络调度、PHY 限界和实际 CubeMX Generate 后，使用
+以下命令创建本轮权威签名前快照：
+
+```sh
+./tools/create_development_backup.sh \
+  --label pre-sign-secure-fdcan-final-1.0.17
+```
+
+生成目录名为
+`roller-ecu-pre-sign-secure-fdcan-final-1.0.17-<UTC>/`。该快照必须保存完整 Git
+bundle、未提交/未跟踪源码 overlay、独立 binary patch、PKI 和 provisioning
+输入；创建后必须进入该目录执行 `python3 VERIFY_BACKUP.py`，只有对象、认证
+payload、离线 clone/fsck 和 overlay 还原全部通过才可作为恢复输入。更早的所有
+`roller-ecu-pre-sign-*-1.0.17-*` 快照均为历史证据，不能删除、覆盖或改写。
+`/home/plac/Documents/ECU_PKI/README.md` 给出关键密钥用途、验证命令与
+离线保管要求。备份根目录及全部后代已去掉 group/other 权限；工作 PKI 与镜像经
+`diff -qr` 验证一致。1.0.17 正式签名后必须使用
+`tools/create_development_backup.sh --label release-1.0.17 --release 1.0.17`
+另建不可覆盖的发布快照并再次执行其独立验证器，不能覆盖上述签名前证据。
 
 ### 6.2 1.0.15 CLOSED 门禁与受控事务流程
 
@@ -495,9 +571,10 @@ SFSP/单调 phase 及操作者确认物理连续性，不能声称重新读取�
 config CRC/generation 和零输出。在上述条件全部确认前不得手工写 PRODUCT_STATE。
 转换后验收必须覆盖：普通 ST-Link 不能读取 Flash、Ethernet OTA 正常、
 DA discovery 列出 Full Regression 和 HDPL3 S/NS debug、临时调试能认证打开并能
-显式关闭。本板已完成 CLOSED、1.0.15 基线默认拒绝/DA 服务验证、
-1.0.16 实板 Ethernet OTA、精确 primary DA 回读、close-debug 及之后的最终
-无探针冷启动。本轮没有执行破坏性 Full Regression。
+显式关闭。本板已完成 CLOSED、1.0.15 基线默认拒绝/DA 服务验证、1.0.16 实板
+Ethernet OTA/DA/冷启动，以及 1.0.17 Ethernet OTA、精确 primary DA 回读、
+close-debug、关闭后未认证读取拒绝和最终无探针冷启动。
+本轮没有执行破坏性 Full Regression。
 
 ### 6.3 本板 1.0.15 CLOSED 转换、DA 与恢复基线
 
@@ -549,8 +626,9 @@ DA discovery 列出 Full Regression 和 HDPL3 S/NS debug、临时调试能认证
   签名应用和 ReleaseClosed OEMiROT 构建全部通过。
 
 以上 CLOSED 记录是 1.0.9 阶段、Full Regression 前的历史验收证据，不代表
-当前 1.0.16 运行基线；当前 `0x72 CLOSED` 状态以第 6.3 节的转换证据、
-第 8.2 节的 1.0.15 不可变恢复基线和第 8.3 节的 1.0.16 OTA 证据为准。
+当前 1.0.17 接受状态；当前 `0x72 CLOSED` 状态以第 6.3 节的转换证据、第 8.2 节
+的 1.0.15 不可变恢复基线、第 8.3 节的 1.0.16 完整终验和第 8.4 节的 1.0.17
+OTA/DA/冷启动终验证据为准。
 
 剩余硬件项仅包括阀体到货后的真实电流闭环、故障注入和标定，以及整车端触点、
 传感器、CAN、EMC/环境/耐久验收；这些项目不得在报告中误写为已完成。
@@ -655,6 +733,50 @@ DA discovery 列出 Full Regression 和 HDPL3 S/NS debug、临时调试能认证
   `tuning_active=false`、telemetry frames=0；OTA 为
   `state=IDLE/result=0/ota_result=0/accepted_sequence=16`。100 包 0% 丢包，
   RTT min/avg/max=`0.060/0.116/0.331 ms`。
+
+### 8.4 1.0.17 CLOSED Ethernet OTA、DA 与冷启动实测
+
+- 唯一签名的 1.0.17/counter17/update-sequence17 包 SHA-256=
+  `75948795f39d898795b85841e4ad2e06c47738240184ff9ffbdc729fc11ab599`；Secure/
+  NonSecure initial 分别通过对应 OEMiROT 公钥验签，外层 transport manifest、
+  签名、成员集合、版本、counter 和 sequence 离线校验均 PASS。签名前源码状态
+  SHA-256=`c04cd1271f4f75c0cd0dd39fe3e7e71ef5f24f7ffa600b8ecb5222b01a428aee`。
+- 在未接 ST-Link 的 CLOSED ECU 上完成传输、FINISH、OEMiROT reset/TEST swap 和
+  应用确认；最终 `state=IDLE/result=0/ota_result=0/accepted_sequence=17`，全部
+  session 字段为 0，`OTA_UNCONFIRMED` 已清零。
+- fresh runtime 通过固定 MCU UID、ATECC serial/config CRC/generation、真实 P-256
+  auth 和 no-quarantine 检查；requested/applied relay mask、前后阀目标/PWM、转向
+  请求/应用速度及 motor-enable 均为 0，调参关闭且 telemetry frames/dropped 均为 0。
+- CAN2 当前没有电机响应：`rx_frames=0`、protocol fault、bus passive，状态保持
+  `SAFE_DISABLE_PENDING` 并持续请求安全禁用。这是预期的失联 fail-closed 证据，
+  **不是**转向电机主动控制功能验收。
+- OTA 前 100 包 0% 丢包，RTT min/avg/max=`0.068/0.099/0.157 ms`；OTA 后 100 包
+  0% 丢包，RTT=`0.065/0.104/0.144 ms`，未出现约 20 ms 的历史性能退化。
+- 原始摘要及 hash manifest 位于
+  `artifacts/hardware-regression/20260830T150744Z-closed-ota-1.0.17-runtime/`。
+- 最终 DA 证据位于
+  `artifacts/hardware-regression/20260830T154340Z-closed-da-readback-1.0.17/`。
+  认证前对 `0x0C030400/0x100` 的普通读取 rc=1 且没有生成文件；严格 discovery
+  精确确认 target `0x484`、SDA `2.4.0`、`ST_LIFECYCLE_CLOSED`、ECDSA-P256/
+  SHA-256 及 provisioning integrity `0xEAEAEAEA`/VALID。仅以 permission `c`
+  打开 HDPL3 Secure+NonSecure 临时调试，本轮未执行 Full Regression。
+- DA 后完整回读 Secure `0x0C030000/0x30000` 及 NonSecure
+  `0x08100000/0x50000`（六个连续分段）。版本钉死的离线 verifier 证明双 primary
+  均为 `1.0.17+0`/counter17，`image_ok=copy_done=0x01/0x01`；Secure 当前 record=
+  `0x2DDE7`、上一版/`swap_size=0x2DDE8`，NonSecure 当前 record=`0x7D38`、
+  上一版/`swap_size=0x8D38`。`primary-readback-audit.json` SHA-256=
+  `8edbfecbccfbce61d724299d6dd23845eb576f457555a65cd7dc6a1b4cfb8401`。
+- `close-debug` 报告 `Locking Debug`，随后的严格 discovery 再次确认 CLOSED/VALID；
+  同一未认证读取再次 rc=1 且没有生成文件，证明应用调试窗口已关闭。
+- 完整移除 ST-Link、保持 JP1 断开并使 ECU 断电至少 10 s 后，仅 ECU 冷启动 PASS：
+  OTA `state=IDLE/result=0/ota_result=0/accepted_sequence=17`；MCU UID、ATECC
+  serial/config CRC/generation 和 P-256 auth 正确，无 quarantine，relay、阀目标/
+  PWM 和转向命令均为零，调参关闭且 telemetry frames/dropped 均为 0。100 包
+  0% 丢包，RTT min/avg/max=`0.066/0.103/0.146 ms`。
+- 上述 DA/冷启动证据已经以 mode 0700/0600 精确复制到
+  `/home/plac/Documents/ECU_PKI/artifacts/hardware-regression/20260830T154340Z-closed-da-readback-1.0.17/`，
+  两侧逐字节一致且 SHA-256 manifest 校验通过。接入真实转向电机后的主动控制仍为
+  PENDING，不得从失联安全状态推断为主动功能 PASS。
 
 阀体带载闭环和故障注入、实际车辆继电器负载、CAN/传感器以及
 电源/EMC/环境/热/耐久仍为 PENDING，不得标记为 PASS。

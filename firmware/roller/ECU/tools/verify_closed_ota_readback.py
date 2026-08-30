@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Strictly audit authenticated DA primary readbacks after CLOSED OTA 1.0.16.
+"""Strictly audit authenticated DA primary readbacks after CLOSED OTA.
+
+The immutable reviewed 1.0.16 and 1.0.17 release profiles are both retained.
+The CLI defaults to the current 1.0.17 release; an explicit 1.0.16 release
+directory continues to reproduce the historical post-OTA audit.
 
 CubeProgrammer may fail a single 320 KiB NonSecure upload.  Each readback is
 therefore supplied as one or more explicitly addressed, contiguous segments:
@@ -24,6 +28,7 @@ import sys
 import zipfile
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any
 
 
@@ -55,6 +60,65 @@ RESERVED_TRAILER_SIZE = _layout_value("ECU_MCUBOOT_TRAILER_SIZE")
 LAYOUT_VERSION = _layout_value("ECU_LAYOUT_VERSION")
 SECURE_ADDRESS = FLASH_BASE_S + SECURE_OFFSET
 NONSECURE_ADDRESS = FLASH_BASE_NS + NONSECURE_OFFSET
+
+
+@dataclass(frozen=True)
+class ReleaseProfile:
+    """Immutable, reviewed release and pre-swap reference identity."""
+
+    version: str
+    identity: tuple[int, int, int, int, int]
+    update_sequence: int
+    secure_update_sha256: str
+    nonsecure_update_sha256: str
+    secure_key_area_sha256: str
+    nonsecure_key_area_sha256: str
+    previous_version: str
+    previous_identity: tuple[int, int, int, int, int]
+    previous_update_sequence: int
+    previous_secure_update_sha256: str
+    previous_nonsecure_update_sha256: str
+    previous_artifact: tuple[str, int, str]
+    artifacts: tuple[tuple[str, int, str], ...]
+
+    def update_hash(self, image: str) -> str:
+        if image == "secure":
+            return self.secure_update_sha256
+        if image == "nonsecure":
+            return self.nonsecure_update_sha256
+        raise ReadbackVerificationError(f"unknown image in release profile: {image}")
+
+    def previous_update_hash(self, image: str) -> str:
+        if image == "secure":
+            return self.previous_secure_update_sha256
+        if image == "nonsecure":
+            return self.previous_nonsecure_update_sha256
+        raise ReadbackVerificationError(f"unknown image in release profile: {image}")
+
+    def key_area_hash(self, image: str) -> str:
+        if image == "secure":
+            return self.secure_key_area_sha256
+        if image == "nonsecure":
+            return self.nonsecure_key_area_sha256
+        raise ReadbackVerificationError(f"unknown image in release profile: {image}")
+
+    def artifact_map(self) -> dict[str, tuple[int, str]]:
+        return {
+            name: (size, digest) for name, size, digest in self.artifacts
+        }
+
+    def expected_metadata(self) -> dict[str, object]:
+        return {
+            "format": "roller-ecu-ota-v1",
+            "version": self.version,
+            "security_counter": self.identity[4],
+            "update_sequence": self.update_sequence,
+            "layout_version": LAYOUT_VERSION,
+            "secure_sha256": self.secure_update_sha256,
+            "nonsecure_sha256": self.nonsecure_update_sha256,
+            "secure_size": SECURE_SIZE,
+            "nonsecure_size": NONSECURE_SIZE,
+        }
 
 EXPECTED_VERSION = "1.0.16"
 EXPECTED_IDENTITY = (1, 0, 16, 0, 16)
@@ -111,6 +175,74 @@ EXPECTED_METADATA = {
     "secure_size": SECURE_SIZE,
     "nonsecure_size": NONSECURE_SIZE,
 }
+DEFAULT_CLI_VERSION = "1.0.17"
+RELEASE_PROFILES = MappingProxyType({
+    "1.0.16": ReleaseProfile(
+        version="1.0.16",
+        identity=EXPECTED_IDENTITY,
+        update_sequence=EXPECTED_UPDATE_SEQUENCE,
+        secure_update_sha256=EXPECTED_UPDATE_HASHES["secure"],
+        nonsecure_update_sha256=EXPECTED_UPDATE_HASHES["nonsecure"],
+        secure_key_area_sha256=EXPECTED_ENCRYPTED_KEY_AREA_HASHES["secure"],
+        nonsecure_key_area_sha256=EXPECTED_ENCRYPTED_KEY_AREA_HASHES["nonsecure"],
+        previous_version=PREVIOUS_VERSION,
+        previous_identity=PREVIOUS_IDENTITY,
+        previous_update_sequence=PREVIOUS_UPDATE_SEQUENCE,
+        previous_secure_update_sha256=PREVIOUS_UPDATE_HASHES["secure"],
+        previous_nonsecure_update_sha256=PREVIOUS_UPDATE_HASHES["nonsecure"],
+        previous_artifact=PINNED_PREVIOUS_RELEASE_ARTIFACT,
+        artifacts=tuple(
+            (name, size, digest)
+            for name, (size, digest) in PINNED_RELEASE_ARTIFACTS.items()
+        ),
+    ),
+    "1.0.17": ReleaseProfile(
+        version="1.0.17",
+        identity=(1, 0, 17, 0, 17),
+        update_sequence=17,
+        secure_update_sha256=
+            "974d08e78a4f95b22c20d3652656c8bae107883247e241992018ce528cfad2ad",
+        nonsecure_update_sha256=
+            "d09255f90f2f26ea5992927620fb6a8fbf84b0924df1b6c2cffdeae0ee44a2a0",
+        # Exact SHA-256 of the two plaintext 16-byte MCUboot key slots in
+        # post-swap primary order: current 1.0.17, then previous 1.0.16.
+        # Only the combined hashes are retained; no AES key is disclosed.
+        secure_key_area_sha256=
+            "6b7f2423e3c2007d6bd592252cc086c46039addcd3c299325e027afefd3b3567",
+        nonsecure_key_area_sha256=
+            "9f507fd23e07b0c8166c403539dcfecba6baf1d349d1d1cf4e1eb7ced368840f",
+        previous_version="1.0.16",
+        previous_identity=(1, 0, 16, 0, 16),
+        previous_update_sequence=16,
+        previous_secure_update_sha256=
+            "76922f64c58f42ef2c356dce143f7e567655af2b9e73352a016f06b46ba7318f",
+        previous_nonsecure_update_sha256=
+            "a3505eaac811dd8797dc0062f4b3089b2b2cdd01b0dea4c967eee67a0a5ccc39",
+        previous_artifact=(
+            "roller-ecu-1.0.16.recu",
+            525371,
+            "3e5ab07c7b6127dcedb46a1b4b1a695740904dd940d7128631f714d959a0b623",
+        ),
+        artifacts=(
+            ("metadata.json",
+                367,
+                "0dd2ff18cf34dc0b61b629248dd2c3c83a8abf54867cae4af5c5c481d9c70113",
+            ),
+            ("secure-initial.bin",
+                SECURE_SIZE,
+                "0d8f2caf88fff8eac65cf0f66e27d23dee1c3aaecac54eaa0d763cc14288c74e",
+            ),
+            ("nonsecure-initial.bin",
+                NONSECURE_SIZE,
+                "39c9b079d8148ccd1a813f44198595503ec209b965ef250137add7a08c1bc0b1",
+            ),
+            ("roller-ecu-1.0.17.recu",
+                525371,
+                "75948795f39d898795b85841e4ad2e06c47738240184ff9ffbdc729fc11ab599",
+            ),
+        ),
+    ),
+})
 
 IMAGE_MAGIC = 0x96F3B83D
 IMAGE_F_ENCRYPTED = 0x4
@@ -171,6 +303,7 @@ class ImageRecord:
 @dataclass(frozen=True)
 class ReleaseImage:
     name: str
+    release_version: str
     address: int
     size: int
     image_index: int
@@ -186,6 +319,7 @@ class ReleaseImage:
 @dataclass(frozen=True)
 class ReleaseArtifacts:
     release_dir: Path
+    profile: ReleaseProfile
     metadata: dict[str, Any]
     secure: ReleaseImage
     nonsecure: ReleaseImage
@@ -274,9 +408,17 @@ def _parse_tlv_area(name: str, data: bytes, offset: int, expected_magic: int) \
 
 def _parse_image_record(name: str, data: bytes, expected_size: int,
                         expected_flags: int,
-                        expected_identity: tuple[int, int, int, int, int] =
-                        EXPECTED_IDENTITY,
-                        expected_version: str = EXPECTED_VERSION) -> ImageRecord:
+                        expected_identity: ReleaseIdentity |
+                        tuple[int, int, int, int, int] |
+                        None = None,
+                        expected_version: str | None = None) -> ImageRecord:
+    if expected_identity is None:
+        expected_identity = EXPECTED_IDENTITY
+    if expected_version is None:
+        expected_version = EXPECTED_VERSION
+    expected_release_identity = expected_identity if isinstance(
+        expected_identity, ReleaseIdentity
+    ) else ReleaseIdentity(*expected_identity)
     _require(len(data) == expected_size, f"{name}: wrong slot size")
     _require(len(data) >= 32, f"{name}: truncated MCUboot header")
     magic, load_address, header_size, protected_size, image_size, flags = \
@@ -297,9 +439,9 @@ def _parse_image_record(name: str, data: bytes, expected_size: int,
              f"{name}: protected TLV layout is not canonical")
     security_counter = struct.unpack_from("<I", data, payload_end + 8)[0]
     identity = ReleaseIdentity(*version, security_counter)
-    _require(identity == ReleaseIdentity(*expected_identity),
+    _require(identity == expected_release_identity,
              f"{name}: version/security counter is not exact "
-             f"{expected_version}/{expected_identity[4]}")
+             f"{expected_version}/{expected_release_identity.security_counter}")
 
     unprotected_entries, record_end = _parse_tlv_area(
         name, data, protected_end, UNPROTECTED_TLV_MAGIC)
@@ -345,10 +487,16 @@ def _validate_reference_trailer(name: str, data: bytes, *, confirmed: bool,
 def _load_release_image(name: str, address: int, size: int, image_index: int,
                         initial: bytes, update: bytes,
                         previous_record_size: int,
-                        encrypted_key_area_sha256: str) -> ReleaseImage:
-    initial_record = _parse_image_record(f"{name}-initial", initial, size, 0)
+                        encrypted_key_area_sha256: str,
+                        expected_identity: tuple[int, int, int, int, int] =
+                        EXPECTED_IDENTITY,
+                        expected_version: str = EXPECTED_VERSION) -> ReleaseImage:
+    initial_record = _parse_image_record(
+        f"{name}-initial", initial, size, 0,
+        expected_identity, expected_version)
     update_record = _parse_image_record(
-        f"{name}-encrypted-update", update, size, IMAGE_F_ENCRYPTED)
+        f"{name}-encrypted-update", update, size, IMAGE_F_ENCRYPTED,
+        expected_identity, expected_version)
     _require(
         (initial_record.header_size, initial_record.image_size,
          initial_record.protected_size, initial_record.identity) ==
@@ -372,6 +520,7 @@ def _load_release_image(name: str, address: int, size: int, image_index: int,
     swap_size = max(previous_record_size, update_record.record_end)
     return ReleaseImage(
         name=name,
+        release_version=expected_version,
         address=address,
         size=size,
         image_index=image_index,
@@ -385,17 +534,20 @@ def _load_release_image(name: str, address: int, size: int, image_index: int,
     )
 
 
-def _load_previous_release_records(release_history: Path) \
+def _load_previous_release_records(release_history: Path,
+                                   profile: ReleaseProfile) \
         -> tuple[ImageRecord, ImageRecord]:
-    """Parse exact 1.0.15 encrypted records used as the pre-swap primaries."""
-    filename, expected_size, expected_hash = PINNED_PREVIOUS_RELEASE_ARTIFACT
-    previous_dir = release_history / PREVIOUS_VERSION
+    """Parse one profile's exact pre-swap encrypted records."""
+    filename, expected_size, expected_hash = profile.previous_artifact
+    previous_dir = release_history / profile.previous_version
     _require(previous_dir.is_dir() and not previous_dir.is_symlink(),
-             f"previous release directory is not a real {PREVIOUS_VERSION} directory")
+             f"previous release directory is not a real "
+             f"{profile.previous_version} directory")
     package = _read_real_file(previous_dir / filename,
                               f"previous release artifact {filename}")
     _require(len(package) == expected_size and _sha256(package) == expected_hash,
-             f"previous swap reference is not the reviewed {PREVIOUS_VERSION} package")
+             f"previous swap reference is not the reviewed "
+             f"{profile.previous_version} package")
 
     try:
         with zipfile.ZipFile(io.BytesIO(package)) as archive:
@@ -429,12 +581,12 @@ def _load_previous_release_records(release_history: Path) \
         raise ReadbackVerificationError("previous release metadata is invalid") from exc
     expected_metadata = {
         "format": "roller-ecu-ota-v1",
-        "version": PREVIOUS_VERSION,
-        "security_counter": PREVIOUS_IDENTITY[4],
-        "update_sequence": PREVIOUS_UPDATE_SEQUENCE,
+        "version": profile.previous_version,
+        "security_counter": profile.previous_identity[4],
+        "update_sequence": profile.previous_update_sequence,
         "layout_version": LAYOUT_VERSION,
-        "secure_sha256": PREVIOUS_UPDATE_HASHES["secure"],
-        "nonsecure_sha256": PREVIOUS_UPDATE_HASHES["nonsecure"],
+        "secure_sha256": profile.previous_secure_update_sha256,
+        "nonsecure_sha256": profile.previous_nonsecure_update_sha256,
         "secure_size": SECURE_SIZE,
         "nonsecure_size": NONSECURE_SIZE,
     }
@@ -445,28 +597,34 @@ def _load_previous_release_records(release_history: Path) \
     fields = struct.unpack(MANIFEST_FORMAT, manifest)
     expected_prefix = (
         MANIFEST_MAGIC, MANIFEST_SCHEMA, LAYOUT_VERSION,
-        PREVIOUS_UPDATE_SEQUENCE, *PREVIOUS_IDENTITY[:4],
-        PREVIOUS_IDENTITY[4], OTA_FLAGS, SECURE_SIZE, NONSECURE_SIZE,
+        profile.previous_update_sequence, *profile.previous_identity[:4],
+        profile.previous_identity[4], OTA_FLAGS, SECURE_SIZE, NONSECURE_SIZE,
     )
     _require(fields[:12] == expected_prefix and
-             fields[12] == bytes.fromhex(PREVIOUS_UPDATE_HASHES["secure"]) and
-             fields[13] == bytes.fromhex(PREVIOUS_UPDATE_HASHES["nonsecure"]) and
+             fields[12] == bytes.fromhex(
+                 profile.previous_secure_update_sha256) and
+             fields[13] == bytes.fromhex(
+                 profile.previous_nonsecure_update_sha256) and
              fields[14:] == (0, 0, 0, 0),
              "previous OTA manifest identity/hashes are not exact")
     _require(len(signature) == 64 and signature != b"\x00" * 64,
              "previous OTA transport signature is missing or malformed")
     _require(len(secure_update) == SECURE_SIZE and
-             _sha256(secure_update) == PREVIOUS_UPDATE_HASHES["secure"] and
+             _sha256(secure_update) ==
+             profile.previous_secure_update_sha256 and
              len(nonsecure_update) == NONSECURE_SIZE and
-             _sha256(nonsecure_update) == PREVIOUS_UPDATE_HASHES["nonsecure"],
+             _sha256(nonsecure_update) ==
+             profile.previous_nonsecure_update_sha256,
              "previous OTA package image members differ from metadata")
 
     secure = _parse_image_record(
         "secure-previous-encrypted-update", secure_update, SECURE_SIZE,
-        IMAGE_F_ENCRYPTED, PREVIOUS_IDENTITY, PREVIOUS_VERSION)
+        IMAGE_F_ENCRYPTED, profile.previous_identity,
+        profile.previous_version)
     nonsecure = _parse_image_record(
         "nonsecure-previous-encrypted-update", nonsecure_update, NONSECURE_SIZE,
-        IMAGE_F_ENCRYPTED, PREVIOUS_IDENTITY, PREVIOUS_VERSION)
+        IMAGE_F_ENCRYPTED, profile.previous_identity,
+        profile.previous_version)
     _validate_reference_trailer(
         "secure-previous-encrypted-update", secure_update, confirmed=False,
         record_end=secure.record_end)
@@ -477,24 +635,29 @@ def _load_previous_release_records(release_history: Path) \
 
 
 def load_release(release_dir: Path) -> ReleaseArtifacts:
-    """Load the immutable, reviewed 1.0.16 release reference."""
-    _require(release_dir.name == EXPECTED_VERSION and release_dir.is_dir() and
+    """Load one immutable reviewed release and its exact previous reference."""
+    profile = RELEASE_PROFILES.get(release_dir.name)
+    _require(profile is not None,
+             f"release profile is not reviewed: {release_dir.name}")
+    _require(release_dir.name == profile.version and release_dir.is_dir() and
              not release_dir.is_symlink(),
-             f"release directory must be a real {EXPECTED_VERSION} directory")
+             f"release directory must be a real {profile.version} directory")
     try:
         entries = {entry.name: entry for entry in release_dir.iterdir()}
     except OSError as exc:
         raise ReadbackVerificationError(
             f"cannot enumerate release directory {release_dir}: {exc}"
         ) from exc
-    _require(set(entries) == set(PINNED_RELEASE_ARTIFACTS),
+    pinned_artifacts = profile.artifact_map()
+    _require(set(entries) == set(pinned_artifacts),
              "release directory member set is not canonical")
 
     artifacts: dict[str, bytes] = {}
-    for filename, (expected_size, expected_hash) in PINNED_RELEASE_ARTIFACTS.items():
+    for filename, (expected_size, expected_hash) in pinned_artifacts.items():
         data = _read_real_file(entries[filename], f"release artifact {filename}")
         _require(len(data) == expected_size and _sha256(data) == expected_hash,
-                 f"release artifact is not the reviewed {EXPECTED_VERSION}: {filename}")
+                 f"release artifact is not the reviewed "
+                 f"{profile.version}: {filename}")
         artifacts[filename] = data
 
     try:
@@ -504,12 +667,14 @@ def load_release(release_dir: Path) -> ReleaseArtifacts:
         )
     except (UnicodeError, ValueError) as exc:
         raise ReadbackVerificationError("release metadata is invalid") from exc
-    _require(type(metadata) is dict and metadata == EXPECTED_METADATA,
+    _require(type(metadata) is dict and metadata == profile.expected_metadata(),
              "release metadata fields are not exact")
 
-    package_name = f"roller-ecu-{EXPECTED_VERSION}.recu"
+    package_name = f"roller-ecu-{profile.version}.recu"
     try:
-        with zipfile.ZipFile(release_dir / package_name) as archive:
+        # Parse the exact byte string that already passed the pinned size/hash
+        # gate. Reopening the path here would create a verification TOCTOU.
+        with zipfile.ZipFile(io.BytesIO(artifacts[package_name])) as archive:
             infos = archive.infolist()
             names = [info.filename for info in infos]
             expected_members = {
@@ -536,39 +701,43 @@ def load_release(release_dir: Path) -> ReleaseArtifacts:
              "OTA manifest has the wrong size")
     fields = struct.unpack(MANIFEST_FORMAT, manifest)
     expected_prefix = (
-        MANIFEST_MAGIC, MANIFEST_SCHEMA, LAYOUT_VERSION, EXPECTED_UPDATE_SEQUENCE,
-        *EXPECTED_IDENTITY[:4], EXPECTED_IDENTITY[4], OTA_FLAGS,
+        MANIFEST_MAGIC, MANIFEST_SCHEMA, LAYOUT_VERSION,
+        profile.update_sequence,
+        *profile.identity[:4], profile.identity[4], OTA_FLAGS,
         SECURE_SIZE, NONSECURE_SIZE,
     )
     _require(fields[:12] == expected_prefix,
              "OTA manifest release identity/layout is not exact")
-    _require(fields[12] == bytes.fromhex(EXPECTED_UPDATE_HASHES["secure"]) and
-             fields[13] == bytes.fromhex(EXPECTED_UPDATE_HASHES["nonsecure"]) and
+    _require(fields[12] == bytes.fromhex(profile.secure_update_sha256) and
+             fields[13] == bytes.fromhex(
+                 profile.nonsecure_update_sha256) and
              fields[14:] == (0, 0, 0, 0),
              "OTA manifest hashes/reserved fields are not exact")
     _require(len(signature) == 64 and signature != b"\x00" * 64,
              "OTA transport signature is missing or malformed")
     _require(len(secure_update) == SECURE_SIZE and
-             _sha256(secure_update) == EXPECTED_UPDATE_HASHES["secure"] and
+             _sha256(secure_update) == profile.secure_update_sha256 and
              len(nonsecure_update) == NONSECURE_SIZE and
-             _sha256(nonsecure_update) == EXPECTED_UPDATE_HASHES["nonsecure"],
+             _sha256(nonsecure_update) == profile.nonsecure_update_sha256,
              "OTA package image members differ from metadata")
 
     previous_secure, previous_nonsecure = _load_previous_release_records(
-        release_dir.parent)
+        release_dir.parent, profile)
     secure = _load_release_image(
         "secure", SECURE_ADDRESS, SECURE_SIZE, 0,
         artifacts["secure-initial.bin"], secure_update,
         previous_secure.record_end,
-        EXPECTED_ENCRYPTED_KEY_AREA_HASHES["secure"])
+        profile.secure_key_area_sha256,
+        profile.identity, profile.version)
     nonsecure = _load_release_image(
         "nonsecure", NONSECURE_ADDRESS, NONSECURE_SIZE, 1,
         artifacts["nonsecure-initial.bin"], nonsecure_update,
         previous_nonsecure.record_end,
-        EXPECTED_ENCRYPTED_KEY_AREA_HASHES["nonsecure"])
+        profile.nonsecure_key_area_sha256,
+        profile.identity, profile.version)
     _require(secure.initial_record.identity == nonsecure.initial_record.identity,
              "Secure/NonSecure release references have different identities")
-    return ReleaseArtifacts(release_dir, metadata, secure, nonsecure)
+    return ReleaseArtifacts(release_dir, profile, metadata, secure, nonsecure)
 
 
 def assemble_segments(name: str, segments: list[tuple[int, bytes]],
@@ -605,7 +774,8 @@ def validate_installed_image(image: bytes, reference: ReleaseImage) \
     name = reference.name
     _require(len(image) == reference.size, f"{name}: wrong primary slot size")
     actual = _parse_image_record(
-        f"{name}-installed", image, reference.size, IMAGE_F_ENCRYPTED)
+        f"{name}-installed", image, reference.size, IMAGE_F_ENCRYPTED,
+        reference.update_record.identity, reference.release_version)
     update = reference.update_record
     _require(
         (actual.header_size, actual.image_size, actual.protected_size,
@@ -651,7 +821,7 @@ def validate_installed_image(image: bytes, reference: ReleaseImage) \
     key_area = image[status_end:status_end + 2 * BOOT_ENC_KEY_SIZE]
     _require(_sha256(key_area) == reference.encrypted_key_area_sha256,
              f"{name}: encrypted swap key area differs from the exact "
-             f"{EXPECTED_VERSION} post-swap state")
+             f"{reference.release_version} post-swap state")
 
     expected_swap_info = (reference.image_index << 4) | 0x2
     _require(_slice_unit(image, SWAP_SIZE_OFFSET_FROM_END) ==
@@ -737,8 +907,9 @@ def main() -> int:
     parser.add_argument(
         "--release-dir",
         type=Path,
-        default=PROJECT / "artifacts" / "firmware" / EXPECTED_VERSION,
-        help=f"immutable reviewed {EXPECTED_VERSION} release directory",
+        default=PROJECT / "artifacts" / "firmware" / DEFAULT_CLI_VERSION,
+        help=(f"immutable reviewed release directory; default is "
+              f"{DEFAULT_CLI_VERSION}"),
     )
     parser.add_argument(
         "--secure-segment", action="append", required=True,
@@ -766,20 +937,21 @@ def main() -> int:
         report = {
             "schema": "roller-ecu-closed-ota-primary-readback-audit-v1",
             "release": {
-                "version": EXPECTED_VERSION,
-                "security_counter": EXPECTED_IDENTITY[4],
-                "update_sequence": EXPECTED_UPDATE_SEQUENCE,
+                "version": release.profile.version,
+                "security_counter": release.profile.identity[4],
+                "update_sequence": release.profile.update_sequence,
                 "layout_version": LAYOUT_VERSION,
                 "artifacts": {
                     name: {"size": size, "sha256": digest}
-                    for name, (size, digest) in PINNED_RELEASE_ARTIFACTS.items()
+                    for name, (size, digest) in
+                    release.profile.artifact_map().items()
                 },
                 "previous_swap_reference": {
-                    "version": PREVIOUS_VERSION,
+                    "version": release.profile.previous_version,
                     "artifact": {
-                        "name": PINNED_PREVIOUS_RELEASE_ARTIFACT[0],
-                        "size": PINNED_PREVIOUS_RELEASE_ARTIFACT[1],
-                        "sha256": PINNED_PREVIOUS_RELEASE_ARTIFACT[2],
+                        "name": release.profile.previous_artifact[0],
+                        "size": release.profile.previous_artifact[1],
+                        "sha256": release.profile.previous_artifact[2],
                     },
                     "record_sizes": {
                         "secure": release.secure.previous_record_size,
@@ -812,8 +984,8 @@ def main() -> int:
         return 2
 
     print(
-        f"Exact CLOSED OTA primary pair verified: {EXPECTED_VERSION}, "
-        f"security_counter={EXPECTED_IDENTITY[4]}, image_ok=0x01/0x01"
+        f"Exact CLOSED OTA primary pair verified: {release.profile.version}, "
+        f"security_counter={release.profile.identity[4]}, image_ok=0x01/0x01"
     )
     return 0
 

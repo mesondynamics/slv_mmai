@@ -4,7 +4,15 @@
 
 int main(void)
 {
+  uint32_t address;
   uint32_t revision;
+
+  assert(EthernetPhy_DeviceAddressIsAllowed(ECU_ETH_PHY_ADDRESS));
+  for (address = 1U; address <= 31U; ++address)
+  {
+    assert(!EthernetPhy_DeviceAddressIsAllowed(address));
+  }
+  assert(!EthernetPhy_DeviceAddressIsAllowed(UINT32_MAX));
 
   for (revision = 0U; revision <= 0x0FU; ++revision)
   {

@@ -97,10 +97,7 @@ void MX_GPIO_Init(void)
   HAL_GPIO_ConfigPinAttributes(GPIOA, SPEED_IN_Pin|RMII_REF_CLK_Pin|RMII_MDIO_Pin|RMII_CRS_DV_Pin, GPIO_PIN_NSEC);
 
   /*IO attributes management functions */
-  HAL_GPIO_ConfigPinAttributes(GPIOB, CAN2_RX_Pin|CAN2_TX_Pin|RMII_NRST_Pin|RMII_TXD1_Pin, GPIO_PIN_NSEC);
-
-  /*IO attributes management functions */
-  HAL_GPIO_ConfigPinAttributes(GPIOD, CAN1_RX_Pin|CAN1_TX_Pin, GPIO_PIN_NSEC);
+  HAL_GPIO_ConfigPinAttributes(GPIOB, RMII_NRST_Pin|RMII_TXD1_Pin, GPIO_PIN_NSEC);
 
   /*IO attributes management functions */
   HAL_GPIO_ConfigPinAttributes(GPIOG, RMII_TX_EN_Pin|RMII_TXD0_Pin, GPIO_PIN_NSEC);

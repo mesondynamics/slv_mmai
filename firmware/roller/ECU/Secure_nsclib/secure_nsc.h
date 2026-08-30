@@ -69,6 +69,12 @@ int32_t SECURE_SafetyDisarmOutputs(void);
 int32_t SECURE_SafetySubmitActuatorCommand(
     const SAFETY_ActuatorCommand *command);
 int32_t SECURE_SafetyKickWatchdog(uint32_t heartbeat);
+int32_t SECURE_SafetyGetSteeringSnapshot(
+    uint32_t requested_version, SAFETY_SteeringSnapshot *snapshot,
+    uint32_t snapshot_capacity);
+int32_t SECURE_SafetyGetJ1939Snapshot(
+    uint32_t requested_version, SAFETY_J1939Snapshot *snapshot,
+    uint32_t snapshot_capacity);
 
 #endif /* SECURE_NSC_H */
 /* USER CODE END Non_Secure_CallLib_h */

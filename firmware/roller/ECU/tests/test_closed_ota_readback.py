@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 
 
@@ -22,10 +23,12 @@ SPEC.loader.exec_module(MODULE)
 
 PROJECT = MODULE_PATH.parents[1]
 PINNED_RELEASE = PROJECT / "artifacts" / "firmware" / "1.0.16"
+PINNED_RELEASE_1_0_17 = PROJECT / "artifacts" / "firmware" / "1.0.17"
 PKI_DIR = Path("/home/plac/.local/share/roller-ecu-pki")
 
 
-def make_reference_image(size, *, encrypted, image_size, seed):
+def make_reference_image(size, *, encrypted, image_size, seed,
+                         identity=(1, 0, 16, 0, 16)):
     image = bytearray(b"\xff" * size)
     flags = MODULE.IMAGE_F_ENCRYPTED if encrypted else 0
     protected_size = 28
@@ -33,7 +36,7 @@ def make_reference_image(size, *, encrypted, image_size, seed):
         "<IIHHII", image, 0, MODULE.IMAGE_MAGIC, 0,
         MODULE.HEADER_SIZE, protected_size, image_size, flags,
     )
-    struct.pack_into("<BBHI", image, 20, 1, 0, 16, 0)
+    struct.pack_into("<BBHI", image, 20, *identity[:4])
     for offset in range(MODULE.HEADER_SIZE,
                         MODULE.HEADER_SIZE + image_size):
         image[offset] = (seed + offset) & 0xFF
@@ -42,7 +45,7 @@ def make_reference_image(size, *, encrypted, image_size, seed):
     struct.pack_into(
         "<HHHHIHH", image, protected,
         MODULE.PROTECTED_TLV_MAGIC, protected_size,
-        MODULE.SECURITY_COUNTER_TLV, 4, 16,
+        MODULE.SECURITY_COUNTER_TLV, 4, identity[4],
         MODULE.DEPENDENCY_TLV, 12,
     )
     image[protected + 16:protected + protected_size] = bytes(range(12))
@@ -71,33 +74,41 @@ def make_reference_image(size, *, encrypted, image_size, seed):
     return bytes(image)
 
 
-def make_synthetic_release():
+def make_synthetic_release(version="1.0.16"):
+    profile = MODULE.RELEASE_PROFILES[version]
     secure_initial = make_reference_image(
-        MODULE.SECURE_SIZE, encrypted=False, image_size=0x1800, seed=11)
+        MODULE.SECURE_SIZE, encrypted=False, image_size=0x1800, seed=11,
+        identity=profile.identity)
     secure_update = make_reference_image(
-        MODULE.SECURE_SIZE, encrypted=True, image_size=0x1800, seed=101)
+        MODULE.SECURE_SIZE, encrypted=True, image_size=0x1800, seed=101,
+        identity=profile.identity)
     nonsecure_initial = make_reference_image(
-        MODULE.NONSECURE_SIZE, encrypted=False, image_size=0x2400, seed=23)
+        MODULE.NONSECURE_SIZE, encrypted=False, image_size=0x2400, seed=23,
+        identity=profile.identity)
     nonsecure_update = make_reference_image(
-        MODULE.NONSECURE_SIZE, encrypted=True, image_size=0x2400, seed=113)
+        MODULE.NONSECURE_SIZE, encrypted=True, image_size=0x2400, seed=113,
+        identity=profile.identity)
     secure_current = MODULE._parse_image_record(
         "secure-synthetic-current", secure_update, MODULE.SECURE_SIZE,
-        MODULE.IMAGE_F_ENCRYPTED)
+        MODULE.IMAGE_F_ENCRYPTED, profile.identity, profile.version)
     nonsecure_current = MODULE._parse_image_record(
         "nonsecure-synthetic-current", nonsecure_update, MODULE.NONSECURE_SIZE,
-        MODULE.IMAGE_F_ENCRYPTED)
+        MODULE.IMAGE_F_ENCRYPTED, profile.identity, profile.version)
     secure = MODULE._load_release_image(
         "secure", MODULE.SECURE_ADDRESS, MODULE.SECURE_SIZE, 0,
         secure_initial, secure_update,
         secure_current.record_end,
-        hashlib.sha256(bytes(range(1, 33))).hexdigest())
+        hashlib.sha256(bytes(range(1, 33))).hexdigest(),
+        profile.identity, profile.version)
     nonsecure = MODULE._load_release_image(
         "nonsecure", MODULE.NONSECURE_ADDRESS, MODULE.NONSECURE_SIZE, 1,
         nonsecure_initial, nonsecure_update,
         nonsecure_current.record_end + 1,
-        hashlib.sha256(bytes(range(65, 97))).hexdigest())
+        hashlib.sha256(bytes(range(65, 97))).hexdigest(),
+        profile.identity, profile.version)
     return MODULE.ReleaseArtifacts(
-        Path("synthetic/1.0.16"), dict(MODULE.EXPECTED_METADATA), secure, nonsecure)
+        Path(f"synthetic/{version}"), profile,
+        profile.expected_metadata(), secure, nonsecure)
 
 
 def make_installed(reference, *, key_seed=1, key_area=None):
@@ -112,7 +123,8 @@ def make_installed(reference, *, key_seed=1, key_area=None):
 
     trailer_start = reference.size - MODULE.BOOT_TRAILER_SIZE
     status_entries = (
-        (record.record_end + MODULE.SCRATCH_SIZE - 1) // MODULE.SCRATCH_SIZE
+        (reference.swap_size + MODULE.SCRATCH_SIZE - 1) //
+        MODULE.SCRATCH_SIZE
     ) * MODULE.BOOT_STATUS_STATE_COUNT
     for entry in range(status_entries):
         start = trailer_start + entry * MODULE.BOOT_MAX_ALIGN
@@ -217,6 +229,118 @@ class ClosedOtaReadbackTests(unittest.TestCase):
         )
         self.assertEqual(self.release.metadata, MODULE.EXPECTED_METADATA)
 
+    @unittest.skipUnless(PINNED_RELEASE_1_0_17.is_dir(),
+                         "reviewed 1.0.17 artifacts unavailable")
+    def test_immutable_pinned_1_0_17_release_and_previous_swap_load(self):
+        release = MODULE.load_release(PINNED_RELEASE_1_0_17)
+        self.assertEqual(release.profile.version, "1.0.17")
+        self.assertEqual(release.metadata["version"], "1.0.17")
+        self.assertEqual(release.metadata["security_counter"], 17)
+        self.assertEqual(release.metadata["update_sequence"], 17)
+        self.assertEqual(
+            release.secure.initial_record.identity,
+            MODULE.ReleaseIdentity(1, 0, 17, 0, 17),
+        )
+        self.assertEqual(release.secure.previous_record_size, 0x2DDE8)
+        self.assertEqual(release.secure.update_record.record_end, 0x2DDE7)
+        self.assertEqual(release.secure.swap_size, 0x2DDE8)
+        self.assertEqual(release.nonsecure.previous_record_size, 0x8D38)
+        self.assertEqual(release.nonsecure.update_record.record_end, 0x7D38)
+        self.assertEqual(release.nonsecure.swap_size, 0x8D38)
+
+    @unittest.skipUnless(PINNED_RELEASE_1_0_17.is_dir(),
+                         "reviewed 1.0.17 artifacts unavailable")
+    def test_1_0_17_post_swap_key_slots_and_installed_pair_are_exact(self):
+        if not (PKI_DIR / "oemirot-encryption.pem").is_file() or not \
+                (PKI_DIR / "key-passphrase.txt").is_file():
+            self.skipTest("local OEMiROT encryption PKI unavailable")
+        release = MODULE.load_release(PINNED_RELEASE_1_0_17)
+        secure_keys = (
+            decrypt_release_image_key("1.0.17", "secure") +
+            decrypt_release_image_key("1.0.16", "secure")
+        )
+        nonsecure_keys = (
+            decrypt_release_image_key("1.0.17", "nonsecure") +
+            decrypt_release_image_key("1.0.16", "nonsecure")
+        )
+        self.assertEqual(
+            hashlib.sha256(secure_keys).hexdigest(),
+            release.profile.secure_key_area_sha256,
+        )
+        self.assertEqual(
+            hashlib.sha256(nonsecure_keys).hexdigest(),
+            release.profile.nonsecure_key_area_sha256,
+        )
+        secure = make_installed(release.secure, key_area=secure_keys)
+        nonsecure = make_installed(release.nonsecure, key_area=nonsecure_keys)
+        secure_report, nonsecure_report = MODULE.validate_pair(
+            secure, nonsecure, release)
+        self.assertEqual(secure_report.identity,
+                         MODULE.ReleaseIdentity(1, 0, 17, 0, 17))
+        self.assertEqual(nonsecure_report.identity, secure_report.identity)
+        self.assertEqual((secure_report.image_ok, nonsecure_report.image_ok),
+                         (1, 1))
+
+    @unittest.skipUnless(PINNED_RELEASE_1_0_17.is_dir(),
+                         "reviewed 1.0.17 artifacts unavailable")
+    def test_1_0_17_profile_rejects_changed_current_or_previous_release(self):
+        for mutation in ("current", "previous"):
+            with self.subTest(mutation=mutation), \
+                    tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                current = root / "1.0.17"
+                previous = root / "1.0.16"
+                shutil.copytree(PINNED_RELEASE_1_0_17, current)
+                shutil.copytree(PINNED_RELEASE, previous)
+                path = (
+                    current / "roller-ecu-1.0.17.recu"
+                    if mutation == "current" else
+                    previous / "roller-ecu-1.0.16.recu"
+                )
+                data = bytearray(path.read_bytes())
+                data[-1] ^= 1
+                path.write_bytes(data)
+                with self.assertRaises(MODULE.ReadbackVerificationError):
+                    MODULE.load_release(current)
+
+    def test_1_0_17_synthetic_pair_validates_without_private_key(self):
+        release = make_synthetic_release("1.0.17")
+        secure = make_installed(release.secure, key_seed=1)
+        nonsecure = make_installed(release.nonsecure, key_seed=65)
+        secure_report, nonsecure_report = MODULE.validate_pair(
+            secure, nonsecure, release)
+        expected = MODULE.ReleaseIdentity(1, 0, 17, 0, 17)
+        self.assertEqual(secure_report.identity, expected)
+        self.assertEqual(nonsecure_report.identity, expected)
+
+    @unittest.skipUnless(
+        PINNED_RELEASE.is_dir() and PINNED_RELEASE_1_0_17.is_dir(),
+        "reviewed 1.0.16/1.0.17 artifacts unavailable",
+    )
+    def test_release_profiles_are_immutable_across_load_order(self):
+        release17 = MODULE.load_release(PINNED_RELEASE_1_0_17)
+        key_area = bytes(range(32))
+        reference17 = replace(
+            release17.secure,
+            encrypted_key_area_sha256=hashlib.sha256(key_area).hexdigest(),
+        )
+        installed17 = make_installed(reference17, key_area=key_area)
+
+        release16 = MODULE.load_release(PINNED_RELEASE)
+        self.assertEqual(release16.profile.version, "1.0.16")
+        report17 = MODULE.validate_installed_image(installed17, reference17)
+        self.assertEqual(
+            report17.identity, MODULE.ReleaseIdentity(1, 0, 17, 0, 17))
+        self.assertEqual(release17.profile.version, "1.0.17")
+
+        with self.assertRaises(TypeError):
+            MODULE.RELEASE_PROFILES["1.0.18"] = release17.profile
+
+    def test_unreviewed_release_profile_is_rejected_before_file_access(self):
+        with self.assertRaisesRegex(
+                MODULE.ReadbackVerificationError, "not reviewed"):
+            MODULE.load_release(Path("/does/not/exist/1.0.18"))
+
     @unittest.skipUnless(PINNED_RELEASE.is_dir(),
                          "reviewed 1.0.16 artifacts unavailable")
     def test_immutable_pinned_1_0_16_release_artifacts_load(self):
@@ -258,6 +382,20 @@ class ClosedOtaReadbackTests(unittest.TestCase):
         report = MODULE.validate_installed_image(self.nonsecure, reference)
         self.assertEqual(report.image_record_size, reference.update_record.record_end)
         self.assertEqual(report.swap_size, reference.previous_record_size)
+
+    def test_status_entries_use_swap_size_across_scratch_boundary(self):
+        reference = replace(
+            self.release.secure,
+            previous_record_size=MODULE.SCRATCH_SIZE + 1,
+            swap_size=MODULE.SCRATCH_SIZE + 1,
+        )
+        self.assertLess(reference.update_record.record_end, MODULE.SCRATCH_SIZE)
+        image = make_installed(reference, key_seed=1)
+        report = MODULE.validate_installed_image(image, reference)
+        self.assertEqual(
+            report.swap_status_entries,
+            2 * MODULE.BOOT_STATUS_STATE_COUNT,
+        )
 
     def test_nonsecure_swap_size_rejects_current_record_end_and_any_other_size(self):
         reference = self.release.nonsecure

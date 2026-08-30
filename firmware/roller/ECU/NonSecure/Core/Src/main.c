@@ -19,7 +19,6 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "eth.h"
-#include "fdcan.h"
 #include "gpdma.h"
 #include "gtzc_ns.h"
 #include "tim.h"
@@ -97,8 +96,6 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_ETH_Init();
-  MX_FDCAN1_Init();
-  MX_FDCAN2_Init();
   MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
   if (ECU_AppInit() != SAFETY_RESULT_OK)

@@ -52,11 +52,15 @@ class Bench:
     def __init__(self, ecu_ip: str) -> None:
         self.target = (ecu_ip, UI.CONTROL_PORT)
         self.tx = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.rx = [self.receiver(UI.STATUS_PORT), self.receiver(UI.DIAGNOSTIC_PORT)]
+        self.rx = [
+            self.receiver(UI.STATUS_PORT),
+            self.receiver(UI.DIAGNOSTIC_PORT),
+        ]
         seed = int(time.time() * 1000) & 0xFFFFFFFF
         self.sequences = {1: seed, 2: seed, 3: seed}
         self.status = None
         self.diagnostic = None
+        self.steering_status = None
 
     @staticmethod
     def receiver(port: int) -> socket.socket:
@@ -93,6 +97,13 @@ class Bench:
                     header["message_type"] == UI.MSG_STATUS and
                     len(payload) == struct.calcsize(UI.STATUS_FORMAT)):
                 self.status = dict(zip(UI.STATUS_FIELDS, struct.unpack(UI.STATUS_FORMAT, payload)))
+            elif (port == UI.STATUS_PORT and
+                  header["message_type"] == UI.MSG_STEERING_STATUS and
+                  len(payload) == struct.calcsize(UI.STEERING_STATUS_FORMAT)):
+                self.steering_status = dict(zip(
+                    UI.STEERING_STATUS_FIELDS,
+                    struct.unpack(UI.STEERING_STATUS_FORMAT, payload),
+                ))
             elif (port == UI.DIAGNOSTIC_PORT and
                   header["message_type"] == UI.MSG_DIAGNOSTIC and
                   len(payload) == struct.calcsize(UI.DIAGNOSTIC_FORMAT)):
@@ -183,9 +194,21 @@ def main() -> int:
         print(f"PASS  {name}: 0x{expected_mask:08X}")
 
     try:
-        require(bench.wait(3.0, lambda: bench.status is not None and bench.diagnostic is not None),
-                "did not receive ECU status/diagnostic broadcasts")
-        print("PASS  Ethernet status and diagnostic broadcasts")
+        require(bench.wait(
+            3.0,
+            lambda: (bench.status is not None and
+                     bench.diagnostic is not None and
+                     bench.steering_status is not None),
+        ), "did not receive ECU status/diagnostic/steering broadcasts")
+        require(
+            int(bench.steering_status["requested_velocity_tdeg_per_s"]) == 0 and
+            int(bench.steering_status["applied_velocity_tdeg_per_s"]) == 0 and
+            int(bench.steering_status["speed_command_permille"]) == 0 and
+            int(bench.steering_status["command_enable"]) == 0 and
+            int(bench.steering_status["motor_enable_confirmed"]) == 0,
+            "steering was not passive at bench-test entry",
+        )
+        print("PASS  Ethernet status/diagnostic/steering broadcasts; steering passive")
         passed += 1
 
         # Neutral + CLEAR_FAULT. A non-clearable or physical E-stop fault keeps
@@ -200,7 +223,7 @@ def main() -> int:
         for name, patch, extra in RELAY_CASES:
             run_case(name, patch, BASE | extra)
 
-        run_case("当前板不支持字段保持 no-op",
+        run_case("旧 ABI 未置 bit2 的转向字段保持 no-op",
                  {"indicator1_on": 1, "indicator2_on": 1, "indicator3_on": 1,
                   "power_latch_on": 1, "main_power_relay_on": 1,
                   "steering_enable": 1}, BASE)

@@ -18,6 +18,7 @@
 #define ECU_ETH_RX_BUFFER_SIZE           1536U
 #define ECU_ETH_RX_BUFFER_COUNT          12U
 #define ECU_ETH_PHY_READ_ERROR_LIMIT        3U
+#define ECU_ETH_RX_BUDGET       ETH_RX_DESC_CNT
 
 extern ETH_TxPacketConfigTypeDef TxConfig;
 
@@ -122,22 +123,27 @@ static struct pbuf *LowLevelInput(void)
 void ethernetif_input(struct netif *netif)
 {
   struct pbuf *packet;
+  uint32_t processed;
 
   /* Transmit completion is polled rather than interrupt-driven, but never
      waited for. The tight application loop therefore bounds RX latency while
      keeping descriptor/pbuf lifetime explicit. */
   (void)HAL_ETH_ReleaseTxPacket(&heth);
-  do
+  /* Never let a continuous Ethernet stream monopolize the no-RTOS main loop.
+     One pass drains at most the hardware RX ring; the next application pass
+     promptly services safety, CAN and control timeouts before continuing. */
+  for (processed = 0U; processed < ECU_ETH_RX_BUDGET; ++processed)
   {
     packet = LowLevelInput();
-    if (packet != NULL)
+    if (packet == NULL)
     {
-      if (netif->input(packet, netif) != ERR_OK)
-      {
-        pbuf_free(packet);
-      }
+      break;
     }
-  } while (packet != NULL);
+    if (netif->input(packet, netif) != ERR_OK)
+    {
+      pbuf_free(packet);
+    }
+  }
 }
 
 err_t ethernetif_init(struct netif *netif)
@@ -340,12 +346,20 @@ static int32_t PhyIoDeInit(void)
 
 static int32_t PhyIoWrite(uint32_t device, uint32_t reg, uint32_t value)
 {
+  if (!EthernetPhy_DeviceAddressIsAllowed(device))
+  {
+    /* The PCB straps PHYAD0 low. Reject the vendor driver's address scan in
+       software so a stuck MDIO bus can consume at most one HAL timeout. */
+    return -1;
+  }
   return (HAL_ETH_WritePHYRegister(&heth, device, reg, value) == HAL_OK) ? 0 : -1;
 }
 
 static int32_t PhyIoRead(uint32_t device, uint32_t reg, uint32_t *value)
 {
-  if ((HAL_ETH_ReadPHYRegister(&heth, device, reg, value) != HAL_OK) ||
+  if ((value == NULL) ||
+      !EthernetPhy_DeviceAddressIsAllowed(device) ||
+      (HAL_ETH_ReadPHYRegister(&heth, device, reg, value) != HAL_OK) ||
       ((*value & 0xFFFFU) == 0xFFFFU))
   {
     /* STM32 MDIO can report HAL_OK with all ones when no PHY responds.  No

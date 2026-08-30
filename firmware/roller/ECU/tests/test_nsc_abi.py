@@ -44,6 +44,24 @@ class NscAbiSourceTest(unittest.TestCase):
         ):
             ABI.validate_abi_source(altered)
 
+    def test_append_only_v2_map_pins_steering_snapshot(self):
+        source = (
+            PROJECT_ROOT / "Secure_nsclib" / "secure_nsc_abi_v2.s"
+        ).read_text(encoding="utf-8")
+        ABI.validate_abi_v2_source(source)
+        self.assertEqual(
+            ABI.parse_abi_source(source), ABI.NSC_ABI_V2_BY_NAME
+        )
+        altered = source.replace(
+            "SECURE_SafetyGetSteeringSnapshot,       0x0c05dca9",
+            "SECURE_SafetyGetSteeringSnapshot,       0x0c05dcb1",
+            1,
+        )
+        with self.assertRaisesRegex(
+            ABI.AbiCheckError, "ABI v2 source mismatch"
+        ):
+            ABI.validate_abi_v2_source(altered)
+
     def test_missing_duplicate_and_extra_symbols_are_rejected(self):
         source = (
             PROJECT_ROOT / "Secure_nsclib" / "secure_nsc_abi_v1.s"
@@ -60,6 +78,24 @@ class NscAbiSourceTest(unittest.TestCase):
             ABI.validate_abi_source(
                 source + "nsc_v1_symbol SECURE_NewApi, 0x0c05dcc1\n"
             )
+
+    def test_append_only_v3_map_pins_j1939_snapshot(self):
+        source = (
+            PROJECT_ROOT / "Secure_nsclib" / "secure_nsc_abi_v3.s"
+        ).read_text(encoding="utf-8")
+        ABI.validate_abi_v3_source(source)
+        self.assertEqual(
+            ABI.parse_abi_source(source), ABI.NSC_ABI_V3_BY_NAME
+        )
+        altered = source.replace(
+            "SECURE_SafetyGetJ1939Snapshot,          0x0c05dcb1",
+            "SECURE_SafetyGetJ1939Snapshot,          0x0c05dcb9",
+            1,
+        )
+        with self.assertRaisesRegex(
+            ABI.AbiCheckError, "ABI v3 source mismatch"
+        ):
+            ABI.validate_abi_v3_source(altered)
 
 
 class NscAbiBinaryTest(unittest.TestCase):
@@ -86,6 +122,54 @@ class NscAbiBinaryTest(unittest.TestCase):
             self.import_symbols, self.elf_symbols, [self.sg_section]
         )
         ABI.validate_nonsecure_elf(self.import_symbols, self.import_symbols)
+
+    def test_v2_steering_veneer_is_fixed_at_appended_address(self):
+        imports = self.import_symbols + [
+            symbol("SECURE_SafetyGetSteeringSnapshot", 0x0C05DCA9)
+        ]
+        definitions = self.elf_symbols + [
+            symbol(
+                "SECURE_SafetyGetSteeringSnapshot",
+                0x0C05DCA9,
+                section="11",
+            )
+        ]
+        ABI.validate_v2_additions(imports, definitions, [self.sg_section])
+        definitions[-1] = symbol(
+            "SECURE_SafetyGetSteeringSnapshot",
+            0x0C05DCB1,
+            section="11",
+        )
+        with self.assertRaisesRegex(
+            ABI.AbiCheckError, "expected 0x0c05dca9"
+        ):
+            ABI.validate_v2_additions(
+                imports, definitions, [self.sg_section]
+            )
+
+    def test_v3_j1939_veneer_is_fixed_at_appended_address(self):
+        imports = self.import_symbols + [
+            symbol("SECURE_SafetyGetJ1939Snapshot", 0x0C05DCB1)
+        ]
+        definitions = self.elf_symbols + [
+            symbol(
+                "SECURE_SafetyGetJ1939Snapshot",
+                0x0C05DCB1,
+                section="11",
+            )
+        ]
+        ABI.validate_v3_additions(imports, definitions, [self.sg_section])
+        definitions[-1] = symbol(
+            "SECURE_SafetyGetJ1939Snapshot",
+            0x0C05DCB9,
+            section="11",
+        )
+        with self.assertRaisesRegex(
+            ABI.AbiCheckError, "expected 0x0c05dcb1"
+        ):
+            ABI.validate_v3_additions(
+                imports, definitions, [self.sg_section]
+            )
 
     def test_import_address_drift_is_rejected(self):
         changed = list(self.import_symbols)

@@ -67,6 +67,14 @@ void MX_GTZC_S_Init(void)
   {
     Error_Handler();
   }
+  if (HAL_GTZC_TZIC_EnableIT(GTZC_PERIPH_FDCAN1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_GTZC_TZIC_EnableIT(GTZC_PERIPH_FDCAN2) != HAL_OK)
+  {
+    Error_Handler();
+  }
   if (HAL_GTZC_TZIC_EnableIT(GTZC_PERIPH_SPI4) != HAL_OK)
   {
     Error_Handler();
@@ -96,6 +104,14 @@ void MX_GTZC_S_Init(void)
     Error_Handler();
   }
   if (HAL_GTZC_TZSC_ConfigPeriphAttributes(GTZC_PERIPH_IWDG, GTZC_TZSC_PERIPH_SEC|GTZC_TZSC_PERIPH_NPRIV) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_GTZC_TZSC_ConfigPeriphAttributes(GTZC_PERIPH_FDCAN1, GTZC_TZSC_PERIPH_SEC|GTZC_TZSC_PERIPH_NPRIV) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_GTZC_TZSC_ConfigPeriphAttributes(GTZC_PERIPH_FDCAN2, GTZC_TZSC_PERIPH_SEC|GTZC_TZSC_PERIPH_NPRIV) != HAL_OK)
   {
     Error_Handler();
   }

@@ -1,6 +1,6 @@
 # ECU KiCad / STM32CubeMX 配置审查
 
-审查日期：2026-08-26；安全状态更新：2026-08-30
+审查日期：2026-08-30；安全状态更新：2026-08-30
 
 MCU：STM32H563ZIT6，LQFP144
 
@@ -9,7 +9,8 @@ MCU：STM32H563ZIT6，LQFP144
 硬件依据：`pcb/roller/ecu` KiCad 工程
 
 兼容依据：上一版 `legacy ECU firmware` 与
-`docs/SCH_2025-10-13.pdf`
+`docs/SCH_2025-10-13.pdf`；CAN2 电机协议依据为厂商
+[方向盘舵机使用手册](https://ae-pic-a1.aliexpress-media.com/kf/Sf252692b27884931b38077b0e5716cf1s.pdf)
 
 ## 1. 审查结论
 
@@ -35,15 +36,15 @@ ETH HAL、描述符和引脚初始化；LwIP、LAN8742 接口和 ECU UDP 应用�
 | 子系统 | 当前设置 | 设计约束 |
 |---|---|---|
 | 时钟 | HSE 25 MHz，SYSCLK/HCLK 250 MHz，CSS 开启 | HSE 故障进入 NMI 并关断输出 |
-| TrustZone | ADC12、SPI4、TIM4、TIM6、TIM7、IWDG 为 Secure；对应 GPIO、EXTI、DMA 受保护 | NonSecure 不能直接写继电器、阀 PWM 或安全采样 |
+| TrustZone | ADC12、SPI4、FDCAN1、FDCAN2、TIM4、TIM6、TIM7、IWDG 为 Secure；两个 FDCAN 均为 `SEC|NPRIV`，对应 GPIO、IRQ、DMA 受保护 | NonSecure 不能直接访问继电器、阀 PWM、车辆 CAN1、CAN2 转向或安全采样 |
 | 急停 | PB2，Secure 双边沿 EXTI，标签 `ESTOP_DETECT` | 高电平立即锁存故障；恢复后仍需中性命令清故障 |
 | 软件 I²C | PB8=软件 SDA、PB9=软件 SCL，GPIO Output、Open Drain、上电 High | 仅适用于当前接反的 PCB；无条件 9-clock host-reset 同步与 725 ms 上限属于 Secure 自维护代码，内部不上拉 |
 | TPIC6A595 | SPI4 Secure；PE2 SCK、PE6 MOSI；8 bit、TX only、3.90625 Mbit/s | PE3 OE_N 上电 High；PE5 CLR_N、PE7 BUF_EN、PE4 RCK 上电 Low |
 | 阀 PWM | TIM4 CH1=PB6、CH2=PB7；中心对齐 20 kHz；初值 0 | 正反向互锁；CH4=1 在中心对齐计数谷底、即 PWM 导通脉冲中心触发 ADC2 |
 | 慢速 ADC | ADC1 九路，TIM6 TRGO 1 kHz，GPDMA1 CH0 circular | 外部量、VREFINT、MCU 温度；采样顺序见下表 |
 | 电流 ADC | ADC2 两路，12.5 cycles，TIM4 TRGO，GPDMA1 CH1 circular；ADC2/GPDMA IRQ priority 1 | 前进 PA4、后退 PA6；20 kHz 电流 PI、上电零点校准、VREFINT 补偿和硬故障阈值 |
-| FDCAN1 | Classic CAN 250 kbit/s，80% 采样点，自动重发；0 standard/6 extended filters | 车辆 J1939 接口；只接受六个 PGN |
-| FDCAN2 | Classic CAN 250 kbit/s，0 filters | 预留，应用不启动控制器 |
+| FDCAN1 | Secure Classic CAN 250 kbit/s，80% 采样点，自动重发；0 standard/6 extended filters | 只读车辆 J1939 接口；只接受六个 PGN，经版本化 NSC 快照提供工程量，不开放 raw CAN/TX |
+| FDCAN2 | Classic CAN 250 kbit/s，2 extended filters，禁止自动重发 | Secure 独占的转向电机节点 1 速率控制；错误时不重放过时命令 |
 | 速度输入 | TIM2 CH1=PA0；1 MHz、32 bit、输入滤波 8、IRQ | 20000 pulse/km，1500 ms 丢信号，IIR α=0.2 |
 | Ethernet | RMII、MAC `8A:EA:B5:00:00:02`；PB14 PHY reset 上电 Low | ETH 初始化前保持复位 30 ms，再释放 LAN8742 |
 | IWDG | Secure，LSI、Prescaler 32、Reload 1999，约 2 s | NonSecure 只能通过带递增 heartbeat 的 NSC 服务刷新 |
@@ -81,8 +82,10 @@ ADC2 索引 0 为前进阀电流 PA4，索引 1 为后退阀电流 PA6。车辆�
    Pull=`No pull-up and no pull-down`、Speed=`Low`、Pin Attribute=`Secure`。
 4. **不要启用 I2C1，也不要把 PB8/PB9 改为硬件 AF。** 当前 PCB 只有上述
    反常映射才能不飞线工作。
-5. `System Core > GTZC_S` 中不需要配置 I2C1；应确认 SPI4、ADC12、TIM4、
-   TIM6、IWDG 为 Secure，并启用相应 Illegal Access interrupt。
+5. `System Core > GTZC_S` 中不需要配置 I2C1；应确认 SPI4、ADC12、**FDCAN1、
+   FDCAN2**、TIM4、TIM6、IWDG 为 Secure，并启用相应 Illegal Access interrupt。
+   两个 FDCAN 必须在 `.ioc` 和生成的 `gtzc_s.c` 中都精确为
+   `GTZC_TZSC_PERIPH_SEC|GTZC_TZSC_PERIPH_NPRIV`，不能只依赖 Pinout context。
 6. CubeMX 6.18 当前会把 SRAM3 的 privilege vectors 全部生成为 privileged-only，
    且 `.ioc` 不保存手工加入的 MPCBB3 privilege 数组。ETH DMA 以非特权总线主设备
    访问 NonSecure 描述符，因此 `Secure/Core/Src/gtzc_s.c` 的
@@ -119,18 +122,36 @@ ADC2 索引 0 为前进阀电流 PA4，索引 1 为后退阀电流 PA6。车辆�
 
 ### 3.4 Ethernet 与 FDCAN
 
-1. 切换到 **Cortex-M33 NonSecure** context。
-2. ETH Mode=`RMII`，MAC=`8A:EA:B5:00:00:02`；核对 RMII 引脚与 KiCad
+1. 切换到 **Cortex-M33 NonSecure** context。ETH Mode=`RMII`，
+   MAC=`8A:EA:B5:00:00:02`；核对 RMII 引脚与 KiCad
    网络一致，PB14 `RMII_NRST` 初值 Low。
    PB14 必须保持初值 Low：`eth.c` 的 CubeMX `USER CODE BEGIN ETH_Init 0` 会继续保持
    nRST 30 ms，然后释放并等待 50 MHz REFCLKO 稳定，随后同一函数才进入
    `HAL_ETH_Init()`。不得把复位释放移回 `ECU_AppInit()`；LAN8742A 在本板上是
    MCU RMII 时钟源，先初始化 ETH、后释放 PHY 会形成冷启动竞态。
-3. FDCAN1/FDCAN2 均为 Classic CAN 250000 bit/s：kernel 25 MHz、Prescaler
-   4、Seg1=19、Seg2=5、SJW=4、Auto Retransmission 与 Transmit Pause enabled。
-4. FDCAN1 Standard Filters=0、Extended Filters=6；FDCAN2 两类均为 0。
-   PGN/Mask 在应用启动时配置，CubeMX UI 只保存 RAM 元素数量。
-5. FDCAN1 IT0 优先级 5；TIM2 捕获优先级 6。CAN2 不启用运行时通知。
+2. **不要在 NonSecure context 启用 FDCAN。** 切换到 **Cortex-M33 Secure**，
+   确认 PD0=`FDCAN1_RX`、PD1=`FDCAN1_TX`，两引脚均为 Secure。FDCAN1 保持
+   Classic CAN 250000 bit/s：kernel 25 MHz、Prescaler=4、Seg1=19、Seg2=5、
+   SJW=4，Auto Retransmission/Transmit Pause enabled；Standard Filters=0、
+   Extended Filters=6，IT0 优先级 5。六个 J1939 PGN/Mask 由 Secure 应用配置。
+3. 同一 Secure context 中，PB12=`FDCAN2_RX`、PB13=`FDCAN2_TX`，两引脚和
+   FDCAN2 peripheral attribute 均为 Secure。位时序与 FDCAN1 相同，
+   Transmit Pause enabled；**Auto Retransmission 必须 disabled**，避免总线恢复后
+   硬件重放已超时的非零转向命令。
+4. FDCAN2 Standard Filters=0、Extended Filters=2。Secure 应用只配置
+   `0x05800001` SDO response 和 `0x07000001` heartbeat 两个精确扩展过滤器，
+   global filter 拒绝所有其他标准/扩展/远程帧。FDCAN2 IT0 与 1 ms TIM6
+   状态机使用相同抢占优先级 2，使两条会访问同一 FDCAN HAL handle 的路径串行化；
+   通知和回调只在 Secure 域存在。高优先级 ADC/EXTI 故障路径只能提交原子
+   safe request，由 TIM6 消费，不得直接调用 FDCAN HAL。
+5. STM32H563 的 [ES0565 Rev.8 §2.2.34](https://www.st.com/resource/en/errata_sheet/es0565-stm32h562xx563xx573xx-device-errata-stmicroelectronics.pdf)
+   要求 FDCAN1/FDCAN2 使用相同 security/privilege 属性。本工程统一为
+   `SEC|NPRIV`，Secure 初始化必须保持 FDCAN1 在 FDCAN2 之前，共用 HSE/DIV1
+   kernel clock 和引用计数；生成的 `NVIC_INIT_ITNS1_VAL` 必须为 `0x00002000`。
+   这是强制勘误 workaround，不得把 CAN1 单独移回 NonSecure。
+6. TIM2 捕获优先级 6。生成后用 `audit_config.sh` 同时核对 `.ioc`、Secure
+   `fdcan.c`、`gtzc_s.c`、ITNS/IRQ、单一 callback dispatcher，以及 NonSecure
+   不存在 FDCAN 生成文件、HAL handle 或应用调用；任一层不一致都不得发布。
 
 ### 3.5 LwIP 的特殊说明
 
@@ -152,7 +173,9 @@ PHYID1/PHYID2 并校验 `0x0007/0xC13x`，明确拒绝断开的 MDIO 总线返�
 `0xFFFF/0xFFFF`。PHY 暂时不可用时 LwIP 与安全主循环继续运行，250 ms 轮询会
 自动重试，连续管理接口读错误也会退回重新探测，而不会进入 `Error_Handler()`。
 HAL MDIO 在总线断开时可能返回 `HAL_OK + 0xFFFF`，底层读函数同样把该组合视为
-读错误，避免运行期被误判成某个合法速率。
+读错误，避免运行期被误判成某个合法速率。HAL 单次 MDIO 等待上限为 5 ms；
+对 LAN8742 组件默认的 0..31 地址扫描，I/O 包装层在调用 HAL 前拒绝地址 1..31，
+所以断线或总线卡死时整轮探测最多消耗一次 HAL 超时，而不是累计 32 次。
 
 ### 3.6 Project Manager
 
@@ -305,6 +328,13 @@ NonSecure `.bss` 中包含 ETH 描述符及全部 LwIP pool；链接片段
 `NonSecure/App/Linker/eth_dma_sram3_guard.ld` 强制它不超过
 `0x20060000`。这样后续静态数据增长超出 GTZC 已审查的 64 KiB DMA 窗口时会在
 链接阶段失败，而不是在实机上表现为隐蔽的 Ethernet DMA 超时。
+每次主循环最多处理 `ETH_RX_DESC_CNT=4` 个接收包，持续流量不能饿死 Secure
+心跳、CAN 和控制超时；PHY MDIO 忙等待从 HAL 默认 1000 ms 收紧为 5 ms，并在
+HAL 前拒绝地址 1..31 的无效 PHY 扫描。V1/V2 status、steering、diagnostic、
+security 周期发送采用绝对截止时间和独立相位，同一 HAL 毫秒最多提交一类周期
+应用帧，避免正常周期广播在同一轮耗尽 4 个 TX descriptor。三项均位于不会被
+CubeMX 重新生成覆盖的
+自有源文件/CMake 配置，并由 `audit_config.sh` 锁定。
 
 ## 7. 明确保留项与工业化缺口
 
@@ -314,8 +344,17 @@ NonSecure `.bss` 中包含 ETH 描述符及全部 LwIP pool；链接片段
   已独立完成精确 primary DA 回读、close-debug 和最终无探针冷启动。此前实际
   Full Regression→OPEN 和 1.0.14 的三次无探针冷启动继续作为历史证据；本轮
   没有执行 Full Regression。
-- CAN2 预留，不启动；车辆通信全部迁移到 CAN1。
-- 当前 PCB 无转向执行器、主电源继电器、电源锁存和 indicator1/2/3 对应输出；
+- 车辆 J1939 仍全部使用 CAN1，但 FDCAN1 因 ES0565 workaround 已迁入 Secure：
+  ISR 每次最多处理硬件 FIFO 的 3 帧，1 ms worker 每次最多解析 3 帧，只接收旧版
+  六个 PGN；NonSecure 仅能读取 84 B 版本化快照，不能获得 raw frame 或 CAN TX。
+  CAN1 warning/passive/bus-off 置位 bit27 `VEHICLE_CAN_FAULT`，恢复 Error Active 后
+  自动清除，不锁存全局故障，也不阻断 Ethernet/OTA 或无关输出。CAN2 现专用于
+  转向电机节点 1。J7-13
+  是 CAN2_H、J7-16 是 CAN2_L，R108 是板载 120 Ω 终端。点对点连接电机且
+  两端均有 120 Ω 时，断电后 CANH-CANL 应测得约 60 Ω；不得并入第三个终端。
+- 当前 PCB 没有接入可供 ECU 安全域验证的转向角度反馈，因此只实现
+  带符号角速度控制；转角闭环、机械限位和上层超时管理必须由可靠的
+  上位控制器完成。主电源继电器、电源锁存和 indicator1/2/3 仍无对应输出；
   V2 继续接收这些兼容字段但无动作，状态固定为 0。
 - 已按用户最终确认区分两条速度链路。发动机高/低转速触发使用 K3/K24/K25：
   K3 只在触发期间切断原车信号，触点稳定 50 ms 后，K24 接 BAT（高转速）或
@@ -327,8 +366,10 @@ NonSecure `.bss` 中包含 ETH 描述符及全部 LwIP pool；链接片段
   阀电流已按原理图 1 mV/mA 基线实现可调增益/偏置、上电零点校准、过流、
   开路、非活动通道电流和 ADC 轨故障保护；这些阈值在量产前仍必须用标准电流表
   校准并做开短路故障注入，不能只依赖软件仿真。
-- 控制/诊断 V2 UDP 仍面向隔离车辆网络，不具备端到端鉴权；只有 OTA 包有独立
-  ECDSA 传输签名和 OEMiROT 镜像认证。不可把 50001..50006 直接暴露到不可信网络。
+- 普通 V1/V2 控制和调参只接受 `172.16.0.10` 且绑定活动 sender 源地址，结构正确
+  的急停例外地优先通过；该 IP 策略可被同一二层网络伪造，不构成端到端鉴权。
+  只有 OTA 包有独立 ECDSA 传输签名和 OEMiROT 镜像认证。不可把 50001..50006
+  直接暴露到不可信网络。
 - 持久化故障事件日志尚未实现；量产还需为每块板建立唯一序列、ATECC 配对记录、
   证书/密钥托管、工装权限和报废/返修流程。
 - 单路 MCU 急停输入和软件控制不能独立宣称 SIL/PL。最终车辆必须保留独立的

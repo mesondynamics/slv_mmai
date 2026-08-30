@@ -12,6 +12,8 @@ int32_t Safety_ServiceInit(void);
 uint32_t Safety_GetStatus(void);
 int32_t Safety_GetAdcSnapshot(SAFETY_AdcSnapshot *snapshot);
 int32_t Safety_GetActuatorSnapshot(SAFETY_ActuatorSnapshot *snapshot);
+int32_t Safety_GetSteeringSnapshot(SAFETY_SteeringSnapshot *snapshot);
+int32_t Safety_GetJ1939Snapshot(SAFETY_J1939Snapshot *snapshot);
 int32_t Safety_GetSecurityStatus(SAFETY_SecurityStatus *status);
 int32_t Safety_OtaGetStatus(SAFETY_OtaStatus *status);
 int32_t Safety_OtaBegin(const SAFETY_OtaBeginRequest *request,

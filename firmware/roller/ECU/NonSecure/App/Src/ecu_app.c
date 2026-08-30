@@ -58,11 +58,10 @@ int32_t ECU_AppInit(void)
     (void)SECURE_SafetyDisarmOutputs();
     return SAFETY_RESULT_INTERNAL_ERROR;
   }
-  if (!J1939_Init())
-  {
-    (void)SECURE_SafetyDisarmOutputs();
-    return SAFETY_RESULT_INTERNAL_ERROR;
-  }
+  /* CAN1 is a read-only telemetry domain. Its Secure health bit and J1939
+     valid mask expose a local fault without blocking Ethernet diagnostics or
+     OTA recovery on a vehicle with a disconnected/bus-off CAN harness. */
+  (void)J1939_Init();
   if (!ECU_NetworkInit())
   {
     (void)SECURE_SafetyDisarmOutputs();
