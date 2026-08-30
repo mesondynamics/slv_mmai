@@ -68,7 +68,24 @@ set(ECU_LINKER_OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/${ECU_LINKER_NAME}")
 file(WRITE "${ECU_LINKER_OUTPUT}" "${ECU_LINKER_TEXT}")
 file(RELATIVE_PATH STM32_LINKER_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}"
      "${ECU_LINKER_OUTPUT}")
-set(STM32_LINKER_OPTION  -Wl,--cmse-implib\ -Wl,--out-implib="${CMAKE_CURRENT_SOURCE_DIR}/../Secure_nsclib/secure_nsclib.o")
+set(ECU_NSC_ABI_BASELINE_SOURCE
+    "${CMAKE_CURRENT_SOURCE_DIR}/../Secure_nsclib/secure_nsc_abi_v1.s")
+set(ECU_NSC_ABI_BASELINE_OBJECT
+    "${CMAKE_CURRENT_BINARY_DIR}/secure_nsc_abi_v1.o")
+if(ECU_OEMIROT_LAYOUT)
+    # Keep the release import library private to this build tree. Development
+    # and CubeMX/CubeIDE builds use a different NSC address window and must
+    # never be able to overwrite an OEMiROT NonSecure link input.
+    set(ECU_NSC_IMPORT_LIBRARY
+        "${CMAKE_CURRENT_BINARY_DIR}/secure_nsclib.o")
+    set(STM32_LINKER_OPTION
+        "-Wl,--cmse-implib -Wl,--in-implib=${ECU_NSC_ABI_BASELINE_OBJECT} -Wl,--out-implib=${ECU_NSC_IMPORT_LIBRARY}")
+else()
+    set(ECU_NSC_IMPORT_LIBRARY
+        "${CMAKE_CURRENT_SOURCE_DIR}/../Secure_nsclib/secure_nsclib.o")
+    set(STM32_LINKER_OPTION
+        "-Wl,--cmse-implib -Wl,--out-implib=${ECU_NSC_IMPORT_LIBRARY}")
+endif()
 
 # Set the project name
 set(CMAKE_PROJECT_NAME ECU_S)
@@ -113,6 +130,32 @@ target_link_options(${CMAKE_PROJECT_NAME} PRIVATE
 # Enable CMake support for ASM and C languages
 enable_language(C ASM)
 
+add_custom_command(
+    OUTPUT "${ECU_NSC_ABI_BASELINE_OBJECT}"
+    COMMAND ${CMAKE_ASM_COMPILER} -mcpu=cortex-m33 -mthumb -c
+            "${ECU_NSC_ABI_BASELINE_SOURCE}"
+            -o "${ECU_NSC_ABI_BASELINE_OBJECT}"
+    COMMAND ${CMAKE_OBJCOPY}
+            --remove-section=.text
+            --remove-section=.data
+            --remove-section=.bss
+            --remove-section=.note.GNU-stack
+            --remove-section=.ARM.attributes
+            "${ECU_NSC_ABI_BASELINE_OBJECT}"
+    DEPENDS "${ECU_NSC_ABI_BASELINE_SOURCE}"
+    VERBATIM)
+add_custom_target(ECU_NSC_ABI_BASELINE
+    DEPENDS "${ECU_NSC_ABI_BASELINE_OBJECT}")
+if(ECU_OEMIROT_LAYOUT)
+    add_dependencies(${CMAKE_PROJECT_NAME} ECU_NSC_ABI_BASELINE)
+    # --out-implib is emitted by the link command. Declare it as a byproduct so
+    # Ninja relinks the Secure target if this private release input is missing.
+    add_custom_command(TARGET ${CMAKE_PROJECT_NAME} POST_BUILD
+        BYPRODUCTS "${ECU_NSC_IMPORT_LIBRARY}"
+        COMMAND ${CMAKE_COMMAND} -E true
+        VERBATIM)
+endif()
+
 # Add include paths
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user defined include paths
@@ -129,8 +172,11 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/App/Src/security_identity.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/Src/security_mcu_identity.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/Src/security_ota.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/App/Src/security_ota_policy.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/Src/security_sha256.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/Src/security_factory.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/App/Src/secure_flash_guard.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/App/Src/secure_timebase.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/Src/software_i2c.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/Src/valve_control.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/Src/valve_config_store.c

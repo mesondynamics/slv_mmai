@@ -5,6 +5,7 @@
 
 #include "ecu_flash_layout.h"
 #include "main.h"
+#include "secure_flash_guard.h"
 #include "security_crypto.h"
 #include "security_mcu_identity.h"
 
@@ -274,6 +275,16 @@ static bool SecurityIdentity_FactoryEraseSector(uint32_t sector)
   return HAL_FLASHEx_Erase(&erase, &sector_error) == HAL_OK;
 }
 
+static bool SecurityIdentity_InvalidateFlashCache(void)
+{
+  if (HAL_ICACHE_IsEnabled() == 0U) { return true; }
+  __DSB();
+  if (HAL_ICACHE_Invalidate() != HAL_OK) { return false; }
+  __DSB();
+  __ISB();
+  return true;
+}
+
 static bool SecurityIdentity_FactoryProgramRecord(
     uint32_t address, const void *record, size_t size, size_t commit_offset)
 {
@@ -289,18 +300,48 @@ static bool SecurityIdentity_FactoryProgramRecord(
     }
   }
   if ((commit_offset + ECU_FLASH_PROGRAM_UNIT) != size) { return false; }
-  return HAL_FLASH_Program(
-      FLASH_TYPEPROGRAM_QUADWORD, address + (uint32_t)commit_offset,
-      (uint32_t)(uintptr_t)((const uint8_t *)record + commit_offset)) == HAL_OK;
+  if (HAL_FLASH_Program(
+          FLASH_TYPEPROGRAM_QUADWORD, address + (uint32_t)commit_offset,
+          (uint32_t)(uintptr_t)((const uint8_t *)record + commit_offset)) !=
+      HAL_OK)
+  {
+    return false;
+  }
+  return SecurityIdentity_InvalidateFlashCache();
+}
+
+static bool SecurityIdentity_RecordMatchesManifest(
+    const SecurityIdentity_Record *record,
+    const SecurityIdentity_Manifest *manifest)
+{
+  return SecurityIdentity_RecordValid(record) &&
+         (record->generation == manifest->generation) &&
+         (memcmp(record->mcu_uid, manifest->mcu_uid,
+                 sizeof(record->mcu_uid)) == 0) &&
+         (record->atecc_config_crc32c == manifest->atecc_config_crc32c) &&
+         (memcmp(record->atecc_serial, manifest->atecc_serial,
+                 sizeof(record->atecc_serial)) == 0) &&
+         (memcmp(record->atecc_revision, manifest->atecc_revision,
+                 sizeof(record->atecc_revision)) == 0) &&
+         (record->atecc_i2c_address == manifest->atecc_i2c_address) &&
+         (record->private_key_slot == manifest->private_key_slot) &&
+         (memcmp(record->public_key, manifest->public_key,
+                 sizeof(record->public_key)) == 0);
 }
 
 bool SecurityIdentity_FactorySaveManifest(
     const SecurityIdentity_Manifest *manifest)
 {
-  SecurityIdentity_Manifest existing;
   SecurityIdentity_Record record;
-  const uint32_t sector = ECU_SECURITY_STORE_OFFSET /
-                          ECU_FLASH_SECTOR_SIZE;
+  const SecurityIdentity_Record *record_a =
+      (const SecurityIdentity_Record *)(uintptr_t)SECURITY_IDENTITY_ADDRESS_A;
+  const SecurityIdentity_Record *record_b =
+      (const SecurityIdentity_Record *)(uintptr_t)SECURITY_IDENTITY_ADDRESS_B;
+  const uint32_t sector_a = ECU_SECURITY_STORE_OFFSET /
+                            ECU_FLASH_SECTOR_SIZE;
+  const uint32_t sector_b = sector_a + 1U;
+  bool valid_a;
+  bool valid_b;
   bool result;
 
   if ((manifest == NULL) || (manifest->generation == 0U) ||
@@ -308,10 +349,22 @@ bool SecurityIdentity_FactorySaveManifest(
   {
     return false;
   }
-  if (SecurityIdentity_Load(&existing) == SECURITY_IDENTITY_OK)
+
+  valid_a = SecurityIdentity_RecordValid(record_a);
+  valid_b = SecurityIdentity_RecordValid(record_b);
+  /* Never overwrite a different valid binding.  A corrupt/incomplete sector
+     may be repaired, but conflicting committed identities require explicit
+     manufacturing investigation. */
+  if ((valid_a && !SecurityIdentity_RecordMatchesManifest(record_a, manifest)) ||
+      (valid_b && !SecurityIdentity_RecordMatchesManifest(record_b, manifest)))
   {
-    return memcmp(&existing, manifest, sizeof(existing)) == 0;
+    return false;
   }
+  if (valid_a && valid_b)
+  {
+    return true;
+  }
+
   memset(&record, 0xFF, sizeof(record));
   record.magic = SECURITY_IDENTITY_MAGIC;
   record.schema = SECURITY_IDENTITY_SCHEMA;
@@ -332,15 +385,32 @@ bool SecurityIdentity_FactorySaveManifest(
       &record, offsetof(SecurityIdentity_Record, crc32c));
   record.commit = SECURITY_IDENTITY_COMMIT;
 
-  if (HAL_FLASH_Unlock() != HAL_OK) { return false; }
-  result = SecurityIdentity_FactoryEraseSector(sector) &&
-           SecurityIdentity_FactoryProgramRecord(
-               SECURITY_IDENTITY_ADDRESS_A, &record, sizeof(record),
-               offsetof(SecurityIdentity_Record, commit));
-  (void)HAL_FLASH_Lock();
-  return result && SecurityIdentity_RecordValid(
-      (const SecurityIdentity_Record *)(uintptr_t)
-      SECURITY_IDENTITY_ADDRESS_A);
+  /* This store is in Secure Bank 1.  Do not couple it to the NonSecure
+     FLASH lock state: in CLOSED products the two domains have independent
+     access policy and the generic HAL_FLASH_Unlock() operates on both. */
+  if (HAL_FLASH_Unlock_S() != HAL_OK) { return false; }
+  result = true;
+  if (!valid_a)
+  {
+    result = SecurityIdentity_FactoryEraseSector(sector_a) &&
+             SecurityIdentity_FactoryProgramRecord(
+                 SECURITY_IDENTITY_ADDRESS_A, &record, sizeof(record),
+                 offsetof(SecurityIdentity_Record, commit)) &&
+             SecurityIdentity_RecordMatchesManifest(record_a, manifest);
+  }
+  /* Program and verify one complete committed copy before touching the other.
+     After any reset/power loss at least one previously valid sector remains. */
+  if (result && !valid_b)
+  {
+    result = SecurityIdentity_FactoryEraseSector(sector_b) &&
+             SecurityIdentity_FactoryProgramRecord(
+                 SECURITY_IDENTITY_ADDRESS_B, &record, sizeof(record),
+                 offsetof(SecurityIdentity_Record, commit)) &&
+             SecurityIdentity_RecordMatchesManifest(record_b, manifest);
+  }
+  SecureFlash_LockSecureOrReset();
+  return result && SecurityIdentity_RecordMatchesManifest(record_a, manifest) &&
+         SecurityIdentity_RecordMatchesManifest(record_b, manifest);
 }
 
 static bool SecurityIdentity_FactoryJournalValid(
@@ -389,13 +459,13 @@ bool SecurityIdentity_FactorySaveJournal(
       &journal, offsetof(SecurityFactory_Journal, crc32c));
   journal.commit = SECURITY_FACTORY_JOURNAL_COMMIT;
 
-  if (HAL_FLASH_Unlock() != HAL_OK) { return false; }
+  if (HAL_FLASH_Unlock_S() != HAL_OK) { return false; }
   result = SecurityIdentity_FactoryEraseSector(
                SECURITY_FACTORY_JOURNAL_SECTOR) &&
            SecurityIdentity_FactoryProgramRecord(
                SECURITY_FACTORY_JOURNAL_ADDRESS, &journal, sizeof(journal),
                offsetof(SecurityFactory_Journal, commit));
-  (void)HAL_FLASH_Lock();
+  SecureFlash_LockSecureOrReset();
   return result && SecurityIdentity_FactoryJournalValid(
       (const SecurityFactory_Journal *)(uintptr_t)
       SECURITY_FACTORY_JOURNAL_ADDRESS);

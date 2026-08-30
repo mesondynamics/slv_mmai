@@ -30,6 +30,13 @@ ETH_TxPacketConfigTypeDef TxConfig;
 
 /* USER CODE BEGIN 0 */
 
+/* LAN8742A DS00001989A requires nRST to remain asserted until at least 25 ms
+   after all supplies are operational.  The PCB R70/C65 network is only about
+   1 ms, so PB14 provides the deterministic reset.  Releasing it immediately
+   before HAL_ETH_Init also guarantees that the PHY's 50 MHz REFCLKO is live. */
+#define ECU_PHY_POWER_STABLE_MS  30U
+#define ECU_PHY_REFCLK_START_MS   1U
+
 /* USER CODE END 0 */
 
 ETH_HandleTypeDef heth;
@@ -39,6 +46,10 @@ void MX_ETH_Init(void)
 {
 
   /* USER CODE BEGIN ETH_Init 0 */
+
+  HAL_Delay(ECU_PHY_POWER_STABLE_MS);
+  HAL_GPIO_WritePin(RMII_NRST_GPIO_Port, RMII_NRST_Pin, GPIO_PIN_SET);
+  HAL_Delay(ECU_PHY_REFCLK_START_MS);
 
   /* USER CODE END ETH_Init 0 */
 

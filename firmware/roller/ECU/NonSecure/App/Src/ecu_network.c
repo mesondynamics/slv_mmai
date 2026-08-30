@@ -73,6 +73,7 @@ static uint8_t telemetry_dropped_baseline_valid;
 static uint32_t transmit_sequence;
 static uint32_t ota_reset_deadline;
 static uint8_t ota_reset_pending;
+static uint8_t network_operational;
 
 static bool Network_SequenceIsNewer(uint32_t value, uint32_t previous)
 {
@@ -254,6 +255,12 @@ static void Network_ReceiveControl(void *argument, struct udp_pcb *pcb,
   (void)pcb;
   (void)address;
   (void)port;
+  if (network_operational == 0U)
+  {
+    ++counters.rejected_control_frames;
+    pbuf_free(packet);
+    return;
+  }
   if ((frame_length > sizeof(frame)) ||
       (pbuf_copy_partial(packet, frame, frame_length, 0U) != frame_length))
   {
@@ -638,6 +645,11 @@ static void Network_ReceiveOta(void *argument, struct udp_pcb *pcb,
 
   (void)argument;
   (void)pcb;
+  if (network_operational == 0U)
+  {
+    pbuf_free(packet);
+    return;
+  }
   if ((frame_length > sizeof(frame)) ||
       (pbuf_copy_partial(packet, frame, frame_length, 0U) != frame_length))
   {
@@ -753,6 +765,11 @@ static void Network_ReceiveTuning(void *argument, struct udp_pcb *pcb,
 
   (void)argument;
   (void)pcb;
+  if (network_operational == 0U)
+  {
+    pbuf_free(packet);
+    return;
+  }
   if ((frame_length > sizeof(frame)) ||
       (pbuf_copy_partial(packet, frame, frame_length, 0U) != frame_length))
   {
@@ -946,6 +963,7 @@ bool ECU_NetworkInit(void)
   transmit_sequence = 0U;
   ota_reset_deadline = 0U;
   ota_reset_pending = 0U;
+  network_operational = 0U;
 
   lwip_init();
   IP4_ADDR(&ip, ECU_IP_ADDRESS_0, ECU_IP_ADDRESS_1,
@@ -1018,6 +1036,30 @@ bool ECU_NetworkInit(void)
   return true;
 }
 
+void ECU_NetworkSetOperational(bool operational)
+{
+  network_operational = operational ? 1U : 0U;
+  if (network_operational == 0U)
+  {
+    memset(slots, 0, sizeof(slots));
+    active_slot = NULL;
+    outputs_armed = 0U;
+    telemetry_client_port = 0U;
+    telemetry_subscription_deadline = 0U;
+    telemetry_dropped_baseline_valid = 0U;
+    ota_reset_pending = 0U;
+    (void)SECURE_SafetyDisarmOutputs();
+  }
+  else
+  {
+    uint32_t now = HAL_GetTick();
+    last_apply_tick = now;
+    last_status_tick = now;
+    last_diagnostic_tick = now;
+    last_telemetry_tick = now;
+  }
+}
+
 void ECU_NetworkProcess(void)
 {
   uint32_t now;
@@ -1032,6 +1074,10 @@ void ECU_NetworkProcess(void)
   {
     last_link_poll_tick = now;
     ethernet_link_check_state(&ecu_netif);
+  }
+  if (network_operational == 0U)
+  {
+    return;
   }
   Network_ApplyAuthority(now);
   if ((uint32_t)(now - last_telemetry_tick) >= TELEMETRY_SEND_PERIOD_MS)
@@ -1061,6 +1107,14 @@ void ECU_NetworkProcess(void)
 bool ECU_NetworkLinkIsUp(void)
 {
   return netif_is_link_up(&ecu_netif);
+}
+
+bool ECU_NetworkStartupReady(void)
+{
+  EthernetPhyHealth health;
+
+  ethernetif_get_phy_health(&health);
+  return health.ready != 0U;
 }
 
 const ECU_NetworkCounters *ECU_NetworkGetCounters(void)

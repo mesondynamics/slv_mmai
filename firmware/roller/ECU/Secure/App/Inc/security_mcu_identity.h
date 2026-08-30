@@ -8,9 +8,10 @@
 extern "C" {
 #endif
 
-/* Returns the STM32 UID authenticated by the current boot path.  OEMiROT
- * builds consume the sealed early-boot SRAM handoff; development builds read
- * the engineering-information registers directly. */
+/* Returns the STM32 manufacturing identity authenticated by the current boot
+ * path. OEMiROT builds consume the sealed per-device boot handoff; development
+ * builds read the engineering-information registers directly. Runtime board
+ * binding also requires the protected ATECC pairing record and challenge. */
 bool SecurityMcuIdentity_Get(uint32_t mcu_uid[3]);
 
 #ifdef __cplusplus

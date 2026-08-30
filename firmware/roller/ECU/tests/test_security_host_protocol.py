@@ -22,6 +22,34 @@ OTA = load_tool("ethernet_ota")
 
 
 class SecurityHostProtocolTest(unittest.TestCase):
+    @staticmethod
+    def ota_manifest_fields(*, build=0):
+        return struct.unpack(
+            OTA.MANIFEST_FORMAT,
+            struct.pack(
+                OTA.MANIFEST_FORMAT,
+                0x31544F52, 1, 0x10000, 14,
+                1, 0, 14, build, 14, 3,
+                0x30000, 0x50000, bytes.fromhex("11" * 32),
+                bytes.fromhex("22" * 32), 0, 0, 0, 0,
+            ),
+        )
+
+    @staticmethod
+    def ota_metadata(*, build=0):
+        version = "1.0.14" if build == 0 else f"1.0.14+{build}"
+        return {
+            "format": "roller-ecu-ota-v1",
+            "version": version,
+            "security_counter": 14,
+            "update_sequence": 14,
+            "layout_version": 0x10000,
+            "secure_sha256": "11" * 32,
+            "nonsecure_sha256": "22" * 32,
+            "secure_size": 0x30000,
+            "nonsecure_size": 0x50000,
+        }
+
     def test_factory_matches_echoed_request_not_ecu_header_sequence(self):
         request_sequence = 0x12345678
         payload = FACTORY.STATUS.pack(
@@ -42,6 +70,29 @@ class SecurityHostProtocolTest(unittest.TestCase):
         self.assertEqual(status["request_sequence"], request_sequence)
         with self.assertRaisesRegex(ValueError, "request sequence"):
             OTA.decode_status(frame, request_sequence + 1)
+
+    def test_ota_metadata_must_exactly_match_signed_manifest(self):
+        OTA.validate_package_metadata(
+            self.ota_manifest_fields(), self.ota_metadata())
+        OTA.validate_package_metadata(
+            self.ota_manifest_fields(build=7), self.ota_metadata(build=7))
+
+        for name, value in (
+                ("version", "1.0.15"),
+                ("update_sequence", 15),
+                ("security_counter", True),
+                ("secure_sha256", "00" * 32)):
+            with self.subTest(name=name):
+                metadata = self.ota_metadata()
+                metadata[name] = value
+                with self.assertRaisesRegex(ValueError, "signed manifest"):
+                    OTA.validate_package_metadata(
+                        self.ota_manifest_fields(), metadata)
+
+        metadata = self.ota_metadata()
+        metadata["unsigned_note"] = "not allowed"
+        with self.assertRaisesRegex(ValueError, "signed manifest schema"):
+            OTA.validate_package_metadata(self.ota_manifest_fields(), metadata)
 
 
 if __name__ == "__main__":

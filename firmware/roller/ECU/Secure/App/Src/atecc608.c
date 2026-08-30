@@ -7,6 +7,7 @@
 #include "software_i2c.h"
 
 #define ATECC608_ADDRESS_7BIT          0x60U
+#define ATECC608_WORD_RESET            0x00U
 #define ATECC608_WORD_COMMAND          0x03U
 #define ATECC608_WORD_SLEEP            0x01U
 #define ATECC608_OPCODE_READ           0x02U
@@ -31,8 +32,8 @@
 #define ATECC608_NONCE_TIMEOUT_MS        30U
 /* Covers all ATECC608C execution-speed modes, including the slowest M2
    silicon setting listed by Microchip CryptoAuthLib. */
-#define ATECC608_SIGN_TIMEOUT_MS        700U
-#define ATECC608_GENKEY_TIMEOUT_MS      700U
+#define ATECC608_SIGN_TIMEOUT_MS        ATECC608_MAX_EXECUTION_TIME_MS
+#define ATECC608_GENKEY_TIMEOUT_MS      ATECC608_MAX_EXECUTION_TIME_MS
 #define ATECC608_WRITE_TIMEOUT_MS        60U
 #define ATECC608_LOCK_TIMEOUT_MS         50U
 #define ATECC608_POLL_INTERVAL_MS         1U
@@ -45,6 +46,10 @@
 #define ATECC608_I2C_ADDRESS_OFFSET      16U
 #define ATECC608_LOCKED_VALUE          0x00U
 #define ATECC608_SLOT_LOCKED_OFFSET      88U
+#define ATECC608_SLEEP_SETTLE_MS           1U
+#define ATECC608_STARTUP_RETRY_STEP_MS    25U
+#define ATECC608_STARTUP_RETRY_BUDGET_MS \
+  (ATECC608_MAX_EXECUTION_TIME_MS + ATECC608_STARTUP_RETRY_STEP_MS)
 
 static uint16_t ATECC608_Crc16Update(uint16_t crc, const uint8_t *data,
                                      size_t length)
@@ -118,6 +123,30 @@ static void ATECC608_Sleep(void)
 {
   const uint8_t sleep_word = ATECC608_WORD_SLEEP;
   (void)SoftwareI2C_Write(ATECC608_ADDRESS_7BIT, &sleep_word, 1U);
+}
+
+int32_t ATECC608_Synchronize(void)
+{
+  const uint8_t reset_word = ATECC608_WORD_RESET;
+  const uint8_t sleep_word = ATECC608_WORD_SLEEP;
+
+  if (!SoftwareI2C_Synchronize())
+  {
+    return ATECC608_RESULT_BUS;
+  }
+
+  /* A NACK is expected when the device is asleep or still executing the
+     command that an MCU reset interrupted.  An ACK proves it is awake: reset
+     the internal FIFO address, then clear all volatile state through Sleep. */
+  if (SoftwareI2C_Write(ATECC608_ADDRESS_7BIT, &reset_word, 1U))
+  {
+    if (!SoftwareI2C_Write(ATECC608_ADDRESS_7BIT, &sleep_word, 1U))
+    {
+      return ATECC608_RESULT_TRANSMIT;
+    }
+    HAL_Delay(ATECC608_SLEEP_SETTLE_MS);
+  }
+  return ATECC608_RESULT_OK;
 }
 
 static int32_t ATECC608_Wake(void)
@@ -300,6 +329,51 @@ int32_t ATECC608_Probe(ATECC608_ProbeResult *probe)
       probe->config, sizeof(probe->config));
   probe->result = ATECC608_RESULT_OK;
   return ATECC608_RESULT_OK;
+}
+
+static bool ATECC608_ProbeErrorRetryable(int32_t result)
+{
+  return (result <= ATECC608_RESULT_BUS) &&
+         (result >= ATECC608_RESULT_TIMEOUT);
+}
+
+int32_t ATECC608_ProbeWithRecovery(
+    ATECC608_ProbeResult *probe,
+    ATECC608_RecoveryService recovery_service,
+    void *recovery_context)
+{
+  uint32_t waited_ms = 0U;
+  int32_t result = ATECC608_RESULT_BUS;
+
+  if (probe == NULL)
+  {
+    return ATECC608_RESULT_BAD_ARGUMENT;
+  }
+  memset(probe, 0, sizeof(*probe));
+  do
+  {
+    int32_t synchronize_result;
+
+    if ((recovery_service != NULL) &&
+        !recovery_service(recovery_context))
+    {
+      probe->result = ATECC608_RESULT_RECOVERY_ABORTED;
+      return probe->result;
+    }
+    synchronize_result = ATECC608_Synchronize();
+    result = (synchronize_result == ATECC608_RESULT_OK) ?
+             ATECC608_Probe(probe) : synchronize_result;
+    if ((result == ATECC608_RESULT_OK) ||
+        !ATECC608_ProbeErrorRetryable(result) ||
+        (waited_ms >= ATECC608_STARTUP_RETRY_BUDGET_MS))
+    {
+      break;
+    }
+    HAL_Delay(ATECC608_STARTUP_RETRY_STEP_MS);
+    waited_ms += ATECC608_STARTUP_RETRY_STEP_MS;
+  } while (true);
+  probe->result = result;
+  return result;
 }
 
 int32_t ATECC608_SignDigest(

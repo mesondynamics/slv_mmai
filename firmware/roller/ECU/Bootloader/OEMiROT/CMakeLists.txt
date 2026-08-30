@@ -74,14 +74,18 @@ file(WRITE "${OEMIROT_SECURITY_DERIVATIVE}" "${OEMIROT_SECURITY_SOURCE}")
 # peripheral setup, C runtime, SAU and MPU policy.  On this STM32H563 Rev X the
 # RSS function table is already hidden from the Secure CPU by then, even though
 # it is valid through the debug access port.  Board characterization confirmed
-# that the Secure CPU sees zeros for the SFSP version and descriptor aperture
-# from its very first Reset_Handler instruction; delaying does not make them
-# visible.  Generate product derivatives which:
-#   * double-read the silicon ID at the start of Reset_Handler and bind the exact
-#     device/revision to an audited SFSP/descriptor manifest;
+# that the Secure CPU sees zeros for the SFSP version and descriptor aperture;
+# the product therefore uses a reviewed manufacturing manifest rather than a
+# live read of that aperture.  Generate product derivatives which:
+#   * preserve ST's register-only Reset_Handler sequence without adding a C
+#     call before the source's explicit "stack may be used" boundary;
+#   * in every lifecycle profile, bind the reviewed silicon ID without reading
+#     DBGMCU because debug/trace clocks are not an autonomous-boot contract;
 #   * validate both pinned RSS entries and check their Thumb/range properties;
 #   * store each identity, entry and selector with complements in a NOLOAD section of
 #     ECC-protected Secure RAM, so the C runtime cannot clear the snapshot;
+#   * publish the reviewed per-device manufacturing identity without touching
+#     the H563 engineering-information aperture at OEMiROT HDPL1;
 #   * never silently falls back to an unvalidated descriptor.
 set(OEMIROT_BOOT_HAL_UPSTREAM
     "${OEMIROT_EXAMPLE_ROOT}/Src/boot_hal.c")
@@ -150,7 +154,7 @@ void getDescriptorAdd(void);
 set(OEMIROT_BOOT_PROTOTYPES_NEW [=[
 void icache_init(void);
 void getDescriptorAdd(void);
-void Roller_RssEarlySnapshot(void);
+static void Roller_ManufacturingManifestInit(void);
 static uint32_t Roller_GetCachedRssService(uint32_t service, uint32_t service_inv);
 ]=])
 string(FIND "${OEMIROT_BOOT_HAL_SOURCE}" "${OEMIROT_BOOT_PROTOTYPES_OLD}"
@@ -251,75 +255,42 @@ static uint32_t Roller_BootHandoffCrc32c(
     return crc ^ 0xFFFFFFFFUL;
 }
 
-void Roller_RssEarlySnapshot(void)
+static __attribute__((noinline)) void Roller_ManufacturingManifestInit(void)
 {
     volatile ECU_BootHandoff *handoff =
         (volatile ECU_BootHandoff *)(uintptr_t)ECU_BOOT_HANDOFF_ADDRESS;
     uint32_t idcode_a;
-    uint32_t idcode_b;
-    uint32_t uid_a[3];
-    uint32_t uid_b[3];
     uint32_t index;
-    uint32_t uid_valid;
 
-    /* The SRAM2 RSS cache and SRAM1 application handoff are rebuilt on every
-       reset.  Autonomous OEMiROT execution cannot read the H563 engineering-
-       information UID aperture at this HDPL.  Its per-device UID is therefore
-       taken from the reviewed manufacturing manifest protected by OEMiROT,
-       HUK-wrapped OBKs, WRP and HDP.  If a debug-enabled engineering boot does
-       expose the live UID, it must match that manifest exactly. */
+    /* C runtime and the ECC SRAM startup sequence are complete before this
+       function runs.  Rebuild both records from reviewed manufacturing data.
+       Do not read UID_BASE here: on STM32H563 Rev X the HDPL1 Secure CPU
+       receives zero (or a fault, depending on inherited SAU/cache state) even
+       though the debug access port can report the UID. */
     RollerRssCache.marker = 0UL;
     RollerRssCache.marker_inv = 0UL;
+    handoff->magic = 0UL;
+    handoff->magic_inv = 0UL;
     __DSB();
 
     /*
      * The SFSP/descriptor aperture is not CPU-readable after the RSS handoff
-     * on STM32H563 Rev X.  Bind only an exact, double-sampled silicon identity
-     * here.  The matching immutable SFSP/descriptor values were captured via
-     * the debug access port during provisioning and are pinned by the reviewed
-     * roller_rss_manifest.h.  Unknown revisions fail closed.
+     * on STM32H563 Rev X.  The matching immutable SFSP/descriptor values were
+     * captured via the debug access port during provisioning and are pinned by
+     * the reviewed roller_rss_manifest.h.  Both OPEN and CLOSED use that exact
+     * reviewed manifest without touching DBGMCU.  The per-device HUK-wrapped
+     * OBKeys and ATECC pairing provide the runtime anti-transplant binding.
      */
-    idcode_a = DBGMCU->IDCODE;
-    __DSB();
-    idcode_b = DBGMCU->IDCODE;
-    __DSB();
+    idcode_a = ROLLER_RSS_IDCODE;
 
-    for (index = 0UL; index < 3UL; ++index)
-    {
-      uid_a[index] = *(const volatile uint32_t *)(uintptr_t)
-          (UID_BASE + (index * sizeof(uint32_t)));
-    }
-    __DSB();
-    for (index = 0UL; index < 3UL; ++index)
-    {
-      uid_b[index] = *(const volatile uint32_t *)(uintptr_t)
-          (UID_BASE + (index * sizeof(uint32_t)));
-    }
-    __DSB();
-
-    if ((idcode_a != idcode_b) ||
-        ((idcode_a & DBGMCU_IDCODE_DEV_ID) != ROLLER_RSS_DEVICE_ID) ||
-        (((idcode_a & DBGMCU_IDCODE_REV_ID) >> DBGMCU_IDCODE_REV_ID_Pos) !=
-         ROLLER_RSS_REVISION_ID))
-    {
-      Error_Handler();
-    }
-    uid_valid = ((uid_a[0] == uid_b[0]) &&
-                 (uid_a[1] == uid_b[1]) &&
-                 (uid_a[2] == uid_b[2]) &&
-                 ((uid_a[0] | uid_a[1] | uid_a[2]) != 0UL) &&
-                 ((uid_a[0] & uid_a[1] & uid_a[2]) != UINT32_MAX)) ?
-                1UL : 0UL;
-    if ((uid_valid != 0UL) &&
-        ((uid_a[0] != ROLLER_DEVICE_UID0) ||
-         (uid_a[1] != ROLLER_DEVICE_UID1) ||
-         (uid_a[2] != ROLLER_DEVICE_UID2)))
-    {
-      Error_Handler();
-    }
-    handoff->magic = 0UL;
-    handoff->magic_inv = 0UL;
-    __DSB();
+    /*
+     * The UID is a reviewed manufacturing input to this per-device OEMiROT
+     * build.  Runtime anti-transplant protection does not rely on secrecy of
+     * these words: the paired ATECC public identity record resides outside
+     * signed OTA images in CLOSED/HDP-protected Secure flash, while the ATECC
+     * private key is non-exportable.  A replacement MCU has neither record
+     * and therefore cannot pass the startup challenge.
+     */
     handoff->schema = ECU_BOOT_HANDOFF_SCHEMA;
     handoff->schema_inv = ~ECU_BOOT_HANDOFF_SCHEMA;
     handoff->record_size = sizeof(ECU_BootHandoff);
@@ -336,9 +307,6 @@ void Roller_RssEarlySnapshot(void)
     handoff->crc32c = Roller_BootHandoffCrc32c(handoff);
     handoff->crc32c_inv = ~handoff->crc32c;
     handoff->magic_inv = ~ECU_BOOT_HANDOFF_MAGIC;
-    __DSB();
-    handoff->magic = ECU_BOOT_HANDOFF_MAGIC;
-    __DSB();
 
     RollerRssCache.descriptor_index = ROLLER_RSS_DESCRIPTOR_INDEX;
     RollerRssCache.descriptor_index_inv = ~ROLLER_RSS_DESCRIPTOR_INDEX;
@@ -357,6 +325,7 @@ void Roller_RssEarlySnapshot(void)
     RollerRssCache.marker_inv = ~ROLLER_RSS_CACHE_MARKER;
     __DSB();
     RollerRssCache.marker = ROLLER_RSS_CACHE_MARKER;
+    handoff->magic = ECU_BOOT_HANDOFF_MAGIC;
     __DSB();
 }
 
@@ -376,17 +345,12 @@ void getDescriptorAdd(void)
     };
     uint32_t index = RollerRssCache.descriptor_index;
 
-    if ((HAL_GetDEVID() != ROLLER_RSS_DEVICE_ID) ||
-        (HAL_GetREVID() != ROLLER_RSS_REVISION_ID) ||
-        (RollerRssCache.marker != ROLLER_RSS_CACHE_MARKER) ||
+    if ((RollerRssCache.marker != ROLLER_RSS_CACHE_MARKER) ||
         ((RollerRssCache.marker ^ RollerRssCache.marker_inv) != UINT32_MAX) ||
         ((index ^ RollerRssCache.descriptor_index_inv) != UINT32_MAX) ||
         (index != ROLLER_RSS_DESCRIPTOR_INDEX) ||
         ((RollerRssCache.idcode ^ RollerRssCache.idcode_inv) != UINT32_MAX) ||
-        ((RollerRssCache.idcode & DBGMCU_IDCODE_DEV_ID) !=
-         ROLLER_RSS_DEVICE_ID) ||
-        (((RollerRssCache.idcode & DBGMCU_IDCODE_REV_ID) >>
-          DBGMCU_IDCODE_REV_ID_Pos) != ROLLER_RSS_REVISION_ID) ||
+        (RollerRssCache.idcode != ROLLER_RSS_IDCODE) ||
         ((RollerRssCache.sfsp_version ^ RollerRssCache.sfsp_version_inv) !=
          UINT32_MAX) ||
         (RollerRssCache.sfsp_version != ROLLER_RSS_SFSP_VERSION) ||
@@ -454,7 +418,10 @@ int32_t boot_platform_init(void)
     GPIO_InitTypeDef GPIO_Init;
 #endif /* MCUBOOT_EXT_LOADER */
 
-    /* Resolve RSS before HAL/ICACHE changes system-memory visibility. */
+    /* ST's Reset_Handler permits general C/stack use only after its ECC SRAM
+       startup boundary.  Initialize the reviewed manifest after C runtime,
+       then resolve it before applying platform protections. */
+    Roller_ManufacturingManifestInit();
     getDescriptorAdd();
 ]=])
 string(FIND "${OEMIROT_BOOT_HAL_SOURCE}" "${OEMIROT_PLATFORM_ENTRY_OLD}"
@@ -469,39 +436,27 @@ set(OEMIROT_BOOT_HAL_DERIVATIVE
     "${CMAKE_CURRENT_BINARY_DIR}/boot_hal_roller_ecu.c")
 file(WRITE "${OEMIROT_BOOT_HAL_DERIVATIVE}" "${OEMIROT_BOOT_HAL_SOURCE}")
 
-# Cache the RSS entries before any reset-time register access.  A separate
-# pinned derivative keeps the installed STM32Cube package immutable and makes
-# an upstream Reset_Handler change a configure-time failure.
+# Keep ST's pre-RAM Reset_Handler free of project-added C calls.  The separate
+# pinned derivative removes debug-domain timing from every lifecycle profile;
+# the manufacturing manifest is initialized later from boot_platform_init(),
+# after ECC SRAM and C runtime are ready.  This keeps the installed STM32Cube
+# package immutable and makes an upstream Reset_Handler change a configure-time
+# failure.
 set(OEMIROT_STARTUP_UPSTREAM
     "${OEMIROT_EXAMPLE_ROOT}/Src/startup_stm32h5xx.c")
 file(READ "${OEMIROT_STARTUP_UPSTREAM}" OEMIROT_STARTUP_SOURCE)
-set(OEMIROT_STARTUP_EXTERN_OLD [=[
-extern void __PROGRAM_START(void) __NO_RETURN;
-]=])
-set(OEMIROT_STARTUP_EXTERN_NEW [=[
-extern void __PROGRAM_START(void) __NO_RETURN;
-extern void Roller_RssEarlySnapshot(void);
-]=])
-string(FIND "${OEMIROT_STARTUP_SOURCE}" "${OEMIROT_STARTUP_EXTERN_OLD}"
-       OEMIROT_STARTUP_EXTERN_POSITION)
-if(OEMIROT_STARTUP_EXTERN_POSITION EQUAL -1)
-  message(FATAL_ERROR "Pinned CubeH5 startup changed: program-start declaration was not found")
-endif()
-string(REPLACE "${OEMIROT_STARTUP_EXTERN_OLD}" "${OEMIROT_STARTUP_EXTERN_NEW}"
-       OEMIROT_STARTUP_SOURCE "${OEMIROT_STARTUP_SOURCE}")
 
 set(OEMIROT_RESET_ENTRY_OLD [=[
 void Reset_Handler(void)
 {
   /* Configure DWT to enable cycles counter */
+  CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk | CoreDebug_DEMCR_MON_EN_Msk;
+  DWT->CYCCNT = 0;
+  DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
 ]=])
 set(OEMIROT_RESET_ENTRY_NEW [=[
 void Reset_Handler(void)
 {
-  /* Roller ECU: snapshot the one-time RSS aperture before any setup. */
-  Roller_RssEarlySnapshot();
-
-  /* Configure DWT to enable cycles counter */
 ]=])
 string(FIND "${OEMIROT_STARTUP_SOURCE}" "${OEMIROT_RESET_ENTRY_OLD}"
        OEMIROT_RESET_ENTRY_POSITION)
@@ -513,6 +468,741 @@ string(REPLACE "${OEMIROT_RESET_ENTRY_OLD}" "${OEMIROT_RESET_ENTRY_NEW}"
 set(OEMIROT_STARTUP_DERIVATIVE
     "${CMAKE_CURRENT_BINARY_DIR}/startup_stm32h5xx_roller_ecu.c")
 file(WRITE "${OEMIROT_STARTUP_DERIVATIVE}" "${OEMIROT_STARTUP_SOURCE}")
+
+# Upstream MCUboot treats each image_ok byte and hardware rollback counter
+# independently. Roller ECU releases Secure and NonSecure as one dependency-
+# locked safety unit, so a power loss between those two Flash program units
+# must retain paired rollback. Generate a pinned loader derivative which:
+#   * converts a coherent NONE/REVERT mixed state into REVERT/REVERT;
+#   * identifies a release by both its version and signed security counter;
+#   * advances neither anti-rollback counter until both image_ok flags are SET;
+#   * rejects PERM and conflicting TEST/REVERT states.
+set(OEMIROT_LOADER_UPSTREAM
+    "${MCUBOOT_ROOT}/boot/bootutil/src/loader.c")
+file(READ "${OEMIROT_LOADER_UPSTREAM}" OEMIROT_LOADER_SOURCE)
+
+set(OEMIROT_LOADER_INCLUDE_OLD [=[
+#include "mcuboot_config/mcuboot_config.h"
+]=])
+set(OEMIROT_LOADER_INCLUDE_NEW [=[
+#include "mcuboot_config/mcuboot_config.h"
+#include "roller_pair_policy.h"
+]=])
+string(FIND "${OEMIROT_LOADER_SOURCE}" "${OEMIROT_LOADER_INCLUDE_OLD}"
+       OEMIROT_LOADER_INCLUDE_POSITION)
+if(OEMIROT_LOADER_INCLUDE_POSITION EQUAL -1)
+  message(FATAL_ERROR
+    "Pinned MCUboot loader changed: configuration include was not found")
+endif()
+string(REPLACE "${OEMIROT_LOADER_INCLUDE_OLD}" "${OEMIROT_LOADER_INCLUDE_NEW}"
+       OEMIROT_LOADER_SOURCE "${OEMIROT_LOADER_SOURCE}")
+
+# A partial swap is resumed inside boot_prepare_image_for_update(), before the
+# clean-swap policy below can inspect state->swap_type.  Reject an interrupted
+# PERM operation before review/completion can make any further Flash write and
+# erase the evidence by converting the state to NONE.
+set(OEMIROT_LOADER_PARTIAL_PERM_OLD [=[
+        if (!boot_status_is_reset(bs)) {
+
+#if (BOOT_IMAGE_NUMBER > 1) && !defined(MCUBOOT_PRIMARY_ONLY)
+            boot_review_image_swap_types(state, true);
+]=])
+set(OEMIROT_LOADER_PARTIAL_PERM_NEW [=[
+        if (!boot_status_is_reset(bs)) {
+
+#if (BOOT_IMAGE_NUMBER == 2) && !defined(MCUBOOT_PRIMARY_ONLY)
+            if (RollerPair_PartialSwapIsForbidden(
+                    bs->swap_type, BOOT_SWAP_TYPE_PERM)) {
+                BOOT_LOG_ERR("Interrupted permanent swap is forbidden");
+                BOOT_SWAP_TYPE(state) = BOOT_SWAP_TYPE_PANIC;
+                FIH_PANIC;
+                return;
+            }
+#endif
+
+#if (BOOT_IMAGE_NUMBER > 1) && !defined(MCUBOOT_PRIMARY_ONLY)
+            boot_review_image_swap_types(state, true);
+]=])
+string(FIND "${OEMIROT_LOADER_SOURCE}"
+       "${OEMIROT_LOADER_PARTIAL_PERM_OLD}"
+       OEMIROT_LOADER_PARTIAL_PERM_POSITION)
+if(OEMIROT_LOADER_PARTIAL_PERM_POSITION EQUAL -1)
+  message(FATAL_ERROR
+    "Pinned MCUboot loader changed: partial-swap recovery entry was not found")
+endif()
+string(REPLACE "${OEMIROT_LOADER_PARTIAL_PERM_OLD}"
+       "${OEMIROT_LOADER_PARTIAL_PERM_NEW}"
+       OEMIROT_LOADER_SOURCE "${OEMIROT_LOADER_SOURCE}")
+
+set(OEMIROT_LOADER_CONFIRM_OLD [=[
+#if defined(MCUBOOT_HW_ROLLBACK_PROT) && !defined(MCUBOOT_OVERWRITE_ONLY)
+    /* Iterate over all the images. At this point there are no aborted swaps
+     * and the swap types are determined for each image. By the end of the loop,
+     * the security counters will be updated.
+     * If a security counter update is performed, the system must reset,
+     * because swap type has to be re-evaluated.
+     */
+    IMAGES_ITER(BOOT_CURR_IMG(state)) {
+        /* Update the stored security counter with the active image's security
+         * counter value. It will only be updated if the new security counter is
+         * greater than the stored value, and if the active image is confirmed:
+         * image has marked itself "OK" (the image_ok flag has been set).
+         * This way a "revert" can be performed when it's necessary.
+         */
+        /* Get active image trailer state: primary slot confirmed? */
+        rc = boot_read_swap_state_by_id(FLASH_AREA_IMAGE_PRIMARY(BOOT_CURR_IMG(state)),
+                                        &swap_state);
+        assert(rc == 0);
+
+        /* Check if primary slot contains a confirmed image */
+        if ((swap_state.image_ok != BOOT_FLAG_UNSET) &&
+            (boot_is_header_valid(boot_img_hdr(state, BOOT_PRIMARY_SLOT),
+                                  BOOT_IMG_AREA(state, BOOT_PRIMARY_SLOT)))) {
+            /* Image already confirmed. */
+            rc = boot_update_security_counter(
+                                    BOOT_CURR_IMG(state),
+                                    BOOT_PRIMARY_SLOT,
+                                    boot_img_hdr(state, BOOT_PRIMARY_SLOT),
+                                    &security_counter_updated);
+            if (rc != 0) {
+                BOOT_LOG_ERR("Security counter update failed after image "
+                             "validation.");
+                goto out;
+            }
+
+            /* If security cnt has changed, then reset to start again mcuboot
+             * process from start with up to date NVCounters */
+            if (security_counter_updated) {
+                BOOT_LOG_INF("Security counter updated. Reset device");
+                NVIC_SystemReset();
+            }
+
+        }
+    }
+#endif /* MCUBOOT_HW_ROLLBACK_PROT && !MCUBOOT_OVERWRITE_ONLY */
+]=])
+set(OEMIROT_LOADER_CONFIRM_NEW [=[
+#if (BOOT_IMAGE_NUMBER == 2) && !defined(MCUBOOT_PRIMARY_ONLY)
+    bool roller_primary_pair_coherent;
+    bool roller_pair_requires_revert;
+    bool roller_target_pair_required;
+    fih_int roller_primary_pair_preconfirmed = FIH_FAILURE;
+    bool roller_final_primary_verified[BOOT_IMAGE_NUMBER] = { false, false };
+    RollerPair_ReleaseIdentity roller_primary_identity[BOOT_IMAGE_NUMBER];
+    RollerPair_ReleaseIdentity roller_target_identity[BOOT_IMAGE_NUMBER];
+    uint8_t roller_target_slot[BOOT_IMAGE_NUMBER];
+
+    /* This product accepts TEST swaps only. A PERM trailer would independently
+     * advance one counter inside upstream boot_perform_update(), violating the
+     * paired commit contract. */
+    for (image_index = 0; image_index < BOOT_IMAGE_NUMBER; ++image_index) {
+        if (state->swap_type[image_index] == BOOT_SWAP_TYPE_PERM) {
+            BOOT_LOG_ERR("Permanent swap is forbidden for paired releases");
+            rc = BOOT_EBADIMAGE;
+            goto out;
+        }
+    }
+    if (RollerPair_SwapTypesConflict(state->swap_type,
+                                     BOOT_IMAGE_NUMBER,
+                                     BOOT_SWAP_TYPE_TEST,
+                                     BOOT_SWAP_TYPE_REVERT)) {
+        BOOT_LOG_ERR("Conflicting paired TEST/REVERT state");
+        rc = BOOT_EBADIMAGE;
+        goto out;
+    }
+
+    /* The application confirms two trailers in separate Flash program units.
+     * A NONE/REVERT combination is a half-confirmed pair only while both
+     * primary slots carry the same signed release identity. Once one side of
+     * a paired revert has completed, the primary identities differ; leaving
+     * the state untouched lets MCUboot finish only the remaining side and
+     * prevents a reverse mixed pair. Both version and protected security
+     * counter are required so a reused version cannot alias another release. */
+    roller_pair_requires_revert =
+        RollerPair_SwapTypesRequireRevert(state->swap_type,
+                                          BOOT_IMAGE_NUMBER,
+                                          BOOT_SWAP_TYPE_NONE,
+                                          BOOT_SWAP_TYPE_REVERT);
+    roller_primary_pair_coherent = false;
+    if (roller_pair_requires_revert) {
+        for (image_index = 0; image_index < BOOT_IMAGE_NUMBER; ++image_index) {
+            rc = bootutil_get_img_security_cnt(
+                    &state->imgs[image_index][BOOT_PRIMARY_SLOT].hdr,
+                    state->imgs[image_index][BOOT_PRIMARY_SLOT].area,
+                    &roller_primary_identity[image_index].security_counter);
+            if (rc != 0) {
+                BOOT_LOG_ERR("Paired primary release identity is invalid");
+                goto out;
+            }
+            roller_primary_identity[image_index].major =
+                state->imgs[image_index][BOOT_PRIMARY_SLOT].hdr.ih_ver.iv_major;
+            roller_primary_identity[image_index].minor =
+                state->imgs[image_index][BOOT_PRIMARY_SLOT].hdr.ih_ver.iv_minor;
+            roller_primary_identity[image_index].revision =
+                state->imgs[image_index][BOOT_PRIMARY_SLOT].hdr.ih_ver.iv_revision;
+            roller_primary_identity[image_index].build =
+                state->imgs[image_index][BOOT_PRIMARY_SLOT].hdr.ih_ver.iv_build_num;
+        }
+        roller_primary_pair_coherent =
+            RollerPair_ReleaseIdentitiesMatch(&roller_primary_identity[0],
+                                              &roller_primary_identity[1]);
+    }
+    if (roller_primary_pair_coherent) {
+        /* A side whose upstream type is NONE did not validate its secondary.
+         * Validate both rollback images before forcing either additional swap;
+         * corruption or an ineligible security counter fails closed. */
+        IMAGES_ITER(BOOT_CURR_IMG(state)) {
+            boot_status_reset(&bs);
+            FIH_CALL(boot_validate_slot, fih_rc,
+                     state, BOOT_SECONDARY_SLOT, &bs);
+            if (fih_not_eq(fih_rc, FIH_SUCCESS)) {
+                BOOT_LOG_ERR("Paired rollback image validation failed");
+                rc = BOOT_EBADIMAGE;
+                goto out;
+            }
+        }
+        for (image_index = 0; image_index < BOOT_IMAGE_NUMBER; ++image_index) {
+            state->swap_type[image_index] = BOOT_SWAP_TYPE_REVERT;
+        }
+    }
+
+#endif
+
+#if defined(MCUBOOT_HW_ROLLBACK_PROT) && !defined(MCUBOOT_OVERWRITE_ONLY)
+    /* A paired release is committed only after both primary trailers are
+     * explicitly confirmed and both headers remain valid. Until that point no
+     * NV security counter may make the previous paired release ineligible. */
+    {
+        uint8_t roller_image_ok[BOOT_IMAGE_NUMBER];
+        bool roller_commit_primary_verified[BOOT_IMAGE_NUMBER] = { false, false };
+        RollerPair_ReleaseIdentity roller_commit_identity[BOOT_IMAGE_NUMBER];
+        bool roller_commit_ready;
+
+        IMAGES_ITER(BOOT_CURR_IMG(state)) {
+            rc = boot_read_swap_state_by_id(
+                    FLASH_AREA_IMAGE_PRIMARY(BOOT_CURR_IMG(state)),
+                    &swap_state);
+            if (rc != 0) {
+                BOOT_LOG_ERR("Paired image_ok read failed");
+                goto out;
+            }
+            if (swap_state.image_ok == BOOT_FLAG_BAD) {
+                BOOT_LOG_ERR("Corrupt image_ok in paired release");
+                rc = BOOT_EBADIMAGE;
+                goto out;
+            }
+            roller_image_ok[BOOT_CURR_IMG(state)] =
+                boot_is_header_valid(
+                    boot_img_hdr(state, BOOT_PRIMARY_SLOT),
+                    BOOT_IMG_AREA(state, BOOT_PRIMARY_SLOT)) ?
+                    swap_state.image_ok : BOOT_FLAG_UNSET;
+        }
+
+        if (RollerPair_AllImagesConfirmed(roller_image_ok,
+                                          BOOT_IMAGE_NUMBER,
+                                          BOOT_FLAG_SET)) {
+            /* Counters are irreversible.  Validate both signed primary images
+             * in this boot before trusting their protected security-counter
+             * TLVs, then require the complete paired identity to match. */
+#if defined(MCUBOOT_DOUBLE_SIGN_VERIF)
+            ImageValidIndex = 0U;
+            for (image_index = 0; image_index < BOOT_IMAGE_NUMBER; ++image_index) {
+                ImageValidStatus[image_index] = IMAGE_INVALID;
+            }
+            ImageValidEnable = 1U;
+#endif
+            IMAGES_ITER(BOOT_CURR_IMG(state)) {
+                FIH_CALL(boot_validate_slot, fih_rc,
+                         state, BOOT_PRIMARY_SLOT, NULL);
+                if (fih_not_eq(fih_rc, FIH_SUCCESS)) {
+#if defined(MCUBOOT_DOUBLE_SIGN_VERIF)
+                    ImageValidEnable = 0U;
+#endif
+                    BOOT_LOG_ERR("Paired confirmed primary validation failed");
+                    rc = BOOT_EBADIMAGE;
+                    goto out;
+                }
+                roller_commit_primary_verified[BOOT_CURR_IMG(state)] = true;
+                rc = bootutil_get_img_security_cnt(
+                        boot_img_hdr(state, BOOT_PRIMARY_SLOT),
+                        BOOT_IMG_AREA(state, BOOT_PRIMARY_SLOT),
+                        &roller_commit_identity[BOOT_CURR_IMG(state)]
+                             .security_counter);
+                if (rc != 0) {
+                    BOOT_LOG_ERR("Paired confirmed release identity is invalid");
+                    goto out;
+                }
+                roller_commit_identity[BOOT_CURR_IMG(state)].major =
+                    boot_img_hdr(state, BOOT_PRIMARY_SLOT)->ih_ver.iv_major;
+                roller_commit_identity[BOOT_CURR_IMG(state)].minor =
+                    boot_img_hdr(state, BOOT_PRIMARY_SLOT)->ih_ver.iv_minor;
+                roller_commit_identity[BOOT_CURR_IMG(state)].revision =
+                    boot_img_hdr(state, BOOT_PRIMARY_SLOT)->ih_ver.iv_revision;
+                roller_commit_identity[BOOT_CURR_IMG(state)].build =
+                    boot_img_hdr(state, BOOT_PRIMARY_SLOT)->ih_ver.iv_build_num;
+            }
+#if defined(MCUBOOT_DOUBLE_SIGN_VERIF)
+            ImageValidEnable = 0U;
+            if (ImageValidIndex != BOOT_IMAGE_NUMBER) {
+                BOOT_LOG_ERR("Paired confirmed double validation count failed");
+                rc = BOOT_EBADIMAGE;
+                goto out;
+            }
+            for (image_index = 0; image_index < BOOT_IMAGE_NUMBER; ++image_index) {
+                if (ImageValidStatus[image_index] != IMAGE_VALID) {
+                    BOOT_LOG_ERR("Paired confirmed double validation failed");
+                    rc = BOOT_EBADIMAGE;
+                    goto out;
+                }
+                /* The normal post-swap validation owns the final jump check. */
+                ImageValidStatus[image_index] = IMAGE_INVALID;
+            }
+            ImageValidIndex = 0U;
+#endif
+            roller_commit_ready = RollerPair_ReleaseReadyToCommit(
+                    roller_image_ok,
+                    roller_commit_primary_verified,
+                    roller_commit_identity,
+                    BOOT_IMAGE_NUMBER,
+                    BOOT_FLAG_SET);
+            fih_rc = fih_int_encode_zero_equality(!roller_commit_ready);
+            if (fih_not_eq(fih_rc, FIH_SUCCESS)) {
+                BOOT_LOG_ERR("Paired confirmed release identities do not match");
+                rc = BOOT_EBADIMAGE;
+                goto out;
+            }
+            /* Cache only a state that existed before this boot's swap loop.
+             * A later FAIL path may clean bad staging, but may never create
+             * confirmation for a test image on the application's behalf. */
+            roller_primary_pair_preconfirmed = FIH_SUCCESS;
+            IMAGES_ITER(BOOT_CURR_IMG(state)) {
+                rc = boot_update_security_counter(
+                        BOOT_CURR_IMG(state),
+                        BOOT_PRIMARY_SLOT,
+                        boot_img_hdr(state, BOOT_PRIMARY_SLOT),
+                        &security_counter_updated);
+                if (rc != 0) {
+                    BOOT_LOG_ERR("Paired security counter update failed after "
+                                 "image validation.");
+                    goto out;
+                }
+                if (security_counter_updated) {
+                    BOOT_LOG_INF("Paired security counter updated. Reset device");
+                    NVIC_SystemReset();
+                }
+            }
+        }
+    }
+#endif /* MCUBOOT_HW_ROLLBACK_PROT && !MCUBOOT_OVERWRITE_ONLY */
+]=])
+string(FIND "${OEMIROT_LOADER_SOURCE}" "${OEMIROT_LOADER_CONFIRM_OLD}"
+       OEMIROT_LOADER_CONFIRM_POSITION)
+if(OEMIROT_LOADER_CONFIRM_POSITION EQUAL -1)
+  message(FATAL_ERROR
+    "Pinned MCUboot loader changed: independent image confirmation block was not found")
+endif()
+string(REPLACE "${OEMIROT_LOADER_CONFIRM_OLD}" "${OEMIROT_LOADER_CONFIRM_NEW}"
+       OEMIROT_LOADER_SOURCE "${OEMIROT_LOADER_SOURCE}")
+
+# Run paired-target validation only after upstream dependency resolution. A
+# power loss while Ethernet OTA is still staging one padded image can expose a
+# legitimate one-sided TEST trailer; dependencies must first cancel that
+# incomplete request so the already-confirmed old pair remains bootable.
+set(OEMIROT_LOADER_TARGET_GATE_ANCHOR_OLD [=[
+    /* Iterate over all the images. At this point there are no aborted swaps
+     * and the swap types are determined for each image. By the end of the loop
+     * all required update operations will have been finished.
+     */
+]=])
+set(OEMIROT_LOADER_TARGET_GATE_ANCHOR_NEW [=[
+#if (BOOT_IMAGE_NUMBER == 2) && !defined(MCUBOOT_PRIMARY_ONLY)
+    /* Treat the post-operation images as one signed target. This catches a
+     * manually assembled or faulted pair whose two independently valid images
+     * reuse a version but carry different security counters (or vice versa).
+     * It also covers a forward/revert operation resumed after one side has
+     * already reached its primary slot. */
+    roller_target_pair_required =
+        RollerPair_SwapTypesFormOperation(state->swap_type,
+                                          BOOT_IMAGE_NUMBER,
+                                          BOOT_SWAP_TYPE_NONE,
+                                          BOOT_SWAP_TYPE_TEST) ||
+        RollerPair_SwapTypesFormOperation(state->swap_type,
+                                          BOOT_IMAGE_NUMBER,
+                                          BOOT_SWAP_TYPE_NONE,
+                                          BOOT_SWAP_TYPE_REVERT);
+    if (roller_target_pair_required) {
+        for (image_index = 0; image_index < BOOT_IMAGE_NUMBER; ++image_index) {
+            BOOT_CURR_IMG(state) = image_index;
+            roller_target_slot[image_index] =
+                (state->swap_type[image_index] == BOOT_SWAP_TYPE_NONE) ?
+                BOOT_PRIMARY_SLOT : BOOT_SECONDARY_SLOT;
+            boot_status_reset(&bs);
+            FIH_CALL(boot_validate_slot, fih_rc,
+                     state, roller_target_slot[image_index], &bs);
+            if (fih_not_eq(fih_rc, FIH_SUCCESS)) {
+                BOOT_LOG_ERR("Paired target image validation failed");
+                rc = BOOT_EBADIMAGE;
+                goto out;
+            }
+            rc = bootutil_get_img_security_cnt(
+                    &state->imgs[image_index]
+                                [roller_target_slot[image_index]].hdr,
+                    state->imgs[image_index]
+                               [roller_target_slot[image_index]].area,
+                    &roller_target_identity[image_index].security_counter);
+            if (rc != 0) {
+                BOOT_LOG_ERR("Paired target release identity is invalid");
+                goto out;
+            }
+            roller_target_identity[image_index].major =
+                state->imgs[image_index][roller_target_slot[image_index]]
+                    .hdr.ih_ver.iv_major;
+            roller_target_identity[image_index].minor =
+                state->imgs[image_index][roller_target_slot[image_index]]
+                    .hdr.ih_ver.iv_minor;
+            roller_target_identity[image_index].revision =
+                state->imgs[image_index][roller_target_slot[image_index]]
+                    .hdr.ih_ver.iv_revision;
+            roller_target_identity[image_index].build =
+                state->imgs[image_index][roller_target_slot[image_index]]
+                    .hdr.ih_ver.iv_build_num;
+        }
+        if (!RollerPair_ReleaseIdentitiesMatch(&roller_target_identity[0],
+                                               &roller_target_identity[1])) {
+            BOOT_LOG_ERR("Paired target release identities do not match");
+            rc = BOOT_EBADIMAGE;
+            goto out;
+        }
+    }
+#endif
+
+    /* Iterate over all the images. At this point there are no aborted swaps
+     * and the swap types are determined for each image. By the end of the loop
+     * all required update operations will have been finished.
+     */
+]=])
+string(FIND "${OEMIROT_LOADER_SOURCE}"
+       "${OEMIROT_LOADER_TARGET_GATE_ANCHOR_OLD}"
+       OEMIROT_LOADER_TARGET_GATE_ANCHOR_POSITION)
+if(OEMIROT_LOADER_TARGET_GATE_ANCHOR_POSITION EQUAL -1)
+  message(FATAL_ERROR
+    "Pinned MCUboot loader changed: post-dependency target gate anchor was not found")
+endif()
+string(REPLACE "${OEMIROT_LOADER_TARGET_GATE_ANCHOR_OLD}"
+       "${OEMIROT_LOADER_TARGET_GATE_ANCHOR_NEW}"
+       OEMIROT_LOADER_SOURCE "${OEMIROT_LOADER_SOURCE}")
+
+# Upstream FAIL recovery writes image_ok to suppress another revert.  That is
+# safe only for a primary pair which was already exactly confirmed, matching,
+# and fully verified before this boot's swap loop.  Otherwise corrupt rollback
+# slots could make the bootloader confirm an untested application release.
+set(OEMIROT_LOADER_FAIL_CONFIRM_OLD [=[
+        case BOOT_SWAP_TYPE_FAIL:
+            /* The image in secondary slot was invalid and is now erased. Ensure
+             * we don't try to boot into it again on the next reboot. Do this by
+             * pretending we just reverted back to primary slot.
+             */
+#ifndef MCUBOOT_OVERWRITE_ONLY
+            /* image_ok needs to be explicitly set to avoid a new revert. */
+            rc = swap_set_image_ok(BOOT_CURR_IMG(state));
+]=])
+set(OEMIROT_LOADER_FAIL_CONFIRM_NEW [=[
+        case BOOT_SWAP_TYPE_FAIL:
+            /* The image in secondary slot was invalid and is now erased. Ensure
+             * we don't try to boot into it again on the next reboot. Do this by
+             * pretending we just reverted back to primary slot.
+             */
+#ifndef MCUBOOT_OVERWRITE_ONLY
+#if (BOOT_IMAGE_NUMBER == 2) && !defined(MCUBOOT_PRIMARY_ONLY)
+            if (fih_not_eq(roller_primary_pair_preconfirmed, FIH_SUCCESS)) {
+                BOOT_LOG_ERR("Unconfirmed primary cannot consume failed staging");
+                BOOT_SWAP_TYPE(state) = BOOT_SWAP_TYPE_PANIC;
+                rc = BOOT_EBADIMAGE;
+                FIH_PANIC;
+                goto out;
+            }
+#endif
+            /* The trusted pair was already confirmed before this loop, so this
+             * call is idempotent and can never synthesize application health. */
+            rc = swap_set_image_ok(BOOT_CURR_IMG(state));
+]=])
+string(FIND "${OEMIROT_LOADER_SOURCE}"
+       "${OEMIROT_LOADER_FAIL_CONFIRM_OLD}"
+       OEMIROT_LOADER_FAIL_CONFIRM_POSITION)
+if(OEMIROT_LOADER_FAIL_CONFIRM_POSITION EQUAL -1)
+  message(FATAL_ERROR
+    "Pinned MCUboot loader changed: failed-staging confirmation path was not found")
+endif()
+string(REPLACE "${OEMIROT_LOADER_FAIL_CONFIRM_OLD}"
+       "${OEMIROT_LOADER_FAIL_CONFIRM_NEW}"
+       OEMIROT_LOADER_SOURCE "${OEMIROT_LOADER_SOURCE}")
+
+# Remember which final primaries passed MCUboot's complete cryptographic
+# validation.  The countermeasure runs later and must not infer this from a
+# structurally valid header alone.
+set(OEMIROT_LOADER_PRIMARY_VERIFIED_OLD [=[
+        FIH_CALL(boot_validate_slot, fih_rc, state, BOOT_PRIMARY_SLOT, NULL);
+        if (fih_not_eq(fih_rc, FIH_SUCCESS)) {
+            goto out;
+        }
+#if defined(MCUBOOT_DOUBLE_SIGN_VERIF) || defined(MCUBOOT_USE_HASH_REF)
+]=])
+set(OEMIROT_LOADER_PRIMARY_VERIFIED_NEW [=[
+        FIH_CALL(boot_validate_slot, fih_rc, state, BOOT_PRIMARY_SLOT, NULL);
+        if (fih_not_eq(fih_rc, FIH_SUCCESS)) {
+            goto out;
+        }
+#if (BOOT_IMAGE_NUMBER == 2) && !defined(MCUBOOT_PRIMARY_ONLY)
+        roller_final_primary_verified[BOOT_CURR_IMG(state)] = true;
+#endif
+#if defined(MCUBOOT_DOUBLE_SIGN_VERIF) || defined(MCUBOOT_USE_HASH_REF)
+]=])
+string(FIND "${OEMIROT_LOADER_SOURCE}"
+       "${OEMIROT_LOADER_PRIMARY_VERIFIED_OLD}"
+       OEMIROT_LOADER_PRIMARY_VERIFIED_POSITION)
+if(OEMIROT_LOADER_PRIMARY_VERIFIED_POSITION EQUAL -1)
+  message(FATAL_ERROR
+    "Pinned MCUboot loader changed: final primary validation anchor was not found")
+endif()
+string(REPLACE "${OEMIROT_LOADER_PRIMARY_VERIFIED_OLD}"
+       "${OEMIROT_LOADER_PRIMARY_VERIFIED_NEW}"
+       OEMIROT_LOADER_SOURCE "${OEMIROT_LOADER_SOURCE}")
+
+set(OEMIROT_LOADER_COUNTERMEASURE_ANCHOR_OLD [=[
+    /* Iterate over all the images. */
+    IMAGES_ITER(BOOT_CURR_IMG(state)) {
+
+#if !defined(MCUBOOT_OVERWRITE_ONLY)
+        /* Security counters will be updated if the active image is confirmed:
+]=])
+set(OEMIROT_LOADER_COUNTERMEASURE_ANCHOR_NEW [=[
+#if !defined(MCUBOOT_OVERWRITE_ONLY)
+    uint8_t roller_countermeasure_image_ok[BOOT_IMAGE_NUMBER];
+    RollerPair_ReleaseIdentity roller_countermeasure_identity[BOOT_IMAGE_NUMBER];
+    bool roller_countermeasure_all_confirmed;
+    bool roller_countermeasure_ready;
+
+    IMAGES_ITER(BOOT_CURR_IMG(state)) {
+        rc = boot_read_swap_state_by_id(
+                FLASH_AREA_IMAGE_PRIMARY(BOOT_CURR_IMG(state)),
+                &swap_state);
+        if (rc != 0) {
+            BOOT_LOG_ERR("Paired countermeasure image_ok read failed");
+            goto out;
+        }
+        if (swap_state.image_ok == BOOT_FLAG_BAD) {
+            BOOT_LOG_ERR("Corrupt image_ok during paired countermeasure");
+            rc = BOOT_EBADIMAGE;
+            goto out;
+        }
+        roller_countermeasure_image_ok[BOOT_CURR_IMG(state)] =
+            boot_is_header_valid(
+                boot_img_hdr(state, BOOT_PRIMARY_SLOT),
+                BOOT_IMG_AREA(state, BOOT_PRIMARY_SLOT)) ?
+                swap_state.image_ok : BOOT_FLAG_UNSET;
+        rc = bootutil_get_img_security_cnt(
+                boot_img_hdr(state, BOOT_PRIMARY_SLOT),
+                BOOT_IMG_AREA(state, BOOT_PRIMARY_SLOT),
+                &roller_countermeasure_identity[BOOT_CURR_IMG(state)]
+                     .security_counter);
+        if (rc != 0) {
+            BOOT_LOG_ERR("Paired countermeasure release identity is invalid");
+            goto out;
+        }
+        roller_countermeasure_identity[BOOT_CURR_IMG(state)].major =
+            boot_img_hdr(state, BOOT_PRIMARY_SLOT)->ih_ver.iv_major;
+        roller_countermeasure_identity[BOOT_CURR_IMG(state)].minor =
+            boot_img_hdr(state, BOOT_PRIMARY_SLOT)->ih_ver.iv_minor;
+        roller_countermeasure_identity[BOOT_CURR_IMG(state)].revision =
+            boot_img_hdr(state, BOOT_PRIMARY_SLOT)->ih_ver.iv_revision;
+        roller_countermeasure_identity[BOOT_CURR_IMG(state)].build =
+            boot_img_hdr(state, BOOT_PRIMARY_SLOT)->ih_ver.iv_build_num;
+    }
+    roller_countermeasure_all_confirmed =
+        RollerPair_AllImagesConfirmed(roller_countermeasure_image_ok,
+                                      BOOT_IMAGE_NUMBER,
+                                      BOOT_FLAG_SET);
+    roller_countermeasure_ready = RollerPair_ReleaseReadyToCommit(
+        roller_countermeasure_image_ok,
+        roller_final_primary_verified,
+        roller_countermeasure_identity,
+        BOOT_IMAGE_NUMBER,
+        BOOT_FLAG_SET);
+    if (roller_countermeasure_all_confirmed) {
+        fih_rc = fih_int_encode_zero_equality(!roller_countermeasure_ready);
+        if (fih_not_eq(fih_rc, FIH_SUCCESS)) {
+            BOOT_LOG_ERR("Paired countermeasure release is not coherent");
+            rc = BOOT_EBADIMAGE;
+            goto out;
+        }
+    }
+#endif
+
+    /* Iterate over all the images. */
+    IMAGES_ITER(BOOT_CURR_IMG(state)) {
+
+#if !defined(MCUBOOT_OVERWRITE_ONLY)
+        /* Security counters will be updated if the active image is confirmed:
+]=])
+string(FIND "${OEMIROT_LOADER_SOURCE}"
+       "${OEMIROT_LOADER_COUNTERMEASURE_ANCHOR_OLD}"
+       OEMIROT_LOADER_COUNTERMEASURE_ANCHOR_POSITION)
+if(OEMIROT_LOADER_COUNTERMEASURE_ANCHOR_POSITION EQUAL -1)
+  message(FATAL_ERROR
+    "Pinned MCUboot loader changed: countermeasure loop was not found")
+endif()
+string(REPLACE "${OEMIROT_LOADER_COUNTERMEASURE_ANCHOR_OLD}"
+       "${OEMIROT_LOADER_COUNTERMEASURE_ANCHOR_NEW}"
+       OEMIROT_LOADER_SOURCE "${OEMIROT_LOADER_SOURCE}")
+
+set(OEMIROT_LOADER_COUNTER_CONDITION_OLD [=[
+        if ((swap_state.image_ok != BOOT_FLAG_UNSET) &&
+            (boot_is_header_valid(boot_img_hdr(state, BOOT_PRIMARY_SLOT),
+                                  BOOT_IMG_AREA(state, BOOT_PRIMARY_SLOT)))) {
+]=])
+set(OEMIROT_LOADER_COUNTER_CONDITION_NEW [=[
+        if (roller_countermeasure_ready &&
+            (swap_state.image_ok == BOOT_FLAG_SET) &&
+            (boot_is_header_valid(boot_img_hdr(state, BOOT_PRIMARY_SLOT),
+                                  BOOT_IMG_AREA(state, BOOT_PRIMARY_SLOT)))) {
+]=])
+string(REGEX MATCHALL
+       "if \\(\\(swap_state[.]image_ok != BOOT_FLAG_UNSET\\)"
+       OEMIROT_LOADER_COUNTER_CONDITION_MATCHES "${OEMIROT_LOADER_SOURCE}")
+list(LENGTH OEMIROT_LOADER_COUNTER_CONDITION_MATCHES
+     OEMIROT_LOADER_COUNTER_CONDITION_COUNT)
+if(NOT OEMIROT_LOADER_COUNTER_CONDITION_COUNT EQUAL 1)
+  message(FATAL_ERROR
+    "Pinned MCUboot loader changed: expected one independent countermeasure condition, found ${OEMIROT_LOADER_COUNTER_CONDITION_COUNT}")
+endif()
+string(REPLACE "${OEMIROT_LOADER_COUNTER_CONDITION_OLD}"
+       "${OEMIROT_LOADER_COUNTER_CONDITION_NEW}"
+       OEMIROT_LOADER_SOURCE "${OEMIROT_LOADER_SOURCE}")
+
+# Release builds define NDEBUG, so an I/O error in the countermeasure's second
+# trailer sample must never be hidden behind upstream assert().
+set(OEMIROT_LOADER_COUNTER_READ_OLD [=[
+        rc = boot_read_swap_state_by_id(FLASH_AREA_IMAGE_PRIMARY(BOOT_CURR_IMG(state)),
+                                        &swap_state);
+        assert(rc == 0);
+
+        /* Check if primary slot contains a confirmed image */
+]=])
+set(OEMIROT_LOADER_COUNTER_READ_NEW [=[
+        rc = boot_read_swap_state_by_id(FLASH_AREA_IMAGE_PRIMARY(BOOT_CURR_IMG(state)),
+                                        &swap_state);
+        if (rc != 0) {
+            BOOT_LOG_ERR("Paired countermeasure update image_ok read failed");
+            goto out;
+        }
+
+        /* Check if primary slot contains a confirmed image */
+]=])
+string(FIND "${OEMIROT_LOADER_SOURCE}"
+       "${OEMIROT_LOADER_COUNTER_READ_OLD}"
+       OEMIROT_LOADER_COUNTER_READ_POSITION)
+if(OEMIROT_LOADER_COUNTER_READ_POSITION EQUAL -1)
+  message(FATAL_ERROR
+    "Pinned MCUboot loader changed: countermeasure trailer re-read was not found")
+endif()
+string(REPLACE "${OEMIROT_LOADER_COUNTER_READ_OLD}"
+       "${OEMIROT_LOADER_COUNTER_READ_NEW}"
+       OEMIROT_LOADER_SOURCE "${OEMIROT_LOADER_SOURCE}")
+
+# Even if an interrupted swap is downgraded to NONE/FAIL because its remaining
+# secondary slot became unreadable, never hand an old/new primary pair to the
+# applications. This final gate runs after MCUboot's cryptographic validation
+# of both primaries and checks the complete signed release identity once more.
+set(OEMIROT_LOADER_FINAL_PAIR_ANCHOR_OLD [=[
+#if (BOOT_IMAGE_NUMBER > 1)
+    /* Always boot from the primary slot of Image 0. */
+    BOOT_CURR_IMG(state) = 0;
+#endif
+]=])
+set(OEMIROT_LOADER_FINAL_PAIR_ANCHOR_NEW [=[
+#if (BOOT_IMAGE_NUMBER == 2) && !defined(MCUBOOT_PRIMARY_ONLY)
+    {
+        RollerPair_ReleaseIdentity roller_final_identity[BOOT_IMAGE_NUMBER];
+        int roller_final_validation_incomplete;
+        int roller_final_identity_mismatch;
+
+#if defined(MCUBOOT_DOUBLE_SIGN_VERIF)
+        roller_final_validation_incomplete =
+            (ImageValidIndex != BOOT_IMAGE_NUMBER);
+        for (image_index = 0; image_index < BOOT_IMAGE_NUMBER; ++image_index) {
+            roller_final_validation_incomplete |=
+                (ImageValidStatus[image_index] != IMAGE_VALID);
+        }
+        fih_rc = fih_int_encode_zero_equality(
+            roller_final_validation_incomplete);
+        if (fih_not_eq(fih_rc, FIH_SUCCESS)) {
+            BOOT_LOG_ERR("Final paired primary double validation is incomplete");
+            rc = BOOT_EBADIMAGE;
+            goto out;
+        }
+#endif
+        roller_final_validation_incomplete = 0;
+        for (image_index = 0; image_index < BOOT_IMAGE_NUMBER; ++image_index) {
+            roller_final_validation_incomplete |=
+                !roller_final_primary_verified[image_index];
+        }
+        fih_rc = fih_int_encode_zero_equality(
+            roller_final_validation_incomplete);
+        if (fih_not_eq(fih_rc, FIH_SUCCESS)) {
+            BOOT_LOG_ERR("Final paired primary validation is incomplete");
+            rc = BOOT_EBADIMAGE;
+            goto out;
+        }
+
+        for (image_index = 0; image_index < BOOT_IMAGE_NUMBER; ++image_index) {
+            rc = bootutil_get_img_security_cnt(
+                    &state->imgs[image_index][BOOT_PRIMARY_SLOT].hdr,
+                    state->imgs[image_index][BOOT_PRIMARY_SLOT].area,
+                    &roller_final_identity[image_index].security_counter);
+            if (rc != 0) {
+                BOOT_LOG_ERR("Final paired primary identity is invalid");
+                goto out;
+            }
+            roller_final_identity[image_index].major =
+                state->imgs[image_index][BOOT_PRIMARY_SLOT].hdr.ih_ver.iv_major;
+            roller_final_identity[image_index].minor =
+                state->imgs[image_index][BOOT_PRIMARY_SLOT].hdr.ih_ver.iv_minor;
+            roller_final_identity[image_index].revision =
+                state->imgs[image_index][BOOT_PRIMARY_SLOT].hdr.ih_ver.iv_revision;
+            roller_final_identity[image_index].build =
+                state->imgs[image_index][BOOT_PRIMARY_SLOT].hdr.ih_ver.iv_build_num;
+        }
+        roller_final_identity_mismatch =
+            !RollerPair_ReleaseIdentitiesMatch(&roller_final_identity[0],
+                                               &roller_final_identity[1]);
+        fih_rc = fih_int_encode_zero_equality(
+            roller_final_identity_mismatch);
+        if (fih_not_eq(fih_rc, FIH_SUCCESS)) {
+            BOOT_LOG_ERR("Final paired primary release identities do not match");
+            rc = BOOT_EBADIMAGE;
+            goto out;
+        }
+    }
+#endif
+
+#if (BOOT_IMAGE_NUMBER > 1)
+    /* Always boot from the primary slot of Image 0. */
+    BOOT_CURR_IMG(state) = 0;
+#endif
+]=])
+string(FIND "${OEMIROT_LOADER_SOURCE}"
+       "${OEMIROT_LOADER_FINAL_PAIR_ANCHOR_OLD}"
+       OEMIROT_LOADER_FINAL_PAIR_ANCHOR_POSITION)
+if(OEMIROT_LOADER_FINAL_PAIR_ANCHOR_POSITION EQUAL -1)
+  message(FATAL_ERROR
+    "Pinned MCUboot loader changed: final primary-pair gate anchor was not found")
+endif()
+string(REPLACE "${OEMIROT_LOADER_FINAL_PAIR_ANCHOR_OLD}"
+       "${OEMIROT_LOADER_FINAL_PAIR_ANCHOR_NEW}"
+       OEMIROT_LOADER_SOURCE "${OEMIROT_LOADER_SOURCE}")
+set(OEMIROT_LOADER_DERIVATIVE
+    "${CMAKE_CURRENT_BINARY_DIR}/loader_roller_ecu.c")
+file(WRITE "${OEMIROT_LOADER_DERIVATIVE}" "${OEMIROT_LOADER_SOURCE}")
 
 foreach(required_file
     "${OEMIROT_EXAMPLE_ROOT}/Src/boot_hal.c"
@@ -619,7 +1309,7 @@ set(MCUBOOT_SOURCES
   "${MCUBOOT_ROOT}/boot/bootutil/src/image_ec.c"
   "${MCUBOOT_ROOT}/boot/bootutil/src/image_ec256.c"
   "${MCUBOOT_ROOT}/boot/bootutil/src/image_validate.c"
-  "${MCUBOOT_ROOT}/boot/bootutil/src/loader.c"
+  "${OEMIROT_LOADER_DERIVATIVE}"
   "${MCUBOOT_ROOT}/bl2/src/security_cnt.c"
   "${MCUBOOT_ROOT}/boot/bootutil/src/swap_misc.c"
   "${MCUBOOT_ROOT}/boot/bootutil/src/swap_move.c"

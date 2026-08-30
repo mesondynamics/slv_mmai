@@ -26,8 +26,8 @@ K1/K2/K5/K7/K9/K13/K12 等接管继电器才会释放。
 ./tools/build_oemirot.sh ReleaseOpen
 ./tools/build_oemirot.sh ReleaseClosed
 ./tools/build_signed_apps.sh Release
-STM32_PROGRAMMER_CLI=/home/plac/.local/share/stm32cube/bundles/programmer/2.22.0+st.1/bin/STM32_Programmer_CLI \
-  ./tools/provision_oemirot_open.sh inspect
+STM32_PROGRAMMER_CLI=/home/plac/.local/share/stm32cube/bundles/programmer/2.23.0/bin/STM32_Programmer_CLI \
+  python3 tools/ecu_debug_auth.py --accept-closed-target discover
 ```
 
 当前样件已从旧的直接 TrustZone 布局迁移为 OEMiROT，不能再用
@@ -39,22 +39,49 @@ python3 tools/ethernet_ota.py \
   artifacts/firmware/<version>/roller-ecu-<version>.recu
 ```
 
-当前 OPEN 台架 Option Bytes 必须满足：
+### 2.1 1.0.14 OPEN loader 替换历史门禁
+
+当时的 1.0.14 OPEN loader 替换必须先离线运行：
+
+```sh
+./tools/provision_oemirot_open.sh preflight-open-oemirot-replacement
+```
+
+该命令不访问板卡。当时真正替换前 JP1 保持断开，ST-Link 必须接
+SWD/GND/VTref/NRST；
+使用 `replace-open-oemirot --accept-open-boot-replacement` 后，事务目录必须同时包含
+fresh full Flash、128 KiB persistent、Option Bytes、runtime/OTA、两个 primary、
+Programmer 直读 MCU UID、验签/完整身份/trailer 报告、固定的 ReleaseOpen 和
+1.0.14 `.recu` 字节/hash，以及逐字节 boot readback。失败时只能
+以错误消息给出的精确事务目录执行 `resume-open-oemirot-replacement`，不能复用旧
+`repair-boot-layout` journal。
+
+当时替换 loader 后先保持 ST-Link/NRST 接入，通过 Ethernet 安装并确认
+1.0.14。板上原
+1.0.12 应用尚未包含 LAN8742 冷启动复位时序修复，所以在 `accepted_sequence=14`、
+双确认、runtime safe 和延迟复核完成前，严禁移除 ST-Link或执行掉电冷启动。首次
+无探针冷启动必须发生在确认后的 1.0.14 上。
+
+当前板和历史 CLOSED 验收阶段的 Option Bytes 必须满足：
 
 ```text
 TZEN=0xB4
-PRODUCT_STATE=0xED (Open)
+PRODUCT_STATE=0x72 (Closed)
 BOOT_UBE=0xB4
 SECBOOTADD=0xC0000, SECBOOT_LOCK=0xB4
 SECWM1_STRT=0x00, SECWM1_END=0x7F
 SECWM2_STRT=0x01, SECWM2_END=0x00
 WRPSGn1=0xFFFFFFF0
+WRPSGn2=0xFFFFFFFF
 HDP1_STRT=0x00, HDP1_END=0x17
+HDP2_STRT=0x01, HDP2_END=0x00
 ```
 
 完整布局、首次 provision、JP1/BOOT0 阶段和 CLOSED 门槛见
-`ECU_Security_and_OTA.md`。OPEN→CLOSED 是不可逆量产操作，不属于常规烧录；
-未完成离线私钥备份和 Ethernet OTA 验收时禁止执行。
+`ECU_Security_and_OTA.md`。本样件曾完成 OPEN→CLOSED，随后因 Full Regression
+回到 OPEN；现已通过 UUID=`0f3537fe-c04d-4298-ba50-995773e07a6a` 的不可变事务
+再次进入 `0x72 CLOSED`。该 Full Regression→OPEN 过程仍作为历史恢复证据保留，
+当前生命周期以安全文档第 6.3 节为准。
 
 ## 3. 本机 Ethernet
 
@@ -178,14 +205,76 @@ NVM-04/05 会反复擦写或故意断电，只能在开发样件和受控供电�
 | HW-08 | 慢 ADC | 各通道顺序、电压换算、开短路行为符合传感器规范 |
 | HW-09 | CAN1/J1939 | 250 kbit/s 六 PGN 解析与旧车一致，1000 ms 过期，其他 ID 拒绝 |
 | HW-10 | CAN2 | 保持预留，不启动、不发送、不接受车辆控制 |
-| HW-11 | PB8/PB9 软件 I²C | PB9=SCL、PB8=SDA；9 clock 恢复；当前 R1 无飞线 |
+| HW-11 | PB8/PB9 软件 I²C/ATECC reset recovery | PB9=SCL、PB8=SDA；启动无条件 START+9 clocks+START+STOP，随后 reset/sleep；最长 725 ms 有界重试期间服务 IWDG；当前 R1 无飞线 |
 | HW-12 | IWDG/CSS | NonSecure 停止或 HSE 故障时先关输出，约 2 s 复位 |
 | HW-13 | 电源/EMC/热/耐久 | 无非预期吸合，等级符合整机风险分析和目标标准 |
 
 该固件的故障安全设计不能替代独立硬件安全链，也不构成 IEC 61508、ISO 13849
 或整车功能安全认证。
 
-## 8. 2026-08-27 当前样件实测记录
+## 8. 成对 OTA 故障与断电验收矩阵
+
+验证层级定义如下：`HOST` 是静态源代码/派生 loader 审计或本机单元测试；
+`HW` 是目标 ECU、Ethernet 和受控电源上的实板项目；`HW-FI` 是必须使用专用
+故障注入固件或夹具执行的项目。HOST 通过只能证明策略和构建产物结构，不能替代
+真实 Flash、复位、IWDG 和掉电时序证据。
+
+量产板逐板进入 CLOSED 前的本板门禁是 OTA-H01..H06、OTA-P01 正常安装、两个
+primary 的独立验签/完整身份/双确认审计，以及 JP1 断开、完全移除 ST-Link 后的
+仅 ECU 冷启动、ATECC/零输出和 Ethernet 延迟复核。OTA-P02..P16 是绑定硬件版本、
+loader 源码与发布 hash 的**发布/型式鉴定矩阵**，只在具备完整恢复能力的专用 OPEN
+样件或可替换 Flash 夹具上执行；它们不是每块量产 ECU 在 CLOSED 前重复承受的测试。
+
+### 8.1 静态与主机门禁
+
+| 编号 | 检查/命令 | 通过标准 | 层级 |
+|---|---|---|---|
+| OTA-H01 | `./tools/test.sh` 的 paired policy 测试 | PERM、TEST/REVERT 冲突拒绝；`NONE/TEST`、`NONE/REVERT` 与完整发布身份比较的状态枚举符合设计 | HOST |
+| OTA-H02 | `./tools/test.sh` 的 confirmation policy 测试 | 穷举两侧 `image_ok` 字节，只有精确的 `0x01/0x01` 可提交硬件 counter | HOST |
+| OTA-H03 | `./tools/build_oemirot.sh ReleaseOpen` 和 `ReleaseClosed` | 实际生成 loader 的顺序严格为 partial-PERM guard → recovery review/complete → initial counter gate → dependency → target-pair gate → swap → primary validation → final-pair gate → redundant countermeasure | HOST |
+| OTA-H04 | `./tools/audit_config.sh` | clean/partial PERM、双 counter 提交谓词、最终身份门、FIH 判定、双 controller relock-or-reset 和 gate 顺序锚点均存在 | HOST |
+| OTA-H05 | `python3 -m unittest discover -s tests -p 'test_package_firmware.py' -v` | version/counter 不可重用，发布历史不完整时 fail closed，已进入发布历史的 1.0.13 身份不能被重用 | HOST |
+| OTA-H06 | `./tools/test.sh` 后构建两个 OEMiROT profile | trusted-pair 谓词拒绝未确认/半确认、单侧未验签或身份不一致；派生 loader 中 FIH 授权默认失败，只能在完整提交门后打开，且 FAIL guard 严格早于 `swap_set_image_ok()` | HOST |
+
+### 8.2 发布/型式鉴定硬件矩阵
+
+| 编号 | 故障或断电注入点 | 通过标准 | 层级 |
+|---|---|---|---|
+| OTA-P01 | 正常安装 1.0.15 或更高的同身份 TEST 配对 | 两侧验签并启动同一 version/counter；NS 后 S 精确写入 `image_ok=0x01`；只有双确认后硬件 counter 才推进，冷启动保持新配对 | HW |
+| OTA-P02 | CHUNK 期间多点断电，包括仅一侧完整 secondary 已带 TEST trailer、另一侧尚不完整 | 依赖检查先取消不完整请求，旧的已确认 S/NS 配对启动；目标门不误拒绝可恢复旧配对，应用绝不接收 old/new 混合 primary | HW |
+| OTA-P03 | FINISH 后及两侧 forward swap 的每个可控阶段断电 | OEMiROT 续做到完整新配对或恢复完整旧配对；每次应用入口处两个 primary 的完整 version/counter 必须相同 | HW |
+| OTA-P04 | 未确认镜像启动时分别断开网线、制造短暂 MDIO 读错和持续 PHY/时钟故障 | 仅 link-down 不阻止地址 0/PHY ID 就绪与确认；短暂故障可在 5 s 内恢复；持续故障在 5 s 内停止喂狗并成对回滚 | HW |
+| OTA-P05 | 在写 NonSecure `image_ok` 之前断电 | 两侧仍未确认，下一次启动成对回滚；两个硬件 counter 均不推进 | HW |
+| OTA-P06 | NonSecure `image_ok=0x01` 后、Secure flag 写入前断电 | 相同发布身份的半确认被派生 loader 识别为 `NONE/REVERT`，验证旧 secondary 后强制双回滚；两个硬件 counter 均不推进 | HW |
+| OTA-P07 | 双回滚已完成一侧、另一侧尚未完成时多点断电 | primary 身份不同被识别为回滚续做，只完成剩余一侧；最终为完整旧配对，混合配对从不进入应用 | HW |
+| OTA-P08 | 两侧 `image_ok=0x01` 后，在两个硬件 counter 依次更新及其复位边界断电 | 不回滚已确认新配对；每次复位仍先验证双 flag/header，安全地续做尚未推进的一侧 counter | HW |
+| OTA-P09 | 用受控测试密钥构造签名均有效但 version 或 protected counter 不同的 S/NS 目标，并覆盖剩余 secondary 不可读/损坏路径 | post-dependency 目标门或最终 primary 完整身份门以 `BOOT_EBADIMAGE` 停止；任何混合 primary 均不跳转应用 | HW-FI |
+| OTA-P10 | 注入 `BOOT_FLAG_BAD`、无效 header 和非 `0xFF/0x01` flag | 确认、counter 与应用启动均 fail closed，不把异常值解释为已确认 | HW-FI |
+| OTA-P11 | 分别强制 `HAL_FLASH_Lock_S()`、`HAL_FLASH_Lock_NS()` 失败 | 在返回 NonSecure 应用前立即执行系统复位；复位后 controller 为锁定态，OEMiROT 按实际双/半确认状态处理 | HW-FI |
+| OTA-P12 | 对已确认镜像制造持续 PHY/REFCLKO 故障，再恢复或受控复位 | 安全主循环持续运行、输出保持安全且网口保持 down，不因 5 s test-swap 门禁自动回滚或复位；硬故障仅由受控 MCU 复位/整机掉电恢复 | HW |
+| OTA-P13 | 分别在 Secure 或 NonSecure PERM swap 的各恢复阶段断电，形成单侧 partial PERM | `boot_prepare_image_for_update()` 在 review/complete 和任何新恢复写入前 FIH fail closed；partial 状态不被擦除为 `NONE`，应用和 NV counter 更新均不可达 | HW-FI |
+| OTA-P14 | 构造两侧 interrupted PERM，并组合双 `image_ok=0x01`、单侧/双侧有效签名尝试绕过确认 | 无论先处理哪一侧，partial-PERM guard 都先于恢复与 counter 路径拒绝；两个 NV counter 均不改变，任何镜像组合均不跳转应用 | HW-FI |
+| OTA-P15 | 安装尚未确认的同身份 TEST pair，再破坏两个 rollback secondary，使两侧均进入 `BOOT_SWAP_TYPE_FAIL` | FIH trusted-pair 授权保持失败；在任一 `swap_set_image_ok()` 前 fail closed，两个 primary flag 保持原未确认值，两个 NV counter 不变且应用不启动 | HW-FI |
+| OTA-P16 | 以已双确认、当次双侧完整验签且身份一致的 primary pair，注入单侧及双侧坏 staging/FAIL | 只有该 trusted pair 允许幂等 FAIL 清理；flag 保持 `0x01`、发布身份和 NV counter 不被伪造或意外改变，最终仍只启动同一 trusted pair | HW-FI |
+
+OTA-P01 必须在待转换板或 CLOSED 后唯一发布形成独立实测记录；第 10 节历史
+OTA PASS 不能替代第 11.2 节的 1.0.15 转换基线或第 11.3 节的 1.0.16
+CLOSED Ethernet OTA。第 11.1 节的 1.0.14 三次无探针
+冷启动保留为历史证据，不能冒充当前发布。OTA-P02..P16 的发布/型式鉴定记录
+必须精确绑定固件包 SHA-256、S/NS version/counter、update sequence、loader 源码和
+硬件版本；相关断电记录还应包含注入时刻、掉电保持时间、重启后的
+swap/flag/counter、零输出和网络状态。已批准且绑定相同发布基线的型式试验证据可供
+该批量产板 CLOSED 评审引用，不在每块生产板上重做破坏性注入。
+
+不得刷写已撤销的 1.0.13，也不得为了补测而复用已经接受的 1.0.14、1.0.15
+或 1.0.16
+identity；尚未
+完成的 OTA-P02..P16 必须在下一唯一发布身份或专用测试发布上执行，并明确记录为
+PENDING，不能写成 PASS。OTA-P15/P16 会故意破坏 rollback/staging，只能使用具备
+完整恢复包的 OPEN 专用样件或可替换 Flash 夹具执行，不得在生产 ECU、唯一验收板
+或 CLOSED 样件上试验。
+
+## 9. 2026-08-27 功能实测记录（历史）
 
 测试对象为 STM32H563（Device ID `0x484`），ST-Link 序列号
 `066BFF565456857187210935`，调试固件从本工作区构建并烧录。结果如下：
@@ -205,27 +294,99 @@ NVM-04/05 会反复擦写或故意断电，只能在开发样件和受控供电�
 本记录没有把诊断 relay mask 当作触点电气验证。10 s 真实掉电后的参数保持已经
 通过；连接阀线圈并串联电流表完成电流闭环标定后，才能关闭剩余的阀带载验收。
 
-## 9. 2026-08-29 安全启动与 OTA 实测记录
+## 10. 2026-08-29 安全启动与 OTA 实测记录（历史）
 
-同一开发样件已安装去除临时启动 trace 的优化 `ReleaseOpen` OEMiROT；当前仍为
-OPEN 产品状态，JP1 断开。最终运行版本为 `1.0.4`，security counter=4，
-update sequence=4。
+下表记录同一开发样件执行 Full Regression 之前的状态：当时已安装去除临时启动
+trace 的 `ReleaseClosed` OEMiROT，JP1 断开，产品状态为 CLOSED (`0x72`)；最终
+运行版本为 `1.0.9`，security counter=9，update sequence=9。它不是当前生命周期
+状态，也不是第 8 节新增成对策略的 HW/HW-FI 验收证据。
 
 | 项目 | 实测结果 | 结论 |
 |---|---|---|
 | ATECC608C | serial=`0123d47eb2ee0e9bee`，revision=`00006005`，config CRC32C=`0xEBB326F3`，Config/Data/slot 2 locked，P-256 随机挑战通过 | PASS |
-| MCU 配对 | UID=`003800613434511232383537`，pairing generation=1；OEMiROT handoff 带反码和 CRC32C | PASS |
-| 主机测试/审计 | 9 项协议测试、完整配置审计、`git diff --check` 通过 | PASS |
-| 完整 Ethernet OTA | 成对 Secure 192 KiB + NonSecure 320 KiB 下载、签名/哈希验证、test swap、应用确认成功 | PASS |
-| 中断恢复 | 传输 65536 B 后中断且未 FINISH，断电后旧 primary 正常启动、不误 swap | PASS |
+| MCU 配对 | OPEN 阶段 Programmer 物理 UID=`003800613434511232383537`；OEMiROT 使用固定且已复核的 RSS IDCODE/SFSP manifest，handoff 带反码和 CRC32C，不依赖不可用的实时 DBGMCU 读取；HUK 封装 OBKeys、ATECC 不可导出私钥及 CLOSED/HDP 配对记录构成防移植根，pairing generation=1 | PASS |
+| 主机测试/审计 | 9 项协议测试、完整配置审计、CubeMX 6.18 `.ioc` 加载校验、`git diff --check`、签名应用和 ReleaseClosed 构建通过 | PASS |
+| CLOSED Ethernet OTA | `1.0.8`→`1.0.9` 成对 Secure 192 KiB + NonSecure 320 KiB 下载、FINISH、签名/哈希验证、test swap、应用确认成功；全程未使用 ST-Link | PASS |
+| 中断/提交边界 | 65536 B 中断的无效 incomplete image 不启动；完整 signed secondary 自带 trailer magic，未 FINISH 后复位仍可能被 OEMiROT 评估，因此生产流程强制 FINISH 并核对 journal | PASS（边界已修正文档） |
 | 传输签名 | 篡改包拒绝，result=-16 | PASS |
-| 防重放 | 已接受 sequence=4 后再次发送同包，BEGIN 拒绝，result=-19 | PASS |
+| 防重放 | 已接受 sequence 后再次发送同包，BEGIN 拒绝，result=-19；schema-2 journal 最终 quadword 带反码及 generation/sequence 副本 | PASS |
 | OEMiROT 防回滚 | 较低 security counter 的签名包可完成传输但不替换已确认 primary | PASS |
-| 最终复位状态 | ota_result=0、state=IDLE、accepted_sequence=4；ATECC auth=0；relay mask=0、两路 duty=0、调参未启用、遥测发送计数=0 | PASS |
-| 最终 Ethernet | 100 包、0% 丢包，RTT min/avg/max=`0.071/0.113/0.247 ms` | PASS |
-| ST-Link 防导出 | 当前产品状态仍为 OPEN，应用 Flash 仍可通过调试口读取 | **PENDING：CLOSED gate** |
+| Flash 写后校验 | 定位并修复 STM32H5 ICACHE 对刚擦写 journal 返回旧值；OTA、身份、阀参数存储均在回读前失效 cache | PASS |
+| 最终冷启动状态 | ota_result=0、state=IDLE、accepted_sequence=9；ATECC auth=0；relay mask=0、两路 duty=0、调参未启用、遥测发送计数=0 | PASS |
+| 最终 Ethernet | 冷启动 10 包 0% 丢包，RTT min/avg/max=`0.078/0.140/0.186 ms`；100 包门禁=`0.058/0.129/0.185 ms` | PASS |
+| DA 售后调试 | 三证书链+leaf 私钥成功临时打开 HDPL3 S/NS；Secure/NonSecure primary 可读；close-debug 成功 | PASS |
+| Full Regression 能力 | DA permission `0x4040` 含 bit14；工具要求 `--accept-full-device-erase`，未在本样件执行以免擦除全部 Flash/OBKeys | PASS（非破坏性验证） |
+| ST-Link 防导出 | close-debug 后普通 Hotplug AP1 连接和 `0x0C030400` 读取均被拒绝 | PASS |
 
-固件包 `artifacts/firmware/1.0.4/roller-ecu-1.0.4.recu` 的 SHA-256 为
-`405bc9eca5c87439ad2a7ac4ddf24cc7b6d34e94824797eb58fb136fbe8c4c4d`。
-量产 CLOSED 转换前必须再次复跑本节、确认 ReleaseClosed 引导镜像已安装，并由
-密钥负责人明确确认离线 PKI 备份可恢复。
+固件包 `artifacts/firmware/1.0.9/roller-ecu-1.0.9.recu` 的 SHA-256 为
+`c2c18673e6d370462bb64abc5dcdd3f8443813205ca5ef050a9af7bf4cbd335e`。离线 PKI
+双备份已由密钥负责人确认；本记录不包含破坏性的 Full Regression 实跑。
+
+## 11. 2026-08-30 OPEN→CLOSED 样件回归记录
+
+本节只记录已取得的实测证据。当前产品状态为 CLOSED (`0x72`)，
+运行 1.0.16/counter16/`accepted_sequence=16`，JP1 断开。1.0.15 的不可变
+CLOSED 转换、普通未认证读取拒绝与 DA 售后边界继续作为转换/恢复基线；
+1.0.16 的发布后 DA 回读、关闭调试和最终无探针冷启动也已独立完成。
+
+### 11.1 1.0.14 OPEN loader 替换与无探针冷启动历史证据
+
+| 项目 | 2026-08-30 实测结果 | 结论 |
+|---|---|---|
+| OPEN loader 替换 | 不可变事务 `stm32h563-066BFF565456857187210935-20260830T050808Z-open-loader-replacement` 达到 `replacement_complete_stlink_cold_start_embargo_active`；ReleaseOpen 52276 bytes、SHA-256=`5fdaaa3f5e2d2a6c01ed527282ba08b3d8d5e579c61ec3c4e097cdf2c0fd7761`，写后逐字节回读一致并恢复 WRP/HDP | PASS |
+| Ethernet OTA 1.0.14 | 使用事务内固定包 SHA-256=`a052f51a7ef14bbbec57f412950edad7f44f92a2323227d74c606d8dd866324d` 完成成对 TEST swap；最终 `state=IDLE`、`result=0`、`ota_result=0`、`accepted_sequence=14` | PASS |
+| primary 密码学审计 | Secure/NonSecure 分别用各自 OEMiROT 公钥验签；完整 identity 均为 `1.0.14+0`/counter14，trailer magic 合法且 `image_ok=0x01/0x01` | PASS |
+| V2 无负载回归 | 在明确两路阀线圈未接入的模式下 29/29 项通过；继电器逻辑、200 mA 目标斜坡、PWM 互斥、安全换向、仲裁和超时释放通过，结束后 IDLE/relay mask=0/duty=0 | PASS（真实阀电流跟踪 SKIP） |
+| 替换前基线延迟 | 100 包 0% 丢包，RTT min/avg/max/mdev=`0.059/0.116/0.190/0.025 ms` | PASS |
+| OTA 后空闲延迟 | 100 包 0% 丢包，RTT min/avg/max/mdev=`0.057/0.128/0.183/0.033 ms` | PASS |
+| 29 项动作后空闲延迟 | 100 包 0% 丢包，RTT min/avg/max/mdev=`0.057/0.133/0.186/0.034 ms` | PASS |
+| PI 调参遥测延迟 | 仅在调参会话中启动 1 kHz 遥测时，100 包 0% 丢包，RTT min/avg/max/mdev=`0.063/0.129/0.185/0.030 ms`；退出后 telemetry frames=406、dropped samples=0，遥测已停止 | PASS |
+| 无探针冷启动 | 连续三次保持 JP1 断开、完整移除 ST-Link，并在 ECU 断电至少 10 s 后仅 ECU 上电；每次均通过 fresh MCU/ATECC 身份、`accepted_sequence=14`、OTA IDLE/result=0、双确认和零输出门禁 | PASS |
+| 冷启动周期 1 延迟 | 100 包 0% 丢包，RTT min/avg/max/mdev=`0.051/0.118/0.192/0.036 ms` | PASS |
+| 冷启动周期 2 延迟 | 100 包 0% 丢包，RTT min/avg/max/mdev=`0.063/0.123/0.247/0.040 ms` | PASS |
+| 冷启动周期 3 延迟 | 100 包 0% 丢包，RTT min/avg/max/mdev=`0.064/0.143/0.194/0.028 ms` | PASS |
+
+以上 1.0.14 结果保持原始版本、counter、sequence 和 RTT，不回填为当前发布。
+
+### 11.2 1.0.15 CLOSED 转换与恢复基线
+
+| 项目 | 2026-08-30 实测结果 | 结论 |
+|---|---|---|
+| Ethernet OTA 1.0.15 | package SHA-256=`9980acbf248f242c77c7044f48d627ca862d6714221f5835c0a21b7a24bf9e54`；成对 TEST swap 和确认完成，最终 `state=IDLE/result=0/ota_result=0/accepted_sequence=15` | PASS |
+| installed primary fresh audit | Secure/NonSecure 均为 `1.0.15+0`/counter15，精确匹配 reviewed header、TLV、解密后 plaintext payload 与两次 swap trailer，`image_ok=0x01/0x01` | PASS |
+| ATECC MCU-only hostile reset | 每轮依次执行 option-byte display/reset、under-reset UID read、final reset，ATECC 全程不断电；20/20 周期均通过 fresh 配对认证、accepted15、零输出和 Ethernet，证据为 `artifacts/hardware-regression/20260830T061938Z-atecc-reset-recovery/` | PASS |
+| ATECC 有界恢复策略 | 启动无条件执行 `START + 9 clocks + START + STOP`，再执行 word-address reset/sleep；以 25 ms 步长、最长 725 ms 重试并服务约 2 s IWDG，超时保持 quarantine | PASS |
+| Pairing A/B repair | A=`0x080E0000` 原 committed record 保持不变；B=`0x080E2000` 从全擦除修复为同一 generation-1 record，写后逐字节回读；A/B 字节一致，16 KiB SHA-256=`45f1f08b626f3934f2359e4d44b1993c9333c5275f62870d74a77caeb6c9f310` | PASS |
+| CLOSED dual pairing gate | 事务 `artifacts/device-backups/stm32h563-066BFF565456857187210935-20260830T063129Z-closed-transition/`，UUID=`0f3537fe-c04d-4298-ba50-995773e07a6a`；finalizer 从 fresh full Flash 与独立 persistent readback 得到同一 16 KiB store，dual verifier 校验 A/B 后先持久化 `pairing_store_dual_verified`，再进入 `pre_mutation_evidence_verified` 和首次写操作；最终 phase=`product_state_closed_verified` | PASS |
+| V2 基线无负载回归 | 1.0.15 上 29/29 通过，结束后 IDLE/relay mask=0/duty=0 | PASS（真实阀线圈 SKIP） |
+| PI telemetry gating | frames=`0 → 175 → 175`，只在调参 session 内增长，退出后保持 175；dropped samples=0 | PASS |
+| PI 调参网络延迟 | 调参开启时 100 包 0% 丢包，RTT min/avg/max=`0.059/0.114/0.290 ms` | PASS |
+| 退出调参后空闲延迟 | 100 包 0% 丢包，RTT min/avg/max=`0.059/0.127/0.185 ms` | PASS |
+| Full Regression recovery | `artifacts/device-backups/stm32h563-066BFF565456857187210935-20260830T064244Z-final-1.0.15/`，schema v4，exact 1.0.15，绑定同一 CLOSED UUID、dual pairing evidence 和发布输入，离线验证通过；manifest 的 `0xED OPEN` 为转换前 capture，当前 target 为 `0x72 CLOSED` | PASS |
+| 1.0.15 基线 DA 售后调试 | DA OBK 权限为 `0x4040`；discovery 为 `ST_LIFECYCLE_CLOSED`、integrity VALID；permission `c` 认证后 Secure primary 196608 B 和 NonSecure primary 327680 B 分段回读均与 CLOSED 事务一致，证据为 `artifacts/hardware-regression/20260830T064437Z-closed-da-service/` | PASS |
+| 1.0.15 基线 ST-Link 防未授权导出 | 认证前 `0x0C030400`/256 B 普通读取被拒绝；`close-debug` 成功后再次读取仍被拒绝 | PASS |
+| CLOSED 转换基线 | ReleaseClosed + confirmed 1.0.15；`PRODUCT_STATE=0x72`；Full Regression 权限可发现但本轮未再次执行 | PASS |
+
+### 11.3 1.0.16 CLOSED Ethernet OTA、DA 与冷启动
+
+| 项目 | 2026-08-30 实测结果 | 结论 |
+|---|---|---|
+| 唯一发布 | version 1.0.16/counter16/update-sequence16，package SHA-256=`3e5ab07c7b6127dcedb46a1b4b1a695740904dd940d7128631f714d959a0b623` | PASS；身份已消耗 |
+| CLOSED Ethernet OTA | 传输、reset、成对 TEST swap 和确认完成；`state=IDLE/result=0/ota_result=0/accepted_sequence=16`，全部 session 字段为 0 | PASS |
+| post-OTA runtime | MCU/ATECC/pairing 验证通过，无 quarantine，relay/PWM 零输出，调参关闭 | PASS |
+| V2 无负载回归 | OTA 前 29/29、OTA 后 29/29；两路阀线圈未接 | PASS（真实电流跟踪 SKIP） |
+| PI telemetry gating | inactive=0，active 增长到 681、dropped=0，close 后保持 681 | PASS |
+| PI 调参网络 | active 时 100 包 0% 丢包，RTT min/avg/max=`0.064/0.138/0.340 ms`；idle 后=`0.055/0.104/0.148 ms` | PASS |
+| 升级后仅 ECU 冷启动 | 移除 ST-Link，ECU 断电至少 10 s 后仅 ECU 上电；runtime 安全检查 PASS；100 包 0% 丢包，RTT min/avg/max=`0.067/0.116/0.328 ms` | PASS |
+| 1.0.16 DA 默认拒绝与认证 | 证据目录=`artifacts/hardware-regression/20260830T073110Z-closed-ota-1.0.16-da-service/`，`evidence.json` SHA-256=`1478a4ac2c8748e585a86756f16a7fe6384a80f3b633196b023e23667347ca6e`；认证前普通读取 rc=1/拒绝；严格 discovery 为 target `0x484`、SDA `2.4.0`、`ST_LIFECYCLE_CLOSED`、integrity VALID；permission `c` 认证 PASS | PASS |
+| 1.0.16 primary 精确回读 | Secure `0x0C030000/0x30000`、NonSecure `0x08100000/0x50000`（分段）完成；`tools/verify_closed_ota_readback.py` 验证 `1.0.16+0`/counter16、`image_ok=0x01/0x01`；canonical swap size：S=`0x2DDE8`，NS=`max(1.0.15 0x8D39, 1.0.16 0x8D38)=0x8D39`；`primary-readback-audit.json` SHA-256=`034c7d99996eed055346e315c3109ba355044051f53a679771b15db79ffbc4b8` | PASS |
+| 1.0.16 close-debug | `close-debug` PASS；严格 CLOSED/VALID 复核 PASS；关闭后普通未认证读取再次 rc=1/拒绝；本轮未执行 Full Regression | PASS |
+| DA 后最终无探针冷启动 | 完整移除 ST-Link，ECU 断电至少 10 s 后仅 ECU 上电；MCU/ATECC/pairing、no-quarantine、relay/PWM 全零、`tuning_active=false`、telemetry=0，OTA `state=IDLE/result=0/ota_result=0/accepted_sequence=16`；100 包 0% 丢包，RTT min/avg/max=`0.060/0.116/0.331 ms` | PASS |
+
+以下项目仍为 PENDING，不得继承历史记录或把软件 mask 当作硬件 PASS：
+
+- 阀体到货后的真实前进/后退电流闭环、PI 标定、开路/短路/过流和换向故障注入；
+- K1..K27 实际触点、车辆负载、急停/驻车/启动/高低转速/龟兔档失电恢复；
+- CAN1/J1939 车辆报文、速度输入和油温/油压/水位等传感器实信号；
+- 电源瞬态、IWDG/CSS、PHY 故障、EMC、环境、热和耐久型式试验；
+- 第 8.2 节 OTA-P02..P16 专用可恢复样件发布/型式鉴定。

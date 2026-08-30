@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include "eth.h"
+#include "ethernet_phy_policy.h"
 #include "lan8742.h"
 #include "lwip/memp.h"
 #include "lwip/pbuf.h"
@@ -16,6 +17,7 @@
 #define ECU_ETH_IFNAME1                  '0'
 #define ECU_ETH_RX_BUFFER_SIZE           1536U
 #define ECU_ETH_RX_BUFFER_COUNT          12U
+#define ECU_ETH_PHY_READ_ERROR_LIMIT        3U
 
 extern ETH_TxPacketConfigTypeDef TxConfig;
 
@@ -36,12 +38,18 @@ LWIP_MEMPOOL_DECLARE(ECU_RX_POOL, ECU_ETH_RX_BUFFER_COUNT,
 
 static RxAllocStatus rx_alloc_status;
 static lan8742_Object_t phy;
+static EthernetPhyHealth phy_health;
+static uint8_t phy_bus_registered;
+static uint8_t phy_initialized_once;
+static uint8_t phy_read_error_streak;
 
 static int32_t PhyIoInit(void);
 static int32_t PhyIoDeInit(void);
 static int32_t PhyIoWrite(uint32_t device, uint32_t reg, uint32_t value);
 static int32_t PhyIoRead(uint32_t device, uint32_t reg, uint32_t *value);
 static int32_t PhyIoGetTick(void);
+static bool EthernetPhyTryInitialize(void);
+static void EthernetLinkSetDown(struct netif *netif);
 
 static lan8742_IOCtx_t phy_io = {
   PhyIoInit, PhyIoDeInit, PhyIoWrite, PhyIoRead, PhyIoGetTick
@@ -60,7 +68,10 @@ static err_t LowLevelOutput(struct netif *netif, struct pbuf *p)
   uint32_t count = 0U;
   HAL_StatusTypeDef status;
 
-  (void)netif;
+  if (!netif_is_up(netif) || !netif_is_link_up(netif))
+  {
+    return ERR_IF;
+  }
   for (part = p; part != NULL; part = part->next)
   {
     if (count >= ETH_TX_DESC_CNT)
@@ -144,14 +155,23 @@ err_t ethernetif_init(struct netif *netif)
 
   LWIP_MEMPOOL_INIT(ECU_RX_POOL);
   rx_alloc_status = RX_ALLOC_OK;
+  memset(&phy, 0, sizeof(phy));
+  memset(&phy_health, 0, sizeof(phy_health));
+  phy_bus_registered = 0U;
+  phy_initialized_once = 0U;
+  phy_read_error_streak = 0U;
   if (LAN8742_RegisterBusIO(&phy, &phy_io) != LAN8742_STATUS_OK)
   {
     return ERR_IF;
   }
-  if (LAN8742_Init(&phy) != LAN8742_STATUS_OK)
+  phy_bus_registered = 1U;
+  if (!EthernetPhyTryInitialize())
   {
+    /* PHY discovery is recoverable.  Keep the safety application and LwIP
+       interface alive; the 250 ms link poll retries the fixed-address probe. */
     netif_set_link_down(netif);
-    return ERR_IF;
+    netif_set_down(netif);
+    return ERR_OK;
   }
   ethernet_link_check_state(netif);
   return ERR_OK;
@@ -160,19 +180,49 @@ err_t ethernetif_init(struct netif *netif)
 void ethernet_link_check_state(struct netif *netif)
 {
   ETH_MACConfigTypeDef config = {0};
-  int32_t state = LAN8742_GetLinkState(&phy);
+  int32_t state;
   uint32_t speed = 0U;
   uint32_t duplex = 0U;
 
-  if (netif_is_link_up(netif) && (state <= LAN8742_STATUS_LINK_DOWN))
+  if ((phy.Is_Initialized == 0U) && !EthernetPhyTryInitialize())
   {
-    (void)HAL_ETH_Stop(&heth);
-    netif_set_link_down(netif);
-    netif_set_down(netif);
+    EthernetLinkSetDown(netif);
     return;
   }
-  if (netif_is_link_up(netif) || (state <= LAN8742_STATUS_LINK_DOWN))
+
+  state = LAN8742_GetLinkState(&phy);
+  if (state < LAN8742_STATUS_OK)
   {
+    ++phy_health.management_read_errors;
+    phy_health.ready = 0U;
+    if (phy_read_error_streak < UINT8_MAX)
+    {
+      ++phy_read_error_streak;
+    }
+    EthernetLinkSetDown(netif);
+    if (phy_read_error_streak >= ECU_ETH_PHY_READ_ERROR_LIMIT)
+    {
+      (void)LAN8742_DeInit(&phy);
+      phy_health.ready = 0U;
+      phy_read_error_streak = 0U;
+    }
+    return;
+  }
+  phy_read_error_streak = 0U;
+  phy_health.ready = 0U;
+
+  if ((state == LAN8742_STATUS_LINK_DOWN) ||
+      (state == LAN8742_STATUS_AUTONEGO_NOTDONE))
+  {
+    /* A valid down/not-yet-negotiated status proves the management path even
+       without a cable, so it is sufficient for the OTA startup gate. */
+    phy_health.ready = 1U;
+    EthernetLinkSetDown(netif);
+    return;
+  }
+  if (netif_is_link_up(netif))
+  {
+    phy_health.ready = 1U;
     return;
   }
 
@@ -193,11 +243,30 @@ void ethernet_link_check_state(struct netif *netif)
   (void)HAL_ETH_GetMACConfig(&heth, &config);
   config.Speed = speed;
   config.DuplexMode = duplex;
-  if ((HAL_ETH_SetMACConfig(&heth, &config) == HAL_OK) &&
-      (HAL_ETH_Start(&heth) == HAL_OK))
+  if (HAL_ETH_SetMACConfig(&heth, &config) != HAL_OK)
+  {
+    ++phy_health.mac_state_errors;
+    return;
+  }
+  if (HAL_ETH_Start(&heth) == HAL_OK)
   {
     netif_set_up(netif);
     netif_set_link_up(netif);
+    /* With an attached cable, require the MAC data path to start before a
+       test-swap image can be confirmed. */
+    phy_health.ready = 1U;
+  }
+  else
+  {
+    ++phy_health.mac_state_errors;
+  }
+}
+
+void ethernetif_get_phy_health(EthernetPhyHealth *health)
+{
+  if (health != NULL)
+  {
+    *health = phy_health;
   }
 }
 
@@ -276,10 +345,74 @@ static int32_t PhyIoWrite(uint32_t device, uint32_t reg, uint32_t value)
 
 static int32_t PhyIoRead(uint32_t device, uint32_t reg, uint32_t *value)
 {
-  return (HAL_ETH_ReadPHYRegister(&heth, device, reg, value) == HAL_OK) ? 0 : -1;
+  if ((HAL_ETH_ReadPHYRegister(&heth, device, reg, value) != HAL_OK) ||
+      ((*value & 0xFFFFU) == 0xFFFFU))
+  {
+    /* STM32 MDIO can report HAL_OK with all ones when no PHY responds.  No
+       LAN8742 register consumed by this driver has 0xFFFF as a valid value. */
+    return -1;
+  }
+  *value &= 0xFFFFU;
+  return 0;
 }
 
 static int32_t PhyIoGetTick(void)
 {
   return (int32_t)HAL_GetTick();
+}
+
+static bool EthernetPhyTryInitialize(void)
+{
+  uint32_t identifier1 = 0U;
+  uint32_t identifier2 = 0U;
+
+  if ((phy_bus_registered == 0U) ||
+      (PhyIoRead(ECU_ETH_PHY_ADDRESS, LAN8742_PHYI1R, &identifier1) < 0) ||
+      (PhyIoRead(ECU_ETH_PHY_ADDRESS, LAN8742_PHYI2R, &identifier2) < 0) ||
+      !EthernetPhy_IdentityIsValid(identifier1, identifier2))
+  {
+    ++phy_health.initialization_failures;
+    phy_health.ready = 0U;
+    return false;
+  }
+
+  phy.Is_Initialized = 0U;
+  if ((LAN8742_Init(&phy) != LAN8742_STATUS_OK) ||
+      (phy.DevAddr != ECU_ETH_PHY_ADDRESS))
+  {
+    phy.Is_Initialized = 0U;
+    ++phy_health.initialization_failures;
+    phy_health.ready = 0U;
+    return false;
+  }
+
+  if (phy_initialized_once != 0U)
+  {
+    ++phy_health.recoveries;
+  }
+  phy_initialized_once = 1U;
+  phy_read_error_streak = 0U;
+  /* ethernet_link_check_state() promotes this only after a complete BSR/BCR
+     management read succeeds. */
+  phy_health.ready = 0U;
+  return true;
+}
+
+static void EthernetLinkSetDown(struct netif *netif)
+{
+  if (HAL_ETH_GetState(&heth) == HAL_ETH_STATE_STARTED)
+  {
+    if (HAL_ETH_Stop(&heth) != HAL_OK)
+    {
+      ++phy_health.mac_state_errors;
+    }
+  }
+  if (netif_is_link_up(netif))
+  {
+    netif_set_link_down(netif);
+  }
+  if (netif_is_up(netif))
+  {
+    netif_set_down(netif);
+  }
 }

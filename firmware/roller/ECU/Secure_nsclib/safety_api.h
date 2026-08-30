@@ -53,7 +53,10 @@ enum
   SAFETY_STATUS_ATECC_AUTH_FAILED  = (1UL << 21),
   SAFETY_STATUS_ATECC_AUTHENTICATED = (1UL << 22),
   SAFETY_STATUS_OTA_ACTIVE         = (1UL << 23),
-  SAFETY_STATUS_OTA_READY          = (1UL << 24)
+  SAFETY_STATUS_OTA_READY          = (1UL << 24),
+  /* Positive indication of a test-swap state. Older Secure firmware leaves
+     this reserved bit clear, which is intentionally backward-compatible. */
+  SAFETY_STATUS_OTA_UNCONFIRMED    = (1UL << 25)
 };
 
 enum

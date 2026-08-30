@@ -6,3 +6,4 @@ __pycache__/
 /artifacts/device-backups/
 /artifacts/firmware/
 /artifacts/security-provisioning/
+/artifacts/hardware-regression/

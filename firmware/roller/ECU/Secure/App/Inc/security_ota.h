@@ -13,6 +13,7 @@ int32_t SecurityOta_Write(const SAFETY_OtaChunk *chunk,
                           SAFETY_OtaStatus *status);
 int32_t SecurityOta_Finish(uint32_t update_sequence,
                            SAFETY_OtaStatus *status);
+int32_t SecurityOta_RunningImagesConfirmed(uint32_t *confirmed);
 int32_t SecurityOta_ConfirmRunningImages(void);
 
 #endif /* SECURITY_OTA_H */

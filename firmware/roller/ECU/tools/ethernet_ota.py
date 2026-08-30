@@ -39,6 +39,33 @@ class IntentionalInterruption(RuntimeError):
     """Bench acceptance stopped before FINISH; the ECU must not swap."""
 
 
+def validate_package_metadata(fields: tuple, metadata: object) -> None:
+    """Require the human-readable metadata to mirror the signed manifest."""
+    major, minor, revision, build = fields[4:8]
+    version = f"{major}.{minor}.{revision}"
+    if build:
+        version += f"+{build}"
+    expected = {
+        "format": "roller-ecu-ota-v1",
+        "version": version,
+        "security_counter": fields[8],
+        "update_sequence": fields[3],
+        "layout_version": fields[2],
+        "secure_sha256": fields[12].hex(),
+        "nonsecure_sha256": fields[13].hex(),
+        "secure_size": fields[10],
+        "nonsecure_size": fields[11],
+    }
+    if not isinstance(metadata, dict) or set(metadata) != set(expected):
+        raise ValueError("OTA metadata does not match the signed manifest schema")
+    for name, expected_value in expected.items():
+        actual_value = metadata[name]
+        if type(actual_value) is not type(expected_value) or actual_value != expected_value:
+            raise ValueError(
+                f"OTA metadata field {name!r} does not match the signed manifest"
+            )
+
+
 def crc32c(data: bytes) -> int:
     crc = 0xFFFFFFFF
     for byte in data:
@@ -157,6 +184,7 @@ def load_package(path: Path, public_key_path: Path) -> tuple[bytes, bytes, bytes
                           ec.ECDSA(hashes.SHA256()))
     except InvalidSignature as error:
         raise ValueError("OTA transport signature is invalid") from error
+    validate_package_metadata(fields, metadata)
     return manifest + signature, secure, nonsecure, metadata
 
 

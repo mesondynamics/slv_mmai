@@ -233,6 +233,9 @@ def main() -> int:
     manifest = {
         "policy": ("CLOSED with certificate-authenticated HDPL3 S/NS debug "
                    "and destructive full regression"),
+        "obk_package_scope": ("reproducible TPC provisioning input; not an "
+                              "extracted hardware secure-storage section"),
+        "obk_package_device_bound": False,
         "debug_reopening": True,
         "debug_scope": "HDPL3 secure and nonsecure",
         "full_regression": True,

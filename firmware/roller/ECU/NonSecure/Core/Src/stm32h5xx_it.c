@@ -64,16 +64,6 @@ extern TIM_HandleTypeDef htim2;
 /******************************************************************************/
 /*           Cortex Processor Interruption and Exception Handlers          */
 /******************************************************************************/
-void NMI_Handler(void)
-{
-  while (1) { }
-}
-
-void HardFault_Handler(void)
-{
-  while (1) { }
-}
-
 /**
   * @brief This function handles Memory management fault.
   */
@@ -87,11 +77,6 @@ void MemManage_Handler(void)
     /* USER CODE BEGIN W1_MemoryManagement_IRQn 0 */
     /* USER CODE END W1_MemoryManagement_IRQn 0 */
   }
-}
-
-void BusFault_Handler(void)
-{
-  while (1) { }
 }
 
 /**
@@ -185,5 +170,31 @@ void TIM2_IRQHandler(void)
 }
 
 /* USER CODE BEGIN 1 */
+
+/* CubeMX does not generate these three handlers for the NonSecure image when
+ * the corresponding configurable NVIC rows are absent.  Keep strong handlers
+ * in a USER CODE section so a future regeneration cannot restore the startup
+ * file's generic Default_Handler aliases.  The Secure watchdog and output
+ * command timeout provide the fail-safe transition if NonSecure faults. */
+void NMI_Handler(void)
+{
+  while (1)
+  {
+  }
+}
+
+void HardFault_Handler(void)
+{
+  while (1)
+  {
+  }
+}
+
+void BusFault_Handler(void)
+{
+  while (1)
+  {
+  }
+}
 
 /* USER CODE END 1 */

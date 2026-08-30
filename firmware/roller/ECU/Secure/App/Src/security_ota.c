@@ -8,12 +8,16 @@
 #include "ecu_ota_transport_public_key.h"
 #include "iwdg.h"
 #include "main.h"
+#include "secure_flash_guard.h"
 #include "security_crypto.h"
+#include "security_ota_policy.h"
 #include "security_sha256.h"
 #include "stm32h5xx_hal.h"
 
 #define OTA_RECORD_MAGIC             0x5241544FUL /* "OTAR" */
 #define OTA_RECORD_COMMIT            0x54494D43UL /* "CMIT" */
+#define OTA_RECORD_SCHEMA_LEGACY      1UL
+#define OTA_RECORD_SCHEMA_CURRENT     2UL
 #define OTA_RECORD_ADDRESS_A \
   (ECU_FLASH_BASE_S + ECU_OTA_JOURNAL_OFFSET)
 #define OTA_RECORD_ADDRESS_B \
@@ -50,7 +54,9 @@ typedef struct __attribute__((aligned(16)))
   uint32_t crc32c;
   uint8_t reserved[8];
   uint32_t commit;
-  uint8_t commit_padding[12];
+  uint32_t commit_inverse;
+  uint32_t generation_copy;
+  uint32_t accepted_sequence_copy;
 } SecurityOta_Record;
 
 _Static_assert(sizeof(SAFETY_OtaManifest) == 128U,
@@ -104,12 +110,21 @@ static bool SecurityOta_SequenceNewer(uint32_t candidate,
 
 static bool SecurityOta_RecordValid(const SecurityOta_Record *record)
 {
-  return (record->magic == OTA_RECORD_MAGIC) &&
-         (record->schema == SAFETY_OTA_MANIFEST_SCHEMA) &&
-         (record->record_size == sizeof(*record)) &&
-         (record->commit == OTA_RECORD_COMMIT) &&
-         (record->crc32c == SecurityOta_Crc32c(
-             record, offsetof(SecurityOta_Record, crc32c)));
+  bool common_valid = (record->magic == OTA_RECORD_MAGIC) &&
+      (record->record_size == sizeof(*record)) &&
+      (record->commit == OTA_RECORD_COMMIT) &&
+      (record->crc32c == SecurityOta_Crc32c(
+          record, offsetof(SecurityOta_Record, crc32c)));
+
+  if (!common_valid) { return false; }
+  if (record->schema == OTA_RECORD_SCHEMA_LEGACY)
+  {
+    return true;
+  }
+  return (record->schema == OTA_RECORD_SCHEMA_CURRENT) &&
+      (record->commit_inverse == (uint32_t)(~OTA_RECORD_COMMIT)) &&
+      (record->generation_copy == record->generation) &&
+      (record->accepted_sequence_copy == record->accepted_sequence);
 }
 
 static const SecurityOta_Record *SecurityOta_NewestRecord(void)
@@ -139,6 +154,16 @@ static bool SecurityOta_EraseSector(uint32_t sector)
   return HAL_FLASHEx_Erase(&erase, &sector_error) == HAL_OK;
 }
 
+static bool SecurityOta_InvalidateFlashCache(void)
+{
+  if (HAL_ICACHE_IsEnabled() == 0U) { return true; }
+  __DSB();
+  if (HAL_ICACHE_Invalidate() != HAL_OK) { return false; }
+  __DSB();
+  __ISB();
+  return true;
+}
+
 static bool SecurityOta_Program(uint32_t address, const void *data,
                                 size_t size)
 {
@@ -158,6 +183,10 @@ static bool SecurityOta_Program(uint32_t address, const void *data,
       return false;
     }
   }
+  /* These addresses may have been read while selecting/erasing a journal
+     record.  STM32H5 ICACHE can otherwise return the pre-erase line and make
+     the verified two-phase commit short-circuit before its final word. */
+  if (!SecurityOta_InvalidateFlashCache()) { return false; }
   return memcmp((const void *)(uintptr_t)address, data, size) == 0;
 }
 
@@ -171,7 +200,7 @@ static bool SecurityOta_SaveAcceptedRecord(void)
 
   memset(&record, 0xFF, sizeof(record));
   record.magic = OTA_RECORD_MAGIC;
-  record.schema = SAFETY_OTA_MANIFEST_SCHEMA;
+  record.schema = OTA_RECORD_SCHEMA_CURRENT;
   record.generation = ota_record_generation + 1U;
   record.accepted_sequence = ota_manifest.update_sequence;
   memcpy(record.manifest_sha256, ota_manifest_hash,
@@ -180,6 +209,9 @@ static bool SecurityOta_SaveAcceptedRecord(void)
   record.crc32c = SecurityOta_Crc32c(
       &record, offsetof(SecurityOta_Record, crc32c));
   record.commit = OTA_RECORD_COMMIT;
+  record.commit_inverse = (uint32_t)(~OTA_RECORD_COMMIT);
+  record.generation_copy = record.generation;
+  record.accepted_sequence_copy = record.accepted_sequence;
 
   if ((newest != NULL) &&
       ((uintptr_t)newest < (uintptr_t)OTA_RECORD_ADDRESS_B))
@@ -192,7 +224,10 @@ static bool SecurityOta_SaveAcceptedRecord(void)
     address = OTA_RECORD_ADDRESS_A;
     sector = OTA_RECORD_SECTOR_A;
   }
-  if (HAL_FLASH_Unlock() != HAL_OK) { return false; }
+  /* The transport replay journal is Secure Bank 1 data.  The generic HAL
+     helper unlocks both TrustZone domains and can fail in CLOSED state when
+     the NonSecure controller is intentionally unavailable. */
+  if (HAL_FLASH_Unlock_S() != HAL_OK) { return false; }
   result = SecurityOta_EraseSector(sector) &&
            SecurityOta_Program(
                address, &record, offsetof(SecurityOta_Record, commit)) &&
@@ -201,7 +236,7 @@ static bool SecurityOta_SaveAcceptedRecord(void)
                (const uint8_t *)&record +
                    offsetof(SecurityOta_Record, commit),
                ECU_FLASH_PROGRAM_UNIT);
-  (void)HAL_FLASH_Lock();
+  SecureFlash_LockSecureOrReset();
   if (result && SecurityOta_RecordValid(
                     (const SecurityOta_Record *)(uintptr_t)address))
   {
@@ -322,12 +357,12 @@ int32_t SecurityOta_Begin(const SAFETY_OtaBeginRequest *request,
     return SAFETY_RESULT_BUSY;
   }
 
-  if (HAL_FLASH_Unlock() != HAL_OK) { erase_ok = false; }
+  if (HAL_FLASH_Unlock_S() != HAL_OK) { erase_ok = false; }
   for (index = 0U; erase_ok && (index < sector_count); ++index)
   {
     erase_ok = SecurityOta_EraseSector(first_sector + index);
   }
-  (void)HAL_FLASH_Lock();
+  SecureFlash_LockSecureOrReset();
   if (!erase_ok)
   {
     ota_status.state = SAFETY_OTA_STATE_ERROR;
@@ -405,12 +440,12 @@ int32_t SecurityOta_Write(const SAFETY_OtaChunk *chunk,
   }
   if (chunk->offset != received) { return SAFETY_RESULT_CONFLICT; }
 
-  if (HAL_FLASH_Unlock() != HAL_OK) { programmed = false; }
+  if (HAL_FLASH_Unlock_S() != HAL_OK) { programmed = false; }
   else
   {
     programmed = SecurityOta_Program(address, chunk->data,
                                      chunk->data_size);
-    (void)HAL_FLASH_Lock();
+    SecureFlash_LockSecureOrReset();
   }
   if (!programmed)
   {
@@ -507,11 +542,41 @@ static bool SecurityOta_ConfirmFlag(uint32_t address, uint32_t program_type)
   if (value[flag_offset] == 0x01U) { return true; }
   if (value[flag_offset] != 0xFFU) { return false; }
   value[flag_offset] = 0x01U;
-  return (HAL_FLASH_Program(program_type, program_address,
-                            (uint32_t)(uintptr_t)value) == HAL_OK) &&
-         (*(const uint8_t *)(uintptr_t)address == 0x01U);
+  if (HAL_FLASH_Program(program_type, program_address,
+                        (uint32_t)(uintptr_t)value) != HAL_OK)
+  {
+    return false;
+  }
+  return SecurityOta_InvalidateFlashCache() &&
+      (*(const uint8_t *)(uintptr_t)address == 0x01U);
 }
 #endif
+
+int32_t SecurityOta_RunningImagesConfirmed(uint32_t *confirmed)
+{
+  if (confirmed == NULL) { return SAFETY_RESULT_BAD_ARGUMENT; }
+#if defined(ECU_OEMIROT_LAYOUT)
+  const uint32_t secure_flag = ECU_FLASH_BASE_S +
+      ECU_SECURE_PRIMARY_OFFSET + ECU_SECURE_PRIMARY_SIZE -
+      OTA_IMAGE_OK_OFFSET_FROM_END;
+  const uint32_t nonsecure_flag = ECU_FLASH_BASE_NS +
+      ECU_NONSECURE_PRIMARY_OFFSET + ECU_NONSECURE_PRIMARY_SIZE -
+      OTA_IMAGE_OK_OFFSET_FROM_END;
+  const uint8_t secure_value =
+      *(const volatile uint8_t *)(uintptr_t)secure_flag;
+  const uint8_t nonsecure_value =
+      *(const volatile uint8_t *)(uintptr_t)nonsecure_flag;
+
+  if (!SecurityOta_EvaluateConfirmationFlags(
+          secure_value, nonsecure_value, confirmed))
+  {
+    return SAFETY_RESULT_INTEGRITY;
+  }
+#else
+  *confirmed = 1U;
+#endif
+  return SAFETY_RESULT_OK;
+}
 
 int32_t SecurityOta_ConfirmRunningImages(void)
 {
@@ -524,12 +589,29 @@ int32_t SecurityOta_ConfirmRunningImages(void)
       OTA_IMAGE_OK_OFFSET_FROM_END;
   bool result;
 
-  if (HAL_FLASH_Unlock() != HAL_OK) { return SAFETY_RESULT_STORAGE; }
-  result = SecurityOta_ConfirmFlag(secure_flag,
-                                   FLASH_TYPEPROGRAM_QUADWORD) &&
-           SecurityOta_ConfirmFlag(nonsecure_flag,
+  /* Confirm NonSecure first to retain the frozen-v1 ABI migration contract.
+     The paired OEMiROT policy treats a power-loss half-confirmation as one
+     uncommitted release and rolls both images back together. */
+  /* Acquire both Flash controllers before programming either flag. This
+     prevents an ordinary Secure-controller unlock failure from creating a
+     mixed pair; the paired loader handles a power loss during the two program
+     units without advancing either hardware rollback counter. */
+  if (HAL_FLASH_Unlock_NS() != HAL_OK) { return SAFETY_RESULT_STORAGE; }
+  if (HAL_FLASH_Unlock_S() != HAL_OK)
+  {
+    SecureFlash_LockNonSecureOrReset();
+    return SAFETY_RESULT_STORAGE;
+  }
+  result = SecurityOta_ConfirmFlag(nonsecure_flag,
                                    FLASH_TYPEPROGRAM_QUADWORD_NS);
-  (void)HAL_FLASH_Lock();
+  if (result)
+  {
+    result = SecurityOta_ConfirmFlag(secure_flag,
+                                     FLASH_TYPEPROGRAM_QUADWORD);
+  }
+  SecureFlash_LockSecureOrReset();
+  SecureFlash_LockNonSecureOrReset();
+
   return result ? SAFETY_RESULT_OK : SAFETY_RESULT_STORAGE;
 #else
   return SAFETY_RESULT_OK;

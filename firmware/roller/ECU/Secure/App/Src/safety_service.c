@@ -12,6 +12,7 @@
 #include "security_mcu_identity.h"
 #include "security_ota.h"
 #include "security_factory.h"
+#include "secure_timebase.h"
 #include "software_i2c.h"
 #include "spi.h"
 #include "tim.h"
@@ -26,6 +27,7 @@
 #define ENGINE_INTER_TRIGGER_MS      2000UL
 #define VALVE_TELEMETRY_RING_SIZE     128U
 #define VALVE_CONFIG_SAVE_INTERVAL_MS 10000UL
+#define OTA_CONFIRM_WATCHDOG_GRACE_MS  5000UL
 #define ADC_VREFINT_INDEX                7U
 
 typedef enum
@@ -72,6 +74,9 @@ static uint8_t engine_start_active;
 static uint8_t engine_start_lockout;
 static uint8_t last_engine_start_request;
 static int8_t previous_engine_speed_request;
+static uint8_t ota_running_images_confirmed;
+static uint8_t ota_confirmation_deadline_armed;
+static uint32_t ota_confirmation_deadline;
 
 static void Safety_RecordValveTelemetry(void)
 {
@@ -120,6 +125,22 @@ static void Safety_ExitCritical(uint32_t primask)
   }
 }
 
+static void Safety_SetOtaConfirmationState(uint32_t confirmed)
+{
+  uint32_t primask = Safety_EnterCritical();
+
+  ota_running_images_confirmed = (confirmed != 0U) ? 1U : 0U;
+  if (ota_running_images_confirmed != 0U)
+  {
+    safety_status &= ~SAFETY_STATUS_OTA_UNCONFIRMED;
+  }
+  else
+  {
+    safety_status |= SAFETY_STATUS_OTA_UNCONFIRMED;
+  }
+  Safety_ExitCritical(primask);
+}
+
 static bool Safety_TimeReached(uint32_t now, uint32_t deadline)
 {
   return (int32_t)(now - deadline) >= 0;
@@ -127,12 +148,17 @@ static bool Safety_TimeReached(uint32_t now, uint32_t deadline)
 
 static bool Safety_TpicWaitFlag(uint32_t flag)
 {
-  uint32_t start = DWT->CYCCNT;
-  uint32_t timeout_cycles = (SystemCoreClock / 1000000UL) * TPIC_SPI_TIMEOUT_US;
+  bool elapsed;
+  uint16_t start = SecureTimebase_NowUs16();
 
+  if (!SecureTimebase_IsRunning())
+  {
+    return false;
+  }
   while ((SPI4->SR & flag) == 0U)
   {
-    if ((uint32_t)(DWT->CYCCNT - start) >= timeout_cycles)
+    if (!SecureTimebase_HasElapsed(start, TPIC_SPI_TIMEOUT_US, &elapsed) ||
+        elapsed)
     {
       return false;
     }
@@ -140,25 +166,22 @@ static bool Safety_TpicWaitFlag(uint32_t flag)
   return true;
 }
 
-static void Safety_TpicDelayUs(uint32_t microseconds)
+static bool Safety_TpicDelayUs(uint32_t microseconds)
 {
-  uint32_t start = DWT->CYCCNT;
-  uint32_t cycles_per_us = SystemCoreClock / 1000000UL;
-  uint32_t delay_cycles;
-
-  if (cycles_per_us == 0U) { cycles_per_us = 1U; }
-  delay_cycles = cycles_per_us * microseconds;
-  while ((uint32_t)(DWT->CYCCNT - start) < delay_cycles)
-  {
-  }
+  return SecureTimebase_DelayUs(microseconds);
 }
 
-static void Safety_TpicLatch(void)
+static bool Safety_TpicLatch(void)
 {
   GPIOE->BSRR = TPIC_RCK_Pin;
-  Safety_TpicDelayUs(TPIC_LATCH_PULSE_US);
+  if (!Safety_TpicDelayUs(TPIC_LATCH_PULSE_US))
+  {
+    GPIOE->BSRR = (uint32_t)TPIC_RCK_Pin << 16U;
+    return false;
+  }
   GPIOE->BSRR = (uint32_t)TPIC_RCK_Pin << 16U;
   __DSB();
+  return true;
 }
 
 static bool Safety_TpicShift(uint32_t relay_mask)
@@ -197,8 +220,7 @@ static bool Safety_TpicShift(uint32_t relay_mask)
 
   SPI4->IFCR = SPI_IFCR_EOTC | SPI_IFCR_TXTFC;
   CLEAR_BIT(SPI4->CR1, SPI_CR1_SPE);
-  Safety_TpicLatch();
-  return true;
+  return Safety_TpicLatch();
 }
 
 static void Safety_ResetCommandState(void)
@@ -242,6 +264,24 @@ static void Safety_LatchFault(uint32_t reason)
   safety_status |= SAFETY_STATUS_FAULT_LATCHED | reason;
   Safety_ForceOutputsSafe();
   Safety_ExitCritical(primask);
+}
+
+static bool Safety_RefreshStartupWatchdog(void)
+{
+  if (HAL_IWDG_Refresh(&hiwdg) == HAL_OK)
+  {
+    return true;
+  }
+  Safety_LatchFault(SAFETY_STATUS_INTERNAL_ERROR);
+  return false;
+}
+
+static bool Safety_AteccRecoveryService(void *context)
+{
+  (void)context;
+  /* The IWDG is already running.  The driver invokes this before every short
+     recovery slice while allowing one bounded pre-reset ATECC execution. */
+  return Safety_RefreshStartupWatchdog();
 }
 
 static bool Safety_AllBooleanFieldsValid(const SAFETY_ActuatorCommand *command)
@@ -543,10 +583,12 @@ int32_t Safety_ServiceInit(void)
   uint32_t persisted_crc = 0U;
   bool persisted_valid;
   uint32_t primask;
+  uint32_t running_images_confirmed;
 
-  CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
-  DWT->CYCCNT = 0U;
-  DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
+  if (!SecureTimebase_IsRunning())
+  {
+    return SAFETY_RESULT_INTERNAL_ERROR;
+  }
   timer_ready = 1U;
   primask = Safety_EnterCritical();
   safety_status = 0U;
@@ -595,7 +637,8 @@ int32_t Safety_ServiceInit(void)
   if (software_i2c_bus_ok != 0U)
   {
     ATECC608_ProbeResult probe;
-    security_status.atecc_result = ATECC608_Probe(&probe);
+    security_status.atecc_result = ATECC608_ProbeWithRecovery(
+        &probe, Safety_AteccRecoveryService, NULL);
     if (security_status.atecc_result == ATECC608_RESULT_OK)
     {
       security_status.flags |= SAFETY_SECURITY_ATECC_PRESENT;
@@ -616,9 +659,13 @@ int32_t Safety_ServiceInit(void)
       {
         security_status.flags |= SAFETY_SECURITY_DATA_LOCKED;
       }
-      security_status.auth_result = SecurityIdentity_Authenticate(
-          &probe, &security_status.device_status,
-          &security_status.pairing_generation);
+      if (Safety_RefreshStartupWatchdog())
+      {
+        security_status.auth_result = SecurityIdentity_Authenticate(
+            &probe, &security_status.device_status,
+            &security_status.pairing_generation);
+        (void)Safety_RefreshStartupWatchdog();
+      }
       if (security_status.pairing_generation != 0U)
       {
         security_status.flags |= SAFETY_SECURITY_PAIRING_PRESENT;
@@ -651,6 +698,20 @@ int32_t Safety_ServiceInit(void)
     safety_status |= SAFETY_STATUS_ATECC_MISSING;
   }
   SecurityOta_Init();
+  if (SecurityOta_RunningImagesConfirmed(&running_images_confirmed) !=
+      SAFETY_RESULT_OK)
+  {
+    Safety_LatchFault(SAFETY_STATUS_INTERNAL_ERROR);
+    return SAFETY_RESULT_INTERNAL_ERROR;
+  }
+  Safety_SetOtaConfirmationState(running_images_confirmed);
+  /* Start the confirmation budget from Secure service initialization, not
+     from a NonSecure-selected first watchdog call. secure_uptime_ms begins
+     advancing as soon as TIM6 is started below, so NonSecure cannot defer or
+     renew this deadline. */
+  ota_confirmation_deadline_armed =
+      (running_images_confirmed == 0U) ? 1U : 0U;
+  ota_confirmation_deadline = OTA_CONFIRM_WATCHDOG_GRACE_MS;
 
   if ((HAL_ADCEx_Calibration_Start(&hadc1, ADC_SINGLE_ENDED) != HAL_OK) ||
       (HAL_ADCEx_Calibration_Start(&hadc2, ADC_SINGLE_ENDED) != HAL_OK))
@@ -833,6 +894,10 @@ int32_t Safety_OtaBegin(const SAFETY_OtaBeginRequest *request,
   {
     return SAFETY_RESULT_BAD_ARGUMENT;
   }
+  if (ota_running_images_confirmed == 0U)
+  {
+    return SAFETY_RESULT_NOT_READY;
+  }
   primask = Safety_EnterCritical();
   Safety_ForceOutputsSafe();
   Safety_ExitCritical(primask);
@@ -850,6 +915,10 @@ int32_t Safety_OtaWrite(const SAFETY_OtaChunk *chunk,
   {
     return SAFETY_RESULT_BAD_ARGUMENT;
   }
+  if (ota_running_images_confirmed == 0U)
+  {
+    return SAFETY_RESULT_NOT_READY;
+  }
   primask = Safety_EnterCritical();
   Safety_ForceOutputsSafe();
   Safety_ExitCritical(primask);
@@ -864,6 +933,10 @@ int32_t Safety_OtaFinish(uint32_t update_sequence,
   int32_t result;
   uint32_t primask;
   if (status == NULL) { return SAFETY_RESULT_BAD_ARGUMENT; }
+  if (ota_running_images_confirmed == 0U)
+  {
+    return SAFETY_RESULT_NOT_READY;
+  }
   primask = Safety_EnterCritical();
   Safety_ForceOutputsSafe();
   Safety_ExitCritical(primask);
@@ -874,12 +947,38 @@ int32_t Safety_OtaFinish(uint32_t update_sequence,
 
 int32_t Safety_OtaConfirmRunningImages(void)
 {
+  int32_t result;
+  uint32_t confirmed = 0U;
+
   if (((security_status.flags & SAFETY_SECURITY_AUTHENTICATED) == 0U) ||
       ((safety_status & SAFETY_STATUS_READY) == 0U))
   {
     return SAFETY_RESULT_AUTHENTICATION;
   }
-  return SecurityOta_ConfirmRunningImages();
+  if ((ota_running_images_confirmed == 0U) &&
+      (ota_confirmation_deadline_armed != 0U) &&
+      Safety_TimeReached(secure_uptime_ms, ota_confirmation_deadline))
+  {
+    uint32_t primask = Safety_EnterCritical();
+    Safety_ForceOutputsSafe();
+    Safety_ExitCritical(primask);
+    return SAFETY_RESULT_NOT_READY;
+  }
+  result = SecurityOta_ConfirmRunningImages();
+  if (result != SAFETY_RESULT_OK)
+  {
+    Safety_SetOtaConfirmationState(0U);
+    return result;
+  }
+  result = SecurityOta_RunningImagesConfirmed(&confirmed);
+  if ((result != SAFETY_RESULT_OK) || (confirmed == 0U))
+  {
+    Safety_SetOtaConfirmationState(0U);
+    return (result != SAFETY_RESULT_OK) ? result : SAFETY_RESULT_STORAGE;
+  }
+  Safety_SetOtaConfirmationState(1U);
+  ota_confirmation_deadline_armed = 0U;
+  return SAFETY_RESULT_OK;
 }
 
 #if defined(ECU_FACTORY_PROVISIONING)
@@ -922,6 +1021,10 @@ int32_t Safety_ApplyValveConfig(const SAFETY_ValveConfig *config)
   uint32_t primask;
   int32_t result;
 
+  if (ota_running_images_confirmed == 0U)
+  {
+    return SAFETY_RESULT_NOT_READY;
+  }
   if (!ValveControl_ValidateConfig(config)) { return SAFETY_RESULT_RANGE; }
   primask = Safety_EnterCritical();
   result = ValveControl_ApplyConfig(&valve_control, config);
@@ -942,6 +1045,11 @@ int32_t Safety_SaveValveConfig(void)
   uint32_t generation;
   uint32_t crc32c;
   uint32_t primask;
+
+  if (ota_running_images_confirmed == 0U)
+  {
+    return SAFETY_RESULT_NOT_READY;
+  }
 
   primask = Safety_EnterCritical();
   if (((safety_status & SAFETY_STATUS_OUTPUTS_ARMED) != 0U) ||
@@ -993,6 +1101,11 @@ int32_t Safety_ReloadValveConfig(void)
   uint32_t crc32c;
   uint32_t primask;
   int32_t result;
+
+  if (ota_running_images_confirmed == 0U)
+  {
+    return SAFETY_RESULT_NOT_READY;
+  }
 
   if (!ValveConfigStore_Load(&config, &generation, &crc32c) ||
       !ValveControl_ValidateConfig(&config))
@@ -1102,6 +1215,10 @@ int32_t Safety_ArmOutputs(uint32_t request_token)
   {
     return SAFETY_RESULT_BAD_ARGUMENT;
   }
+  if (ota_running_images_confirmed == 0U)
+  {
+    return SAFETY_RESULT_NOT_READY;
+  }
   primask = Safety_EnterCritical();
   if (((safety_status & SAFETY_STATUS_READY) == 0U) ||
       (valve_control.calibrated == 0U) ||
@@ -1170,6 +1287,11 @@ int32_t Safety_SubmitActuatorCommand(const SAFETY_ActuatorCommand *command)
   uint32_t primask;
   uint32_t new_mask;
   int32_t result = Safety_ValidateCommand(command);
+
+  if (ota_running_images_confirmed == 0U)
+  {
+    return SAFETY_RESULT_NOT_READY;
+  }
 
   if (result != SAFETY_RESULT_OK)
   {
@@ -1248,6 +1370,8 @@ int32_t Safety_SubmitActuatorCommand(const SAFETY_ActuatorCommand *command)
 
 int32_t Safety_KickWatchdog(uint32_t heartbeat)
 {
+  uint32_t primask;
+
   if ((safety_status & SAFETY_STATUS_READY) == 0U)
   {
     return SAFETY_RESULT_NOT_READY;
@@ -1255,6 +1379,17 @@ int32_t Safety_KickWatchdog(uint32_t heartbeat)
   if (heartbeat == last_watchdog_heartbeat)
   {
     return SAFETY_RESULT_STALE_SEQUENCE;
+  }
+  if (ota_running_images_confirmed == 0U)
+  {
+    if ((ota_confirmation_deadline_armed == 0U) ||
+        Safety_TimeReached(secure_uptime_ms, ota_confirmation_deadline))
+    {
+      primask = Safety_EnterCritical();
+      Safety_ForceOutputsSafe();
+      Safety_ExitCritical(primask);
+      return SAFETY_RESULT_NOT_READY;
+    }
   }
   if (HAL_IWDG_Refresh(&hiwdg) != HAL_OK)
   {

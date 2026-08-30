@@ -15,6 +15,10 @@ extern "C" {
    the next PCB ECO swaps the two nets. */
 bool SoftwareI2C_Init(void);
 bool SoftwareI2C_RecoverBus(void);
+/* Re-establish protocol framing after a host reset.  Unlike electrical bus
+   recovery, this always emits the CryptoAuthentication-recommended
+   START + nine released-SDA clocks + START + STOP sequence. */
+bool SoftwareI2C_Synchronize(void);
 bool SoftwareI2C_WakeToken(void);
 bool SoftwareI2C_Write(uint8_t address_7bit, const uint8_t *data, size_t length);
 bool SoftwareI2C_Read(uint8_t address_7bit, uint8_t *data, size_t length);

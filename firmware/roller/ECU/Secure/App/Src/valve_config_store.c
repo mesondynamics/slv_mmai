@@ -3,6 +3,7 @@
 #include <stddef.h>
 #include <string.h>
 
+#include "secure_flash_guard.h"
 #include "stm32h5xx_hal.h"
 
 #define VALVE_STORE_MAGIC          0x43465056UL /* "VPFC" */
@@ -154,6 +155,16 @@ static bool ValveConfigStore_Erase(uint32_t sector)
   return HAL_FLASHEx_Erase(&erase, &sector_error) == HAL_OK;
 }
 
+static bool ValveConfigStore_InvalidateFlashCache(void)
+{
+  if (HAL_ICACHE_IsEnabled() == 0U) { return true; }
+  __DSB();
+  if (HAL_ICACHE_Invalidate() != HAL_OK) { return false; }
+  __DSB();
+  __ISB();
+  return true;
+}
+
 static bool ValveConfigStore_Program(uint32_t address,
                                      const ValveConfigRecord *record)
 {
@@ -169,10 +180,14 @@ static bool ValveConfigStore_Program(uint32_t address,
       return false;
     }
   }
-  return HAL_FLASH_Program(
-      FLASH_TYPEPROGRAM_QUADWORD, address + committed_offset,
-      (uint32_t)(uintptr_t)((const uint8_t *)record + committed_offset)) ==
-      HAL_OK;
+  if (HAL_FLASH_Program(
+          FLASH_TYPEPROGRAM_QUADWORD, address + committed_offset,
+          (uint32_t)(uintptr_t)((const uint8_t *)record + committed_offset)) !=
+      HAL_OK)
+  {
+    return false;
+  }
+  return ValveConfigStore_InvalidateFlashCache();
 }
 
 bool ValveConfigStore_Save(const SAFETY_ValveConfig *config,
@@ -222,14 +237,16 @@ bool ValveConfigStore_Save(const SAFETY_ValveConfig *config,
       &record, offsetof(ValveConfigRecord, crc32c));
   record.commit = VALVE_STORE_COMMIT;
 
-  if (HAL_FLASH_Unlock() != HAL_OK) { return false; }
+  /* Valve calibration is Secure Bank 1 data.  Keep the NonSecure FLASH
+     controller locked throughout the transaction. */
+  if (HAL_FLASH_Unlock_S() != HAL_OK) { return false; }
   if ((erase_sector != UINT32_MAX) && !ValveConfigStore_Erase(erase_sector))
   {
-    (void)HAL_FLASH_Lock();
+    SecureFlash_LockSecureOrReset();
     return false;
   }
   result = ValveConfigStore_Program(destination, &record);
-  (void)HAL_FLASH_Lock();
+  SecureFlash_LockSecureOrReset();
   if (!result || !ValveConfigStore_RecordValid(
       (const ValveConfigRecord *)(uintptr_t)destination))
   {

@@ -31,6 +31,30 @@ if command -v "${CC:-cc}" >/dev/null 2>&1; then
     "${task_project_dir}/tests/test_security_sha256.c" \
     -o "${task_test_dir}/security_sha256_test"
   "${task_test_dir}/security_sha256_test"
+  "${CC:-cc}" -std=c11 -Wall -Wextra -Werror \
+    -I"${task_project_dir}/tests/stubs/atecc" \
+    -I"${task_project_dir}/Secure/App/Inc" \
+    "${task_project_dir}/Secure/App/Src/atecc608.c" \
+    "${task_project_dir}/tests/test_atecc608_recovery.c" \
+    -o "${task_test_dir}/atecc608_recovery_test"
+  "${task_test_dir}/atecc608_recovery_test"
+  "${CC:-cc}" -std=c11 -Wall -Wextra -Werror \
+    -I"${task_project_dir}/NonSecure/App/Network" \
+    "${task_project_dir}/NonSecure/App/Network/ethernet_phy_policy.c" \
+    "${task_project_dir}/tests/test_ethernet_phy_policy.c" \
+    -o "${task_test_dir}/ethernet_phy_policy_test"
+  "${task_test_dir}/ethernet_phy_policy_test"
+  "${CC:-cc}" -std=c11 -Wall -Wextra -Werror \
+    -I"${task_project_dir}/Secure/App/Inc" \
+    "${task_project_dir}/Secure/App/Src/security_ota_policy.c" \
+    "${task_project_dir}/tests/test_security_ota_policy.c" \
+    -o "${task_test_dir}/security_ota_policy_test"
+  "${task_test_dir}/security_ota_policy_test"
+  "${CC:-cc}" -std=c11 -Wall -Wextra -Werror \
+    -I"${task_project_dir}/Bootloader/OEMiROT/Config" \
+    "${task_project_dir}/tests/test_roller_pair_policy.c" \
+    -o "${task_test_dir}/roller_pair_policy_test"
+  "${task_test_dir}/roller_pair_policy_test"
 else
   task_arm_cc="${ARM_GNU_BIN_DIR:-/home/plac/.local/share/stm32cube/bundles/gnu-tools-for-stm32/14.3.1+st.2/bin}/arm-none-eabi-gcc"
   "${task_arm_cc}" -std=c11 -Wall -Wextra -Werror -mcpu=cortex-m33 \
@@ -61,6 +85,36 @@ else
     -I"${task_project_dir}/Secure/App/Inc" -c \
     "${task_project_dir}/tests/test_security_sha256.c" \
     -o "${task_test_dir}/test_security_sha256.o"
+  "${task_arm_cc}" -std=c11 -Wall -Wextra -Werror -mcpu=cortex-m33 \
+    -I"${task_project_dir}/tests/stubs/atecc" \
+    -I"${task_project_dir}/Secure/App/Inc" -c \
+    "${task_project_dir}/Secure/App/Src/atecc608.c" \
+    -o "${task_test_dir}/atecc608.o"
+  "${task_arm_cc}" -std=c11 -Wall -Wextra -Werror -mcpu=cortex-m33 \
+    -I"${task_project_dir}/tests/stubs/atecc" \
+    -I"${task_project_dir}/Secure/App/Inc" -c \
+    "${task_project_dir}/tests/test_atecc608_recovery.c" \
+    -o "${task_test_dir}/test_atecc608_recovery.o"
+  "${task_arm_cc}" -std=c11 -Wall -Wextra -Werror -mcpu=cortex-m33 \
+    -I"${task_project_dir}/NonSecure/App/Network" -c \
+    "${task_project_dir}/NonSecure/App/Network/ethernet_phy_policy.c" \
+    -o "${task_test_dir}/ethernet_phy_policy.o"
+  "${task_arm_cc}" -std=c11 -Wall -Wextra -Werror -mcpu=cortex-m33 \
+    -I"${task_project_dir}/NonSecure/App/Network" -c \
+    "${task_project_dir}/tests/test_ethernet_phy_policy.c" \
+    -o "${task_test_dir}/test_ethernet_phy_policy.o"
+  "${task_arm_cc}" -std=c11 -Wall -Wextra -Werror -mcpu=cortex-m33 \
+    -I"${task_project_dir}/Secure/App/Inc" -c \
+    "${task_project_dir}/Secure/App/Src/security_ota_policy.c" \
+    -o "${task_test_dir}/security_ota_policy.o"
+  "${task_arm_cc}" -std=c11 -Wall -Wextra -Werror -mcpu=cortex-m33 \
+    -I"${task_project_dir}/Secure/App/Inc" -c \
+    "${task_project_dir}/tests/test_security_ota_policy.c" \
+    -o "${task_test_dir}/test_security_ota_policy.o"
+  "${task_arm_cc}" -std=c11 -Wall -Wextra -Werror -mcpu=cortex-m33 \
+    -I"${task_project_dir}/Bootloader/OEMiROT/Config" -c \
+    "${task_project_dir}/tests/test_roller_pair_policy.c" \
+    -o "${task_test_dir}/test_roller_pair_policy.o"
   printf 'INFO  Native C compiler unavailable; protocol/control C tests compile passed; CRC vectors run in Python.\n'
 fi
 

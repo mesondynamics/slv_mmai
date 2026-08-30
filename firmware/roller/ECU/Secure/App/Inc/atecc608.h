@@ -13,6 +13,10 @@ extern "C" {
 #define ATECC608_CONFIG_SIZE     128U
 #define ATECC608_P256_DIGEST_SIZE 32U
 #define ATECC608_P256_SIGNATURE_SIZE 64U
+/* Longest execution budget used by this driver (slowest supported Sign mode).
+   Startup recovery is bounded by this value and services the MCU watchdog in
+   shorter intervals. */
+#define ATECC608_MAX_EXECUTION_TIME_MS 700U
 
 typedef enum
 {
@@ -25,8 +29,11 @@ typedef enum
   ATECC608_RESULT_CRC = -6,
   ATECC608_RESULT_DEVICE_STATUS = -7,
   ATECC608_RESULT_INVALID_RESPONSE = -8,
-  ATECC608_RESULT_TIMEOUT = -9
+  ATECC608_RESULT_TIMEOUT = -9,
+  ATECC608_RESULT_RECOVERY_ABORTED = -10
 } ATECC608_Result;
+
+typedef bool (*ATECC608_RecoveryService)(void *context);
 
 typedef struct
 {
@@ -45,6 +52,20 @@ typedef struct
 /* Read-only discovery. This API intentionally exposes no write or lock
    primitive; irreversible provisioning is a separate, explicitly gated tool. */
 int32_t ATECC608_Probe(ATECC608_ProbeResult *probe);
+
+/* Startup-only, read-only recovery for an MCU reset that did not reset the
+   ATECC.  Probe commands may be repeated within one bounded longest-command
+   budget; no state-changing crypto operation is replayed. */
+int32_t ATECC608_ProbeWithRecovery(
+    ATECC608_ProbeResult *probe,
+    ATECC608_RecoveryService recovery_service,
+    void *recovery_context);
+
+/* Reset only volatile I/O framing after an independent host reset.  This
+   performs the Microchip bus synchronization/address-counter reset and, when
+   the device is awake and not busy, places it in Sleep.  It cannot modify any
+   ATECC EEPROM/configuration/slot data. */
+int32_t ATECC608_Synchronize(void);
 
 /* Proves possession of an already-provisioned private key without exposing
    it. The digest is supplied by the Secure application and the returned

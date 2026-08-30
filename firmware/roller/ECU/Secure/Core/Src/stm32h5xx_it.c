@@ -284,20 +284,6 @@ void GPDMA1_Channel1_IRQHandler(void)
 }
 
 /**
-  * @brief This function handles ADC2 global interrupt.
-  */
-void ADC2_IRQHandler(void)
-{
-  /* USER CODE BEGIN ADC2_IRQn 0 */
-
-  /* USER CODE END ADC2_IRQn 0 */
-  HAL_ADC_IRQHandler(&hadc2);
-  /* USER CODE BEGIN ADC2_IRQn 1 */
-
-  /* USER CODE END ADC2_IRQn 1 */
-}
-
-/**
   * @brief This function handles TIM6 global interrupt.
   */
 void TIM6_IRQHandler(void)
@@ -309,6 +295,20 @@ void TIM6_IRQHandler(void)
   /* USER CODE BEGIN TIM6_IRQn 1 */
 
   /* USER CODE END TIM6_IRQn 1 */
+}
+
+/**
+  * @brief This function handles ADC2 global interrupt.
+  */
+void ADC2_IRQHandler(void)
+{
+  /* USER CODE BEGIN ADC2_IRQn 0 */
+
+  /* USER CODE END ADC2_IRQn 0 */
+  HAL_ADC_IRQHandler(&hadc2);
+  /* USER CODE BEGIN ADC2_IRQn 1 */
+
+  /* USER CODE END ADC2_IRQn 1 */
 }
 
 /* USER CODE BEGIN 1 */

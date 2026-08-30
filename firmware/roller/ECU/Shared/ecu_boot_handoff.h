@@ -4,10 +4,14 @@
 #include <stdint.h>
 
 /*
- * OEMiROT reads the immutable STM32 identity before RSS enters HDPL3.  The
- * engineering-information aperture returns zero to the application at HDPL3,
- * so the boot stage publishes a sealed record in Secure SRAM1.  This address
- * is excluded from the Secure application's stack and linker allocations.
+ * The STM32H563 engineering-information aperture is not a reliable CPU source
+ * at OEMiROT HDPL1: access can return zero or fault according to the inherited
+ * SAU/cache state.  The per-device boot image therefore publishes its reviewed
+ * manufacturing identity in a sealed Secure-SRAM record.  Anti-transplant
+ * enforcement additionally requires the CLOSED/HDP-protected pairing record
+ * and the ATECC608C non-exportable private key; the UID words are not treated
+ * as a secret or as the sole binding factor.  This address is excluded from
+ * the Secure application's stack and linker allocations.
  */
 #define ECU_BOOT_HANDOFF_ADDRESS  0x3003FBC0UL
 #define ECU_BOOT_HANDOFF_MAGIC    0x44495545UL /* "EUID" */

@@ -26,6 +26,7 @@
 
 #define ROLLER_RSS_DEVICE_ID                 0x484UL
 #define ROLLER_RSS_REVISION_ID               0x1007UL
+#define ROLLER_RSS_IDCODE                     0x10076484UL
 #define ROLLER_RSS_SFSP_VERSION_ADDRESS      0x0BF960CCUL
 #define ROLLER_RSS_SFSP_VERSION              0x02050000UL
 #define ROLLER_RSS_DESCRIPTOR_INDEX          0UL
@@ -35,8 +36,9 @@
 #define ROLLER_RSS_JUMP_HDPL3_NS             0x0FF951C9UL
 
 /* Per-device manufacturing identity.  This value is not secret; integrity
- * and non-transferability come from the HUK-wrapped OEMiROT OBKs and the
- * WRP/HDP-protected boot chain that publishes it to the Secure application. */
+ * and non-transferability come from the device-internal HUK-wrapped OEMiROT
+ * OBKs, the WRP/HDP-protected pairing record, and the ATECC private key that
+ * cannot be exported. */
 #define ROLLER_DEVICE_UID0                    0x00380061UL
 #define ROLLER_DEVICE_UID1                    0x34345112UL
 #define ROLLER_DEVICE_UID2                    0x32383537UL

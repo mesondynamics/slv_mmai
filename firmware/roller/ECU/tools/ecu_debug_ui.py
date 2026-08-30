@@ -284,6 +284,7 @@ class BenchState:
     latest_telemetry: dict[str, Any] | None = None
     status_received_at: float = 0.0
     diagnostic_received_at: float = 0.0
+    security_received_at: float = 0.0
     telemetry_received_at: float = 0.0
     browser_heartbeat_at: float = 0.0
     control_sequence: int = 0
@@ -516,6 +517,7 @@ class BenchBridge:
                         }
                         with self.lock:
                             self.state.security = security
+                            self.state.security_received_at = received_at
                     elif message_type == MSG_TELEMETRY:
                         self._receive_telemetry(payload, received_at)
                     elif message_type == MSG_CONFIG_REPLY:
@@ -609,6 +611,8 @@ class BenchBridge:
                     int((now - self.state.status_received_at) * 1000),
                 "diagnostic_age_ms": None if not self.state.diagnostic_received_at else
                     int((now - self.state.diagnostic_received_at) * 1000),
+                "security_age_ms": None if not self.state.security_received_at else
+                    int((now - self.state.security_received_at) * 1000),
                 "telemetry_age_ms": None if not self.state.telemetry_received_at else
                     int((now - self.state.telemetry_received_at) * 1000),
                 "tx_error": self.state.tx_error,

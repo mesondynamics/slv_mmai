@@ -54,6 +54,9 @@ void SysTick_Handler(void);
 void FDCAN1_IT0_IRQHandler(void);
 void TIM2_IRQHandler(void);
 /* USER CODE BEGIN EFP */
+void NMI_Handler(void);
+void HardFault_Handler(void);
+void BusFault_Handler(void);
 
 /* USER CODE END EFP */
 

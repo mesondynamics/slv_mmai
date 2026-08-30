@@ -30,6 +30,8 @@ typedef struct
 
 bool ECU_NetworkInit(void);
 void ECU_NetworkProcess(void);
+void ECU_NetworkSetOperational(bool operational);
+bool ECU_NetworkStartupReady(void);
 bool ECU_NetworkLinkIsUp(void);
 const ECU_NetworkCounters *ECU_NetworkGetCounters(void);
 

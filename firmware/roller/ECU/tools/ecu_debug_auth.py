@@ -7,10 +7,12 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import stat
 import subprocess
 import sys
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 
 from cryptography.hazmat.primitives import serialization
@@ -28,14 +30,123 @@ DEFAULT_PROBE = "066BFF565456857187210935"
 FIELD_SERVICE_PERMISSION = "0x00004040"
 
 
-def run(command: list[str]) -> int:
-    return subprocess.run(command, check=False).returncode
+ANSI_ESCAPE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+DISCOVERY_FIELDS = {
+    "target ID": (
+        re.compile(
+            r"^[ \t]*discovery:[ \t]*target ID\.*[ \t]*:[ \t]*(\S.*?)[ \t]*$",
+            re.MULTILINE,
+        ),
+        "0x484",
+    ),
+    "SDA version": (
+        re.compile(
+            r"^[ \t]*discovery:[ \t]*SDA version\.*[ \t]*:[ \t]*(\S.*?)[ \t]*$",
+            re.MULTILINE,
+        ),
+        "2.4.0",
+    ),
+    "Vendor ID": (
+        re.compile(
+            r"^[ \t]*discovery:[ \t]*Vendor ID\.*[ \t]*:[ \t]*(\S.*?)[ \t]*$",
+            re.MULTILINE,
+        ),
+        "STMicroelectronics",
+    ),
+    "PSA lifecycle": (
+        re.compile(
+            r"^[ \t]*discovery:[ \t]*PSA lifecycle\.*[ \t]*:[ \t]*(\S.*?)[ \t]*$",
+            re.MULTILINE,
+        ),
+        "ST_LIFECYCLE_CLOSED",
+    ),
+    "cryptosystems": (
+        re.compile(
+            r"^[ \t]*discovery:[ \t]*cryptosystems\.*[ \t]*:[ \t]*(\S.*?)[ \t]*$",
+            re.MULTILINE,
+        ),
+        "Ecdsa-P256 SHA256",
+    ),
+    "ST provisioning integrity status": (
+        re.compile(
+            r"^[ \t]*discovery:[ \t]*ST provisioning integrity status\.*"
+            r"[ \t]*:[ \t]*(\S.*?)[ \t]*$",
+            re.MULTILINE,
+        ),
+        "0xEAEAEAEA",
+    ),
+    "ST provisioning integrity status message": (
+        re.compile(
+            r"^[ \t]*discovery:[ \t]*ST provisioning integrity status message\.*"
+            r"[ \t]*:[ \t]*(\S.*?)[ \t]*$",
+            re.MULTILINE,
+        ),
+        "VALID",
+    ),
+}
+
+
+@dataclass(frozen=True)
+class CliResult:
+    returncode: int
+    output: str
+
+
+def normalize_cli_output(output: str) -> str:
+    """Remove terminal controls and normalize line endings for evidence parsing."""
+    return ANSI_ESCAPE.sub("", output).replace("\r\n", "\n").replace("\r", "\n")
+
+
+def run_cli(command: list[str]) -> CliResult:
+    """Run CubeProgrammer, preserve output order, and echo sanitized evidence."""
+    completed = subprocess.run(
+        command,
+        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    output = normalize_cli_output(completed.stdout or "")
+    if output:
+        sys.stdout.write(output)
+        if not output.endswith("\n"):
+            sys.stdout.write("\n")
+        sys.stdout.flush()
+    return CliResult(completed.returncode, output)
+
+
+def require_strict_closed_discovery(output: str) -> None:
+    """Fail closed unless one exact, internally consistent H563 DA record exists."""
+    normalized = normalize_cli_output(output)
+    for name, (pattern, expected) in DISCOVERY_FIELDS.items():
+        values = pattern.findall(normalized)
+        if len(values) != 1:
+            raise RuntimeError(
+                f"DA discovery must contain exactly one {name}; found {len(values)}"
+            )
+        if values[0] != expected:
+            raise RuntimeError(
+                f"DA discovery {name} is {values[0]!r}; expected {expected!r}"
+            )
+
+
+def discover_strict_closed(connect: list[str]) -> CliResult:
+    result = run_cli(connect + ["debugauth=2"])
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"DA discovery failed with exit code {result.returncode}"
+        )
+    require_strict_closed_discovery(result.output)
+    return result
 
 
 def verify_assets(pki: Path, assets: Path) -> tuple[bytes, ec.EllipticCurvePrivateKey]:
     manifest_path = assets / "security-assets.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    if (manifest.get("debug_reopening") is not True or
+    if (manifest.get("obk_package_device_bound") is not False or
+            manifest.get("debug_reopening") is not True or
             manifest.get("debug_scope") != "HDPL3 secure and nonsecure" or
             manifest.get("full_regression") is not True or
             manifest.get("partial_regression") is not False or
@@ -72,7 +183,7 @@ def clear_private_key(key: ec.EllipticCurvePrivateKey, destination: Path) -> Non
     destination.chmod(stat.S_IRUSR | stat.S_IWUSR)
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=(
         "verify-assets", "discover", "open-app-debug", "close-debug",
@@ -88,9 +199,26 @@ def main() -> int:
     )
     parser.add_argument(
         "--accept-closed-target", action="store_true",
-        help="required for DA discovery/open/close; do not use on an OPEN target",
+        help=(
+            "required for DA discovery/open/close/full regression; "
+            "do not use on an OPEN target"
+        ),
     )
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
+
+    if args.action in (
+            "discover", "open-app-debug", "close-debug",
+            "full-regression-to-open") and not args.accept_closed_target:
+        parser.error(
+            "this action triggers RSS-DA and requires a CLOSED target; "
+            "add --accept-closed-target"
+        )
+    if args.action == "full-regression-to-open" and \
+            not args.accept_full_device_erase:
+        parser.error(
+            "full regression destroys all Flash, OBKeys and secure storage; "
+            "add --accept-full-device-erase"
+        )
 
     if not args.programmer.is_file():
         raise FileNotFoundError(args.programmer)
@@ -99,33 +227,38 @@ def main() -> int:
         print(f"DA assets verified: permission={FIELD_SERVICE_PERMISSION}")
         return 0
 
-    if args.action in ("discover", "open-app-debug", "close-debug") and \
-            not args.accept_closed_target:
-        parser.error(
-            "this action triggers RSS-DA and requires a CLOSED target; "
-            "add --accept-closed-target"
-        )
-
     connect = [
         str(args.programmer), "-c", "port=SWD", f"sn={args.probe}",
         "speed=fast",
     ]
     if args.action == "discover":
-        result = run(connect + ["debugauth=2"])
-        if result != 0:
-            raise RuntimeError(f"DA discovery failed with exit code {result}")
+        discover_strict_closed(connect)
         return 0
     if args.action == "close-debug":
-        result = run(connect + ["debugauth=3"])
-        if result != 0:
-            raise RuntimeError(f"close-debug failed with exit code {result}")
-        return 0
-    if args.action == "full-regression-to-open" and \
-            not args.accept_full_device_erase:
-        parser.error(
-            "full regression destroys all Flash, OBKeys and secure storage; "
-            "add --accept-full-device-erase"
+        result = run_cli(connect + ["debugauth=3"])
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"close-debug failed with exit code {result.returncode}"
+            )
+        if "Locking Debug" not in result.output:
+            raise RuntimeError(
+                "close-debug did not report the required 'Locking Debug' evidence"
+            )
+        # Discovery is information-only.  It proves that debug was re-locked
+        # without granting a debug permission; a cold power cycle is still
+        # required to leave RSS-DA before returning the ECU to service.
+        discover_strict_closed(connect)
+        print(
+            "Debug is locked and strict CLOSED discovery passed. "
+            "Fully remove ECU power for at least 10 seconds, "
+            "then verify Ethernet, ATECC authentication, and zero outputs; "
+            "NRST alone may leave this power cycle in RSS-DA."
         )
+        return 0
+
+    # Authentication and destructive full regression are only permitted after
+    # exact identification of this reviewed CLOSED STM32H563 DA configuration.
+    discover_strict_closed(connect)
 
     temporary_root = Path("/dev/shm") if Path("/dev/shm").is_dir() else None
     with tempfile.TemporaryDirectory(
@@ -141,14 +274,25 @@ def main() -> int:
             f"per={permission}", f"key={clear_key}",
             f"cert={args.assets_dir / 'cert-leaf-chain.b64'}", "debugauth=1",
         ]
-        result = run(command)
-        # Best-effort overwrite before TemporaryDirectory removes the file.
         try:
-            clear_key.write_bytes(os.urandom(clear_key.stat().st_size))
-        except OSError:
-            pass
-        if result != 0:
-            raise RuntimeError(f"Debug Authentication failed with exit code {result}")
+            result = run_cli(command)
+        finally:
+            # Best-effort overwrite before TemporaryDirectory removes the file,
+            # including when spawning CubeProgrammer itself fails.
+            try:
+                clear_key.write_bytes(os.urandom(clear_key.stat().st_size))
+            except OSError:
+                pass
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"Debug Authentication failed with exit code {result.returncode}"
+            )
+        if args.action == "open-app-debug" and \
+                "Authentication Success" not in result.output:
+            raise RuntimeError(
+                "open-app-debug did not report the required "
+                "'Authentication Success' evidence"
+            )
     if args.action == "open-app-debug":
         print("Temporary HDPL3 Secure+NonSecure debug is open until close-debug or power-off")
     else:

@@ -61,6 +61,32 @@ add_executable(${CMAKE_PROJECT_NAME})
 # Include mx-generated
 include("mx-generated.cmake")
 
+# CubeMX's generated project links the development-layout import object from
+# Secure_nsclib. Signed builds must instead consume the build-private OEMiROT
+# object produced by the matching Secure configuration; otherwise a parallel
+# IDE/Debug build can silently replace every NSC address during release link.
+if(ECU_OEMIROT_LAYOUT)
+    set(ECU_GENERATED_NSC_IMPORT
+        "${CMAKE_CURRENT_SOURCE_DIR}/../Secure_nsclib/secure_nsclib.o")
+    set(ECU_OEMIROT_NSC_IMPORT
+        "${CMAKE_CURRENT_SOURCE_DIR}/../Secure/build/OEMiROT/${CMAKE_BUILD_TYPE}/secure_nsclib.o"
+        CACHE FILEPATH "Matching OEMiROT Secure import library")
+    if(NOT EXISTS "${ECU_OEMIROT_NSC_IMPORT}")
+        message(FATAL_ERROR
+            "Matching OEMiROT Secure import library is missing: ${ECU_OEMIROT_NSC_IMPORT}")
+    endif()
+    get_target_property(ECU_NS_LINK_LIBRARIES ${CMAKE_PROJECT_NAME}
+                        LINK_LIBRARIES)
+    list(REMOVE_ITEM ECU_NS_LINK_LIBRARIES "${ECU_GENERATED_NSC_IMPORT}")
+    set_property(TARGET ${CMAKE_PROJECT_NAME} PROPERTY LINK_LIBRARIES
+                 "${ECU_NS_LINK_LIBRARIES}")
+    # mx-generated.cmake uses CMake's plain target_link_libraries signature;
+    # keep the same signature because CMake forbids mixing plain and keyword
+    # forms on one target.
+    target_link_libraries(${CMAKE_PROJECT_NAME}
+                          "${ECU_OEMIROT_NSC_IMPORT}")
+endif()
+
 # CubeMX places system_stm32h5xx_ns.c in the STM32_Drivers object library.
 # Keep the NonSecure exception table after the MCUboot header in signed builds
 # even when CubeMX regenerates the system source.
@@ -121,6 +147,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/App/Src/j1939.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/Src/speed_sensor.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/Network/ethernetif.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/App/Network/ethernet_phy_policy.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../Drivers/BSP/Components/lan8742/lan8742.c
 
     ${ECU_LWIP_ROOT}/src/core/init.c

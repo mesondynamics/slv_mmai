@@ -7,12 +7,18 @@
 #include "secure_nsc.h"
 #include "speed_sensor.h"
 
-#define ECU_WATCHDOG_SERVICE_PERIOD_MS  100U
+#define ECU_WATCHDOG_SERVICE_PERIOD_MS        100U
+#define ECU_OTA_CONFIRM_STARTUP_TIMEOUT_MS   5000U
 
 static SAFETY_AdcSnapshot safety_snapshot;
 static uint32_t watchdog_heartbeat;
 static uint32_t watchdog_service_tick;
 static uint32_t lwip_random_state = 0x8AEAB502UL;
+#if defined(ECU_OEMIROT_LAYOUT)
+static uint32_t ota_confirmation_deadline;
+static uint8_t ota_confirmation_pending;
+static uint8_t ota_confirmation_failed;
+#endif
 
 uint32_t ECU_LwipRandom(void)
 {
@@ -35,11 +41,6 @@ void ECU_LwipAssert(const char *file, uint32_t line)
 int32_t ECU_AppInit(void)
 {
   int32_t result;
-
-  /* The PHY is held in reset by the CubeMX GPIO initial state. Give its power
-     rails time to settle before releasing reset. */
-  HAL_Delay(10U);
-  HAL_GPIO_WritePin(RMII_NRST_GPIO_Port, RMII_NRST_Pin, GPIO_PIN_SET);
 
   result = SECURE_SafetyGetAdcSnapshot(&safety_snapshot);
   if (result != SAFETY_RESULT_OK)
@@ -68,16 +69,36 @@ int32_t ECU_AppInit(void)
     return SAFETY_RESULT_INTERNAL_ERROR;
   }
 #if defined(ECU_OEMIROT_LAYOUT)
-  /* Confirm a test swap only after Secure identity authentication and the
-     complete communications/ADC startup path have succeeded.  If this call
-     fails, the watchdog resets the board and OEMiROT restores the previous
-     images. */
-  result = SECURE_SafetyOtaConfirmRunningImages();
-  if (result != SAFETY_RESULT_OK)
+  ota_confirmation_pending = 0U;
+  ota_confirmation_failed = 0U;
+  if ((SECURE_SafetyGetStatus() & SAFETY_STATUS_OTA_UNCONFIRMED) != 0U)
   {
-    (void)SECURE_SafetyDisarmOutputs();
-    return result;
+    /* A test swap is accepted only after the fixed-address LAN8742 identity
+       probe succeeds.  Cable/link presence is deliberately not required. */
+    if (ECU_NetworkStartupReady())
+    {
+      result = SECURE_SafetyOtaConfirmRunningImages();
+      if (result != SAFETY_RESULT_OK)
+      {
+        ECU_NetworkSetOperational(false);
+        (void)SECURE_SafetyDisarmOutputs();
+        return result;
+      }
+    }
+    else
+    {
+      ota_confirmation_pending = 1U;
+      ota_confirmation_deadline = HAL_GetTick() +
+          ECU_OTA_CONFIRM_STARTUP_TIMEOUT_MS;
+      ECU_NetworkSetOperational(false);
+    }
   }
+  if (ota_confirmation_pending == 0U)
+  {
+    ECU_NetworkSetOperational(true);
+  }
+#else
+  ECU_NetworkSetOperational(true);
 #endif
 
   watchdog_service_tick = HAL_GetTick();
@@ -87,9 +108,42 @@ int32_t ECU_AppInit(void)
 
 void ECU_AppProcess(void)
 {
-  uint32_t now = HAL_GetTick();
+  uint32_t now;
+
+#if defined(ECU_OEMIROT_LAYOUT)
+  if (ota_confirmation_failed != 0U)
+  {
+    return;
+  }
+#endif
 
   ECU_NetworkProcess();
+  now = HAL_GetTick();
+
+#if defined(ECU_OEMIROT_LAYOUT)
+  if (ota_confirmation_pending != 0U)
+  {
+    if ((int32_t)(now - ota_confirmation_deadline) >= 0)
+    {
+      /* Stop servicing the IWDG so OEMiROT can revert an unconfirmed image.
+         Already-confirmed images never enter this path. */
+      ota_confirmation_failed = 1U;
+      ECU_NetworkSetOperational(false);
+      return;
+    }
+    if (ECU_NetworkStartupReady())
+    {
+      if (SECURE_SafetyOtaConfirmRunningImages() != SAFETY_RESULT_OK)
+      {
+        ota_confirmation_failed = 1U;
+        ECU_NetworkSetOperational(false);
+        return;
+      }
+      ota_confirmation_pending = 0U;
+      ECU_NetworkSetOperational(true);
+    }
+  }
+#endif
 
   if ((uint32_t)(now - watchdog_service_tick) >= ECU_WATCHDOG_SERVICE_PERIOD_MS)
   {
