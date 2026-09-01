@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Strictly audit authenticated DA primary readbacks after CLOSED OTA.
 
-The immutable reviewed 1.0.16 and 1.0.17 release profiles are both retained.
-The CLI defaults to the current 1.0.17 release; an explicit 1.0.16 release
-directory continues to reproduce the historical post-OTA audit.
+The immutable reviewed 1.0.16, 1.0.17, and 1.0.18 release profiles are
+retained.  The CLI defaults to the current 1.0.18 release; an explicit older
+release directory continues to reproduce its historical post-OTA audit.
 
 CubeProgrammer may fail a single 320 KiB NonSecure upload.  Each readback is
 therefore supplied as one or more explicitly addressed, contiguous segments:
@@ -175,7 +175,7 @@ EXPECTED_METADATA = {
     "secure_size": SECURE_SIZE,
     "nonsecure_size": NONSECURE_SIZE,
 }
-DEFAULT_CLI_VERSION = "1.0.17"
+DEFAULT_CLI_VERSION = "1.0.18"
 RELEASE_PROFILES = MappingProxyType({
     "1.0.16": ReleaseProfile(
         version="1.0.16",
@@ -239,6 +239,52 @@ RELEASE_PROFILES = MappingProxyType({
             ("roller-ecu-1.0.17.recu",
                 525371,
                 "75948795f39d898795b85841e4ad2e06c47738240184ff9ffbdc729fc11ab599",
+            ),
+        ),
+    ),
+    "1.0.18": ReleaseProfile(
+        version="1.0.18",
+        identity=(1, 0, 18, 0, 18),
+        update_sequence=18,
+        secure_update_sha256=
+            "c2ac8e07a3518bf8c1bd92597c1237fc6c2f2aa48d9db1d450275db3d06f597d",
+        nonsecure_update_sha256=
+            "35bba730ddb62e2909576537aaca0f32c9aebce505c3dad9a8734d9e3a6a20fd",
+        # Exact SHA-256 of the two plaintext 16-byte MCUboot key slots in
+        # post-swap primary order: current 1.0.18, then previous 1.0.17.
+        # Only the combined hashes are retained; no AES key is disclosed.
+        secure_key_area_sha256=
+            "22636578e9f23bfcdcf038c73cba01e212b80819d88864f9b18d9fd8a9caa992",
+        nonsecure_key_area_sha256=
+            "4ce45fa0e4e4db9224ffc65a5ef391825a09fdcc53af16bb05c06b2367e23bc2",
+        previous_version="1.0.17",
+        previous_identity=(1, 0, 17, 0, 17),
+        previous_update_sequence=17,
+        previous_secure_update_sha256=
+            "974d08e78a4f95b22c20d3652656c8bae107883247e241992018ce528cfad2ad",
+        previous_nonsecure_update_sha256=
+            "d09255f90f2f26ea5992927620fb6a8fbf84b0924df1b6c2cffdeae0ee44a2a0",
+        previous_artifact=(
+            "roller-ecu-1.0.17.recu",
+            525371,
+            "75948795f39d898795b85841e4ad2e06c47738240184ff9ffbdc729fc11ab599",
+        ),
+        artifacts=(
+            ("metadata.json",
+                367,
+                "cece519ce6b67edee6187b71135199a6dcddac866f3c40f26d9e60b9d1c9591e",
+            ),
+            ("secure-initial.bin",
+                SECURE_SIZE,
+                "5393702f93134397e875aac8719249f897b9a7397acf3d2c604a8397c3a32179",
+            ),
+            ("nonsecure-initial.bin",
+                NONSECURE_SIZE,
+                "cdba7492e91db1bd38fe0fa133a1d7a0cf6c7fdbfe6d4d257a5005c47b8ae175",
+            ),
+            ("roller-ecu-1.0.18.recu",
+                525371,
+                "4586f106b91fe91f293643a356105c26bf3af74161ac28034fc3494f999a517a",
             ),
         ),
     ),

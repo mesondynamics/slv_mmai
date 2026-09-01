@@ -249,13 +249,16 @@ FINISH 并核对 `accepted_sequence`，不得把“只传输不 FINISH”作为�
 签名有效但 counter 过低的包仍可能消耗 transport sequence，发布系统必须再用更大的
 version、counter 和 sequence 生成新发布，不得覆盖原发布。
 
-非紧急控制与 PI 调参现和 OTA 一样只接受 `172.16.0.10`，活动 sender 还绑定源
-地址；结构正确的急停为保证安全停车而在该过滤前主导。控制/诊断/调参仍没有
+非紧急控制只接受遥控器 `172.16.0.9`、固定调试机 `172.16.0.10` 和
+SN-EJAHGJI 解算出的域控 `172.16.0.12`；PI 调参、工厂服务及 OTA 仍只接受
+`.10`。活动 sender 还绑定源地址，三个并行控制端必须使用不同 `sender_id`；结构
+正确的急停为保证安全停车而在该过滤前主导。控制/诊断/调参仍没有
 端到端密码学鉴权，源 IP 在同一二层网络可被伪造，必须只位于隔离点对点车辆网络。
 OTA 的源 IP 也只是缩小攻击面，真正升级授权来自 transport ECDSA 和内部
 OEMiROT image roots。
-UDP 授权没有绑定源端口；`172.16.0.10` 上所有进程共享控制/调参信任边界，OTA
-客户端也只校验应答源 IP。生产控制器必须限制本机进程与原始套接字权限，并保持
+UDP 授权没有绑定源端口；每个控制白名单 IP 上的进程共享该主机的控制信任边界，
+`.10` 上全部进程还共享调参/OTA 边界，OTA 客户端也只校验应答源 IP。生产控制器
+必须限制本机进程与原始套接字权限，并保持
 二层链路隔离；这些残余风险不得记录为端到端会话认证已通过。
 
 ## 5. 构建、发布和升级命令
@@ -285,19 +288,22 @@ UDP 授权没有绑定源端口；`172.16.0.10` 上所有进程共享控制/调�
 | `1.0.15` | 15 | 15 | 已安装、双确认并完成 fresh audit；当前 CLOSED 不可变转换与 schema-v4 Full Regression recovery 基线，身份已消耗不得复用 |
 | `1.0.16` | 16 | 16 | 已唯一签名并经 CLOSED Ethernet OTA 安装；成对 TEST swap/确认、runtime 和一次无探针冷启动 PASS，身份已消耗不得复用 |
 | `1.0.17` | 17 | 17 | 已唯一签名并经 CLOSED Ethernet OTA 接受；DA 精确回读/重锁、无探针冷启动、runtime/零输出/CAN2 失联 fail-closed/网络延迟 PASS；电机主动测试 PENDING；身份已消耗不得复用 |
+| `1.0.18` | 18 | 18 | 已唯一签名并完成离线四文件、transport ECDSA、双 OEMiROT 镜像签名及 1.0.17 swap-reference 审计；等待从 macOS 执行 CLOSED Ethernet OTA，身份已消耗不得复用 |
 
 `1.0.13` 不得通过 Ethernet OTA、ST-Link、factory initial image 或任何恢复流程
 写入 ECU，也不得修改内容后重新使用 version 1.0.13 或 counter 13。打包工具在
 编译和签名前扫描 `artifacts/firmware/*/metadata.json`，任一已用 version、已用
 counter、不完整/不可信发布历史或指向旧发布的 output directory 都 fail closed；
 `--force` 不能绕过身份门禁。`1.0.15` 仍是不可变 CLOSED 转换和恢复
-基线，禁止重新打包、改写或重放。当前目标已接受 sequence17，`1.0.16` 和
-`1.0.17` 身份均已消耗，不得通过改写内容或任何绕过手段复用。
+基线，禁止重新打包、改写或重放。当前目标在执行本次 OTA 前仍只接受到
+sequence17；`1.0.16`、`1.0.17` 和已经签发的 `1.0.18` 身份均已消耗，不得通过
+改写内容或任何绕过手段复用。
 
 ```sh
 sha256sum artifacts/firmware/1.0.15/roller-ecu-1.0.15.recu
 sha256sum artifacts/firmware/1.0.16/roller-ecu-1.0.16.recu
 sha256sum artifacts/firmware/1.0.17/roller-ecu-1.0.17.recu
+sha256sum artifacts/firmware/1.0.18/roller-ecu-1.0.18.recu
 ```
 
 固定的 1.0.15 转换/恢复基线包 SHA-256 为
@@ -305,7 +311,9 @@ sha256sum artifacts/firmware/1.0.17/roller-ecu-1.0.17.recu
 1.0.16/counter16/update-sequence16 包 SHA-256 为
 `3e5ab07c7b6127dcedb46a1b4b1a695740904dd940d7128631f714d959a0b623`。已唯一签名并
 安装的 1.0.17/counter17/update-sequence17 包 SHA-256 为
-`75948795f39d898795b85841e4ad2e06c47738240184ff9ffbdc729fc11ab599`。
+`75948795f39d898795b85841e4ad2e06c47738240184ff9ffbdc729fc11ab599`。待安装的唯一
+1.0.18/counter18/update-sequence18 包 SHA-256 为
+`4586f106b91fe91f293643a356105c26bf3af74161ac28034fc3494f999a517a`。
 
 主机网络和升级：
 
@@ -315,6 +323,11 @@ python3 tools/ethernet_ota.py --status
 # 1.0.17 的已完成历史命令；当前 accepted_sequence=17，禁止重放
 python3 tools/ethernet_ota.py \
   artifacts/firmware/1.0.17/roller-ecu-1.0.17.recu
+
+# 1.0.18 当前发布命令；必须从固定服务地址 172.16.0.10 执行
+python3 tools/ethernet_ota.py \
+  --host-ip 172.16.0.10 --ecu-ip 172.16.0.11 \
+  artifacts/firmware/1.0.18/roller-ecu-1.0.18.recu
 ```
 
 也可在 `./tools/ecu_debug_ui.py --ecu-ip 172.16.0.11` 的固件升级页选择 `.recu`。
@@ -322,6 +335,9 @@ python3 tools/ethernet_ota.py \
 `state=IDLE/result=0/ota_result=0/accepted_sequence=17`，全部 session 字段为 0。
 post-OTA ATECC/MCU/配对身份、无 quarantine、零输出和调参关闭均 PASS；完整
 1.0.17 DA/重锁/冷启动、当前网络及 CAN2 失联安全状态见第 8.4 节。
+1.0.18 尚未在目标板执行传输、swap、确认或冷启动验证；执行后必须看到
+`state=IDLE/result=0/ota_result=0/accepted_sequence=18`，再按本文 runtime、零输出、
+网络延迟和无探针冷启动门禁完成验收，不能把离线签名 PASS 记作硬件 OTA PASS。
 
 `--stop-after-bytes` 仅用于受控台架的掉电/中断恢复试验，不能出现在生产 SOP。
 

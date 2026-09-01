@@ -319,6 +319,7 @@ def load_ota_module() -> Any:
 class BenchState:
     ecu_ip: str = "172.16.0.11"
     sender_id: int = 1
+    priority: int = 1
     enabled: bool = False
     emergency: bool = False
     control: dict[str, int] = field(default_factory=neutral_control)
@@ -431,7 +432,7 @@ class BenchBridge:
                         priority: int | None = None,
                         steering_rate: bool = False) -> bytes:
         sequence = self._next_control_sequence()
-        effective_priority = self.state.sender_id if priority is None else priority
+        effective_priority = self.state.priority if priority is None else priority
         payload = build_control_payload(
             control, self.state.sender_id, effective_priority, steering_rate
         )
@@ -899,6 +900,7 @@ class BenchBridge:
             )
             return {
                 "ecu_ip": self.state.ecu_ip, "sender_id": self.state.sender_id,
+                "priority": self.state.priority,
                 "enabled": self.state.enabled, "emergency": self.state.emergency,
                 "control": dict(self.state.control), "status": self.state.status,
                 "diagnostic": self.state.diagnostic,
@@ -1028,11 +1030,12 @@ class BenchBridge:
             self.state.browser_heartbeat_at = time.monotonic()
 
     def configure(self, request: dict[str, Any]) -> None:
-        unknown = set(request) - {"ecu_ip", "sender_id", "enabled"}
+        unknown = set(request) - {"ecu_ip", "sender_id", "priority", "enabled"}
         if unknown:
             raise ValueError(f"unknown configuration fields: {sorted(unknown)}")
         requested_ip: str | None = None
         requested_sender: int | None = None
+        requested_priority: int | None = None
         requested_enabled: bool | None = None
         if "ecu_ip" in request:
             if not isinstance(request["ecu_ip"], str):
@@ -1046,6 +1049,14 @@ class BenchBridge:
             requested_sender = request["sender_id"]
             if requested_sender not in (1, 2, 3):
                 raise ValueError("sender_id must be 1, 2, or 3")
+        if "priority" in request:
+            if isinstance(request["priority"], bool) or not isinstance(
+                request["priority"], int
+            ):
+                raise ValueError("priority must be an integer")
+            requested_priority = request["priority"]
+            if not 1 <= requested_priority <= 254:
+                raise ValueError("priority must be in 1..254")
         if "enabled" in request:
             if not isinstance(request["enabled"], bool):
                 raise ValueError("enabled must be boolean")
@@ -1055,8 +1066,11 @@ class BenchBridge:
             new_ip = self.state.ecu_ip if requested_ip is None else requested_ip
             new_sender = self.state.sender_id if requested_sender is None \
                 else requested_sender
+            new_priority = self.state.priority if requested_priority is None \
+                else requested_priority
             ip_change = new_ip != self.state.ecu_ip
-            connection_change = ip_change or new_sender != self.state.sender_id
+            connection_change = ip_change or new_sender != self.state.sender_id \
+                or new_priority != self.state.priority
             if connection_change and self.state.enabled:
                 raise ValueError(
                     "release ECU control before changing ECU or sender"
@@ -1081,6 +1095,7 @@ class BenchBridge:
                     self.state.steering_status_sequence = 0
             self.state.ecu_ip = new_ip
             self.state.sender_id = new_sender
+            self.state.priority = new_priority
             if "enabled" in request:
                 self.state.enabled = bool(requested_enabled)
                 if not self.state.enabled:

@@ -18,13 +18,40 @@ class NetworkPolicySourceTests(unittest.TestCase):
         cls.header = NETWORK_HEADER.read_text(encoding="utf-8")
         cls.authority_policy = AUTHORITY_POLICY_HEADER.read_text(encoding="utf-8")
 
-    def test_trusted_control_host_is_the_dedicated_bench_peer(self):
-        for octet, value in enumerate((172, 16, 0, 10)):
-            self.assertRegex(
-                self.header,
-                rf"#define ECU_TRUSTED_HOST_ADDRESS_{octet}\s+{value}U",
+    def test_control_hosts_follow_serial_derived_network_plan(self):
+        expected_hosts = {
+            "REMOTE": (172, 16, 0, 9),
+            "SERVICE": (172, 16, 0, 10),
+            "DOMAIN": (172, 16, 0, 12),
+        }
+        self.assertRegex(
+            self.header,
+            r'#define ECU_PRODUCT_SERIAL\s+"SN-EJAHGJI"',
+        )
+        for role, address in expected_hosts.items():
+            for octet, value in enumerate(address):
+                self.assertRegex(
+                    self.header,
+                    rf"#define ECU_{role}_HOST_ADDRESS_{octet}\s+{value}U",
+                )
+
+        control_policy = self.source[
+            self.source.index("static bool Network_ControlHostAuthorized"):
+            self.source.index("static bool Network_SenderCanControlSteering")
+        ]
+        for role in ("REMOTE", "DOMAIN"):
+            self.assertIn(f"ECU_{role}_HOST_ADDRESS_3", control_policy)
+        self.assertIn("Network_ServiceHostAuthorized(address)", control_policy)
+
+        service_policy = self.source[
+            self.source.index("static bool Network_ServiceHostAuthorized"):
+            self.source.index("static bool Network_ControlHostAuthorized")
+        ]
+        for octet in range(4):
+            self.assertIn(
+                f"ECU_SERVICE_HOST_ADDRESS_{octet}",
+                service_policy,
             )
-        self.assertIn("Network_TrustedHostAuthorized", self.source)
 
     def test_emergency_dominates_before_host_filter(self):
         start = self.source.index("static bool Network_AcceptControl")
@@ -32,7 +59,7 @@ class NetworkPolicySourceTests(unittest.TestCase):
         function = self.source[start:end]
         emergency = function.index("if (emergency_requested)")
         accepted = function.index("return true;", emergency)
-        trusted = function.index("Network_TrustedHostAuthorized", accepted)
+        trusted = function.index("Network_ControlHostAuthorized", accepted)
         semantic = function.index("ECU_ProtocolControlValuesValid", trusted)
         self.assertLess(emergency, accepted)
         self.assertLess(accepted, trusted)
@@ -132,12 +159,35 @@ class NetworkPolicySourceTests(unittest.TestCase):
 
     def test_tuning_and_ota_do_not_reply_to_other_hosts(self):
         tuning = self.source.index("static void Network_ReceiveTuning")
-        trusted = self.source.index("Network_TrustedHostAuthorized(address)", tuning)
+        trusted = self.source.index("Network_ServiceHostAuthorized(address)", tuning)
         switch = self.source.index("switch (header.message_type)", tuning)
         self.assertLess(trusted, switch)
         self.assertIn(
-            "return Network_TrustedHostAuthorized(address);",
+            "return Network_ServiceHostAuthorized(address);",
             self.source[self.source.index("Network_OtaHostAuthorized"):tuning],
+        )
+
+    def test_explicit_sender_priority_drives_deterministic_arbitration(self):
+        priority = self.source[
+            self.source.index("static uint8_t Network_EffectivePriority"):
+            self.source.index("static ECU_ControlMode Network_ModeForSlot")
+        ]
+        self.assertIn("if (requested_priority != 0U)", priority)
+        self.assertIn("return requested_priority;", priority)
+        self.assertIn("requested_priority == CONTROL_PRIORITY_EMERGENCY", priority)
+
+        selection = self.source[
+            self.source.index("static ControlSlot *Network_SelectAuthority"):
+            self.source.index("static void Network_ApplyAuthority")
+        ]
+        self.assertRegex(
+            selection,
+            r"slot->priority > selected->priority",
+        )
+        self.assertRegex(
+            selection,
+            r"slot->priority == selected->priority(?s:.*?)"
+            r"slot->sender_id < selected->sender_id",
         )
 
     def test_periodic_udp_classes_have_distinct_reviewed_phases(self):

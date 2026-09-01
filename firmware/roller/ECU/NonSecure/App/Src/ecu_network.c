@@ -131,15 +131,37 @@ static bool Network_TimeExpired(uint32_t now, uint32_t last,
   return ControlAuthorityPolicy_TimeExpired(now, last, timeout);
 }
 
-static bool Network_TrustedHostAuthorized(const ip_addr_t *address)
+static bool Network_AddressMatches(const ip_addr_t *address,
+                                   uint8_t octet_0, uint8_t octet_1,
+                                   uint8_t octet_2, uint8_t octet_3)
 {
-  ip_addr_t trusted_host;
+  ip_addr_t expected;
 
-  IP4_ADDR(ip_2_ip4(&trusted_host),
-           ECU_TRUSTED_HOST_ADDRESS_0, ECU_TRUSTED_HOST_ADDRESS_1,
-           ECU_TRUSTED_HOST_ADDRESS_2, ECU_TRUSTED_HOST_ADDRESS_3);
-  IP_SET_TYPE_VAL(trusted_host, IPADDR_TYPE_V4);
-  return (address != NULL) && ip_addr_cmp(address, &trusted_host);
+  if (address == NULL)
+  {
+    return false;
+  }
+  IP4_ADDR(ip_2_ip4(&expected), octet_0, octet_1, octet_2, octet_3);
+  IP_SET_TYPE_VAL(expected, IPADDR_TYPE_V4);
+  return ip_addr_cmp(address, &expected);
+}
+
+static bool Network_ServiceHostAuthorized(const ip_addr_t *address)
+{
+  return Network_AddressMatches(
+      address, ECU_SERVICE_HOST_ADDRESS_0, ECU_SERVICE_HOST_ADDRESS_1,
+      ECU_SERVICE_HOST_ADDRESS_2, ECU_SERVICE_HOST_ADDRESS_3);
+}
+
+static bool Network_ControlHostAuthorized(const ip_addr_t *address)
+{
+  return Network_AddressMatches(
+             address, ECU_REMOTE_HOST_ADDRESS_0, ECU_REMOTE_HOST_ADDRESS_1,
+             ECU_REMOTE_HOST_ADDRESS_2, ECU_REMOTE_HOST_ADDRESS_3) ||
+         Network_ServiceHostAuthorized(address) ||
+         Network_AddressMatches(
+             address, ECU_DOMAIN_HOST_ADDRESS_0, ECU_DOMAIN_HOST_ADDRESS_1,
+             ECU_DOMAIN_HOST_ADDRESS_2, ECU_DOMAIN_HOST_ADDRESS_3);
 }
 
 static bool Network_SenderCanControlSteering(uint8_t sender_id)
@@ -168,11 +190,13 @@ static uint8_t Network_EffectivePriority(uint8_t sender_id,
   {
     return CONTROL_PRIORITY_EMERGENCY;
   }
-  if ((sender_id >= 1U) && (sender_id <= 3U))
+  if (requested_priority != 0U)
   {
-    return sender_id;
+    return requested_priority;
   }
-  return (requested_priority == 0U) ? 1U : requested_priority;
+  /* Preserve old clients that sent zero: the three canonical identities fall
+     back to their historical levels, while custom identities use level 1. */
+  return ((sender_id >= 1U) && (sender_id <= 3U)) ? sender_id : 1U;
 }
 
 static ECU_ControlMode Network_ModeForSlot(const ControlSlot *slot)
@@ -336,10 +360,11 @@ static bool Network_AcceptControl(ECU_ControlDatagramV2 *datagram,
     ++counters.valid_control_frames;
     return true;
   }
-  /* Motion and tuning are confined to the dedicated point-to-point bench
-     host. This is defense in depth, not cryptographic authentication; the
-     structurally valid emergency path above intentionally remains dominant. */
-  if (!Network_TrustedHostAuthorized(address))
+  /* Normal motion is confined to the serial-derived domain controller plus
+     the fleet-wide service and remote-controller addresses. This is defense
+     in depth, not cryptographic authentication; the structurally valid
+     emergency path above intentionally remains dominant. */
+  if (!Network_ControlHostAuthorized(address))
   {
     ++counters.rejected_control_frames;
     return false;
@@ -423,8 +448,8 @@ static bool Network_AcceptControl(ECU_ControlDatagramV2 *datagram,
   slot->sequence_valid = true;
   slot->rearm_candidate = rearm_required ? true : false;
   slot->sender_id = datagram->sender_id;
-  /* Preset senders 1..3 use their fixed levels; custom sender IDs keep
-     their requested (non-emergency) priority. */
+  /* Explicit non-emergency priorities 1..254 arbitrate every sender. A zero
+     priority uses the compatibility fallback in Network_EffectivePriority. */
   slot->priority = effective_priority;
   slot->flags = flags & ECU_CONTROL_FLAG_STEERING_RATE;
   slot->last_sequence = sequence;
@@ -841,7 +866,7 @@ static void Network_SendSecurityStatus(void)
 
 static bool Network_TuningAuthorized(const ip_addr_t *address)
 {
-  return Network_TrustedHostAuthorized(address) &&
+  return Network_ServiceHostAuthorized(address) &&
          ((active_slot == NULL) || !active_slot->active ||
           ip_addr_cmp(address, &active_slot->source_address));
 }
@@ -882,7 +907,7 @@ static void Network_SendOperationAck(const ip_addr_t *address, uint16_t port,
 
 static bool Network_OtaHostAuthorized(const ip_addr_t *address)
 {
-  return Network_TrustedHostAuthorized(address);
+  return Network_ServiceHostAuthorized(address);
 }
 
 static void Network_SendOtaStatus(const ip_addr_t *address, uint16_t port,
@@ -980,7 +1005,7 @@ static void Network_ReceiveOta(void *argument, struct udp_pcb *pcb,
 #if defined(ECU_FACTORY_PROVISIONING)
 static bool Network_FactoryHostAuthorized(const ip_addr_t *address)
 {
-  return Network_TrustedHostAuthorized(address);
+  return Network_ServiceHostAuthorized(address);
 }
 
 static void Network_SendFactoryStatus(
@@ -1052,7 +1077,7 @@ static void Network_ReceiveTuning(void *argument, struct udp_pcb *pcb,
   }
   /* Do not disclose configuration or emit reflected replies to other hosts.
      Apply/save/reload/subscription retain the active-authority source check. */
-  if (!Network_TrustedHostAuthorized(address))
+  if (!Network_ServiceHostAuthorized(address))
   {
     return;
   }

@@ -160,9 +160,11 @@ mask 只证明软件要求的 TPIC 位，不证明触点、电磁阀或线束实
 
 1. 确认状态年龄 <300 ms，READY/ADC 有效，CALIBRATING 已消失，阀目标、反馈、
    占空比均为零；如有可清故障，保持中性后点击清除。
-2. 在“电流 PI 调参”读取 ECU 参数。首次没有有效日志时应显示默认参数来源。
-3. 启用控制，依次给前进 `+100、+200、+300 mA`，每档至少保持 2 s；用串联
-   标准电流表测量线圈电流，并与 UI 前进反馈比较。回零，确认反馈 <50 mA。
+2. 进入“电流 PI 调参”，等待“波形就绪”且首批 1 kHz 基线样本已经显示，再读取
+   ECU 参数；首次没有有效日志时应显示默认参数来源。
+3. 在调参页启用零目标控制，依次给前进 `+100、+200、+300 mA`，每档至少保持
+   2 s；用串联标准电流表测量线圈电流，并与 UI 前进反馈比较。每次阶跃必须从
+   调参页直接设置，确认波形包含动作前基线；随后立即归零并确认反馈 <50 mA。
 4. 依次给后退 `-100、-200、-300 mA` 并重复测量。不要直接从较大正值跳到较大
    负值；换向试验先用 ±200 mA，观察施加目标先降零且双 PWM 不重叠。
 5. 每点记录：目标、稳态 DMM、ECU 反馈、占空比、供电电压、线圈温度。初始工程
@@ -197,12 +199,19 @@ UI 波形包含请求目标、斜坡目标、带符号反馈、两路占空比�
 4. 抓包确认 V2/V1 状态各为 20 Hz，转向/诊断/安全状态各为 10 Hz，周期类报文按
    0/10/25/35/60 ms 相位分散，同一 HAL 毫秒最多提交一类周期应用帧；调参未打开时
    UDP 50004 必须没有高速遥测。
-5. 从 `172.16.0.10` 以外的受控测试地址发送普通控制、GET/APPLY/SUBSCRIBE，确认
-   ECU 不动作且不回复；再发送结构及校验正确的零输出急停，确认其仍进入安全停止。
+5. 分别从遥控器 `172.16.0.9`、调试机 `172.16.0.10`、SN-EJAHGJI 域控
+   `172.16.0.12` 使用不同 sender 发送全中性控制，再以不同的 1..254 priority
+   逐级竞争；确认数值较大的活动 sender 获得控制，相同数值由较小 sender ID
+   确定性胜出，低优先级 sender 继续续租但不会影响当前输出。当前活动控制方超过
+   250 ms 后按既有 IDLE/Disarm/rearm 边界处理。
+6. 从 `.9` 和 `.12` 发送 GET/APPLY/SUBSCRIBE/OTA STATUS，确认 ECU 不回复；只有
+   `.10` 可使用调参、遥测和 OTA。从未列入白名单的受控测试地址发送普通控制，
+   确认 ECU 不动作；再发送结构及校验正确的零输出急停，确认其仍进入安全停止。
    该项只验证纵深 IP 策略，不得记录为密码学鉴权测试。
-6. 在 `172.16.0.10` 上用第二个受控测试进程和不同 UDP 源端口发送更新 sequence，
-   记录它属于同一主机信任域而可接管 sender；确认生产主机进程隔离和点对点二层
-   隔离措施已纳入系统验收，不能把源端口或 CRC 当作身份认证。
+7. 在每个白名单 IP 上用第二个受控测试进程和不同 UDP 源端口发送更新 sequence，
+   记录同一 IP 属于一个主机信任域而可接管相同 sender；同时确认不同 IP 不能续租
+   已绑定 sender。生产主机进程隔离和点对点二层隔离必须纳入系统验收，不能把
+   源端口、源 IP 或 CRC 当作密码学身份认证。
 
 只有本文第 1 节与转向附加安全条件均已由现场人员确认，才进入第二阶段：
 
@@ -448,6 +457,20 @@ DA 回读、关闭调试和最终无探针冷启动也已独立完成。1.0.17 �
 | 1.0.17 close-debug | `Locking Debug` 和严格 CLOSED/VALID 复核 PASS；关闭后同一普通读取再次 rc=1/无文件 | PASS |
 | DA 后最终仅 ECU 冷启动 | 完整移除 ST-Link、保持 JP1 断开并断电至少 10 s；MCU/ATECC/pairing/no-quarantine、relay/阀/PWM/转向零输出、调参关闭、telemetry=0；OTA IDLE/result=0/accepted17；100 包 0% 丢包，RTT min/avg/max=`0.066/0.103/0.146 ms` | PASS |
 | DA 证据外部备份 | 已复制到 `/home/plac/Documents/ECU_PKI/artifacts/hardware-regression/20260830T154340Z-closed-da-readback-1.0.17/`；0700/0600、逐字节 diff 和 manifest 均通过 | PASS |
+
+### 11.5 1.0.18 控制端白名单、优先级仲裁与 OTA 发布准备
+
+| 项目 | 2026-08-31 结果 | 结论 |
+|---|---|---|
+| 网络身份 | 产品序列号 `SN-EJAHGJI`；ECU `.11`、域控 `.12`；固定遥控器 `.9`、调试/售后机 `.10` | PASS（源码与静态审计） |
+| 控制边界 | 普通控制只接受 `.9/.10/.12`；调参、遥测、工厂服务和 OTA 仍只接受 `.10`；活动 sender 绑定源 IP | PASS（自动化测试） |
+| 多源仲裁 | 显式 priority `1..254` 数值越大越优先；同优先级较小 sender ID 胜出；0 仅兼容旧客户端，255 保留网络紧急 | PASS（自动化测试） |
+| UI | sender ID 与 priority 独立配置；活动控制期间修改任一项均要求先 RELEASE | PASS（自动化测试） |
+| 主机回归 | `tools/test.sh` 的 Python/静态 199 项通过；本机无 `cc`，C 主机行为断言降级为 ARM `-Werror` 交叉编译，签名 Release 同源构建/链接通过；`tools/audit_config.sh` 与 `git diff --check` 通过；NonSecure Flash=`30752 B/311 KiB`、RAM=`91960 B/320 KiB` | C 主机运行时断言 SKIP；目标 ARM 构建 PASS |
+| 唯一发布 | version 1.0.18/counter18/update-sequence18；package SHA-256=`4586f106b91fe91f293643a356105c26bf3af74161ac28034fc3494f999a517a` | PASS；身份已消耗 |
+| 离线密码学/格式 | transport ECDSA、双 initial/加密 update OEMiROT 签名、镜像 identity/counter/dependency、1.0.17 previous-swap reference 与双 key-area hash 均固定并验证 | PASS |
+| CLOSED Ethernet OTA | 等待从 macOS 固定服务地址 `172.16.0.10` 向 ECU `172.16.0.11` 执行；当前板仍为 accepted sequence 17 | **PENDING** |
+| post-OTA runtime/冷启动 | 必须验证 accepted sequence 18、ATECC/MCU pairing、无 quarantine、零输出、PI telemetry 关闭、网络延迟和仅 ECU 冷启动 | **PENDING** |
 
 以下项目仍为 PENDING，不得继承历史记录或把软件 mask 当作硬件 PASS：
 

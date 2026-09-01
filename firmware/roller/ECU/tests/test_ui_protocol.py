@@ -25,7 +25,9 @@ class ProtocolV2Test(unittest.TestCase):
     @staticmethod
     def bridge(sender_id=2, enabled=True):
         bridge = UI.BenchBridge.__new__(UI.BenchBridge)
-        bridge.state = UI.BenchState(sender_id=sender_id, enabled=enabled)
+        bridge.state = UI.BenchState(
+            sender_id=sender_id, priority=sender_id, enabled=enabled
+        )
         bridge.lock = threading.RLock()
         bridge.tuning_clients = {}
         bridge.tuning_tombstones = {}
@@ -143,6 +145,21 @@ class ProtocolV2Test(unittest.TestCase):
         self.assertEqual(fields["valve_current_target_ma"], -1370)
         self.assertEqual(fields["engine_speed_level"], 1)
         self.assertEqual(fields["emergency_stop_request"], 1)
+
+    def test_bridge_uses_independent_configured_priority(self):
+        bridge = self.bridge(sender_id=2, enabled=False)
+        bridge.configure({"priority": 47})
+        self.assertEqual(bridge.state.sender_id, 2)
+        self.assertEqual(bridge.state.priority, 47)
+        _, payload = UI.decode_v2(
+            bridge._control_packet(UI.neutral_control(), 0)
+        )
+        sender_id, priority, reserved = struct.unpack_from("<BBH", payload)
+        self.assertEqual((sender_id, priority, reserved), (2, 47, 0))
+
+        with self.assertRaisesRegex(ValueError, "1..254"):
+            bridge.configure({"priority": 255})
+        self.assertEqual(bridge.state.priority, 47)
 
     def test_corrupt_and_v1_frames_are_rejected(self):
         frame = bytearray(UI.encode_v2(UI.MSG_CONFIG_GET, 0, 7, b"", 1))
@@ -293,6 +310,9 @@ class ProtocolV2Test(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "release ECU control"):
             bridge.configure({"sender_id": 3})
         self.assertEqual(bridge.state.sender_id, 2)
+        with self.assertRaisesRegex(ValueError, "release ECU control"):
+            bridge.configure({"priority": 100})
+        self.assertEqual(bridge.state.priority, 2)
 
         bridge.configure({"enabled": False})
         self.assertEqual(bridge.state.control[UI.STEERING_VELOCITY_FIELD], 0)
@@ -566,6 +586,13 @@ class ProtocolV2Test(unittest.TestCase):
         self.assertIn("/api/steering/stop", html)
         self.assertIn("tunePage').classList.contains('active')", html)
         self.assertIn("document.visibilityState==='visible'", html)
+        self.assertIn('id="tuneCurrentTarget"', html)
+        self.assertIn('id="tuneCurrentTargetNumber"', html)
+        self.assertIn('id="tuneCurrentZero"', html)
+        self.assertIn('id="tuneEnableControl"', html)
+        self.assertIn("tuningSamplesReady=true", html)
+        self.assertIn("telemetryAge<500", html)
+        self.assertIn("await safeApi('/api/neutral',{})", html)
         self.assertIn("event.isPrimary===false||event.button!==0", html)
         self.assertIn("s.signed_feedback_ma??0", html)
         self.assertIn("p.state,p.fault_flags", html)
