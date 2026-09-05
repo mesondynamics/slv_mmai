@@ -79,10 +79,28 @@ static void test_same_slot_reuse_changes_session_identity(void)
   assert(ControlAuthorityPolicy_BeginSession(&policy) == 1U);
 }
 
+static void test_explicit_estop_reset_forces_a_safe_round(void)
+{
+  ControlAuthorityPolicy policy;
+
+  ControlAuthorityPolicy_Init(&policy);
+  ControlAuthorityPolicy_RequireRearm(&policy, 1U);
+  ControlAuthorityPolicy_RequireRearm(&policy, 3U);
+  ControlAuthorityPolicy_RequireSafeRound(&policy);
+  assert(ControlAuthorityPolicy_RearmRequired(&policy, 1U));
+  assert(ControlAuthorityPolicy_RearmRequired(&policy, 3U));
+  assert(ControlAuthorityPolicy_BeginSafetyRound(&policy, 2000U, 20U));
+  assert(ControlAuthorityPolicy_SafetyHoldActive(&policy, 2019U));
+  assert(!ControlAuthorityPolicy_SafetyHoldActive(&policy, 2020U));
+  assert(!ControlAuthorityPolicy_CanEstablish(&policy, 1U, false));
+  assert(ControlAuthorityPolicy_CanEstablish(&policy, 1U, true));
+}
+
 int main(void)
 {
   test_timeout_boundaries();
   test_expired_sender_requires_neutral_and_a_full_safe_round();
   test_same_slot_reuse_changes_session_identity();
+  test_explicit_estop_reset_forces_a_safe_round();
   return 0;
 }

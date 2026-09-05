@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Strictly audit authenticated DA primary readbacks after CLOSED OTA.
 
-The immutable reviewed 1.0.16, 1.0.17, and 1.0.18 release profiles are
-retained.  The CLI defaults to the current 1.0.18 release; an explicit older
+The immutable reviewed 1.0.16, 1.0.17, 1.0.18, and 1.0.20 release profiles
+are retained, including the quarantined 1.0.18 forensic profile.  The
+malformed, never-installed 1.0.19 is deliberately not a valid readback
+profile.  The CLI defaults to the current 1.0.20 release; an explicit older
 release directory continues to reproduce its historical post-OTA audit.
 
 CubeProgrammer may fail a single 320 KiB NonSecure upload.  Each readback is
@@ -175,7 +177,7 @@ EXPECTED_METADATA = {
     "secure_size": SECURE_SIZE,
     "nonsecure_size": NONSECURE_SIZE,
 }
-DEFAULT_CLI_VERSION = "1.0.18"
+DEFAULT_CLI_VERSION = "1.0.20"
 RELEASE_PROFILES = MappingProxyType({
     "1.0.16": ReleaseProfile(
         version="1.0.16",
@@ -282,9 +284,59 @@ RELEASE_PROFILES = MappingProxyType({
                 NONSECURE_SIZE,
                 "cdba7492e91db1bd38fe0fa133a1d7a0cf6c7fdbfe6d4d257a5005c47b8ae175",
             ),
-            ("roller-ecu-1.0.18.recu",
+            ("roller-ecu-1.0.18.recu.REVOKED_DO_NOT_FLASH",
                 525371,
                 "4586f106b91fe91f293643a356105c26bf3af74161ac28034fc3494f999a517a",
+            ),
+            ("REVOKED_DO_NOT_FLASH.txt",
+                612,
+                "b6c86b66c9f0c151aacf1910fc663f219e104df407daa2927b639ded353ad1fe",
+            ),
+        ),
+    ),
+    "1.0.20": ReleaseProfile(
+        version="1.0.20",
+        identity=(1, 0, 20, 0, 20),
+        update_sequence=20,
+        secure_update_sha256=
+            "81c4d97bed81c09f480b75a3565999a81d9b64112570941c52c25e458b2334ad",
+        nonsecure_update_sha256=
+            "0ebbd6c846fb1b7e29ce227674f0227863fde54a1fdf102c09ca5e9bf571dfb7",
+        # Direct 1.0.17 -> 1.0.20 installation deliberately skips the two
+        # quarantined, never-installed identities 1.0.18 and 1.0.19.  Pin
+        # post-swap primary order: current 1.0.20, then previous 1.0.17.
+        secure_key_area_sha256=
+            "541de68dd97c65acefcf93e5c03847f7d8dd4ccf39b1c2a13a8c0109797aa1a2",
+        nonsecure_key_area_sha256=
+            "d0a629a693f9a7c111aa963e42c7f4b28178a2e4b065477022a2267160d37a06",
+        previous_version="1.0.17",
+        previous_identity=(1, 0, 17, 0, 17),
+        previous_update_sequence=17,
+        previous_secure_update_sha256=
+            "974d08e78a4f95b22c20d3652656c8bae107883247e241992018ce528cfad2ad",
+        previous_nonsecure_update_sha256=
+            "d09255f90f2f26ea5992927620fb6a8fbf84b0924df1b6c2cffdeae0ee44a2a0",
+        previous_artifact=(
+            "roller-ecu-1.0.17.recu",
+            525371,
+            "75948795f39d898795b85841e4ad2e06c47738240184ff9ffbdc729fc11ab599",
+        ),
+        artifacts=(
+            ("metadata.json",
+                367,
+                "f8509da9a6f1b635ad3e53abd0df2a23e106429ab8b13fdcf5f4f040900f40bd",
+            ),
+            ("secure-initial.bin",
+                SECURE_SIZE,
+                "e15ad3c57afe9f3b105e41e433cf7307d8611dbe3b23c57800cbe7f0fa279e5f",
+            ),
+            ("nonsecure-initial.bin",
+                NONSECURE_SIZE,
+                "3729dddf4bdceb9f271dbccb7228a0de5f82b03d766196f5a5fcb0376c36e837",
+            ),
+            ("roller-ecu-1.0.20.recu",
+                525371,
+                "9c370f279fde039cadb329390e9dd857a9235fdea81eda247ec92e7ee8263ace",
             ),
         ),
     ),
@@ -716,7 +768,13 @@ def load_release(release_dir: Path) -> ReleaseArtifacts:
     _require(type(metadata) is dict and metadata == profile.expected_metadata(),
              "release metadata fields are not exact")
 
-    package_name = f"roller-ecu-{profile.version}.recu"
+    package_names = [
+        name for name in artifacts
+        if name.startswith(f"roller-ecu-{profile.version}.recu")
+    ]
+    _require(len(package_names) == 1,
+             "release profile must pin exactly one OTA package artifact")
+    package_name = package_names[0]
     try:
         # Parse the exact byte string that already passed the pinned size/hash
         # gate. Reopening the path here would create a verification TOCTOU.

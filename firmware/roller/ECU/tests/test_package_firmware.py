@@ -44,6 +44,23 @@ def add_release(history: Path, version: str, security_counter: int,
 
 
 class ReleaseIdentityTest(unittest.TestCase):
+    def test_raw_firmware_binary_is_canonically_aligned_before_signing(self):
+        with tempfile.TemporaryDirectory() as temp_name:
+            payload = Path(temp_name) / "firmware.bin"
+            original = bytes(range(17))
+            payload.write_bytes(original)
+            self.assertEqual(PACKAGE.align_raw_firmware_binary(payload), 15)
+            self.assertEqual(payload.read_bytes(), original + b"\xff" * 15)
+            self.assertEqual(PACKAGE.align_raw_firmware_binary(payload), 0)
+            self.assertEqual(payload.read_bytes(), original + b"\xff" * 15)
+
+    def test_empty_raw_firmware_binary_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temp_name:
+            payload = Path(temp_name) / "firmware.bin"
+            payload.write_bytes(b"")
+            with self.assertRaisesRegex(RuntimeError, "empty firmware payload"):
+                PACKAGE.align_raw_firmware_binary(payload)
+
     def test_next_unique_identity_is_allowed(self):
         with tempfile.TemporaryDirectory() as temp_name:
             history = Path(temp_name) / "artifacts" / "firmware"

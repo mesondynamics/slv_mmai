@@ -16,7 +16,9 @@
 OTA `accepted_sequence=17`。升级后的 ATECC/MCU 配对、无 quarantine、零输出、
 CAN2 失联安全状态和 Ethernet 延迟已经验证；1.0.17 的 DA 主槽精确回读、
 close-debug、关闭后未认证读取拒绝和完整无探针冷启动也已 PASS。真实转向
-电机尚未接入，主动控制测试仍为 PENDING。
+电机尚未接入，主动控制测试仍为 PENDING。1.0.18 与 1.0.19 均从未安装且已撤销；
+当前可部署候选为离线验证通过的 1.0.20/counter20/update-sequence20，macOS OTA、
+实机 K12/急停回归和仅 ECU 冷启动尚为 PENDING。
 PKI 已建立受控工作副本、本机精确镜像和不可覆盖恢复快照；私钥、口令和可解密
 备份均不得进入仓库或随 ECU 交付。密钥负责人已确认将 `ECU_PKI.zip` 备份到多个
 设备；各副本仍应使用加密介质，解锁口令与 `key-passphrase.txt` 分开保管，并至少
@@ -53,16 +55,19 @@ close-debug 后失效；Full Regression 则必然擦除全部用户 Flash、OBKe
    进一步要求两份都精确匹配本板身份且字节一致。UID 不是秘密，也不是防移植的
    唯一信任因子。
 5. 任何身份检查失败时，诊断和受签名 OTA 恢复通道仍可运行，但执行器 ARM 被
-   Secure 域拒绝，全部 TPIC/PWM 输出保持安全态；OTA test image 也不会被确认。
+   Secure 域拒绝，K12 与全部 TPIC/PWM 输出保持失电安全态；OTA test image 也
+   不会被确认。认证通过、实体急停健康且运行镜像已确认时，Secure 域在 20 ms
+   消抖后独立闭合 K12 人工驾驶许可，不依赖 Ethernet 或任何控制端上线。
 6. Secure 内部读取两个 primary trailer 的 `image_ok`：两者均为 `0x01`
    才是已确认，任一为 `0xFF` 则通过既有 `SECURE_SafetyGetStatus()` 的
    `SAFETY_STATUS_OTA_UNCONFIRMED` (bit 25) 向 NonSecure 给出正向指示；其他
    flag 值按完整性故障处理。运行状态查询没有增加新的 NSC query API。
-7. OTA test-swap 镜像只有在 ATECC 认证的 Secure 安全服务、ADC、CAN、
+7. OTA test-swap 镜像只有在实体急停从 BEGIN 起持续按下，并且 ATECC 认证的
+   Secure 安全服务、ADC、CAN、
    速度处理和 LwIP 均已初始化，且固定地址 0 的 LAN8742A 返回预期
    PHY ID 后才进入确认。NonSecure 启动门禁和 Secure watchdog 均对未确认
    镜像实施不可延长的 5 s 上限；等待期间 UDP 控制、调参和 OTA 均不进入
-   operational 状态。超时或确认失败时撤销输出、停止喂 IWDG，由
+   operational 状态。实体急停提前释放、超时或确认失败时撤销输出、停止喂 IWDG，由
    watchdog reset 进入 OEMiROT 回滚。已确认镜像不进入这个回滚路径。
 
 PHY 启动门禁要求 MDIO 上的地址/ID 校验及 BSR/BCR 读取有效；合法的
@@ -126,7 +131,8 @@ OEMiROT 签名应用的 NSC 窗口固定为 `0x0C05DC00..0x0C05DFFF`。
 地址。例如 `SECURE_SafetyGetStatus()` 保持在 `0x0C05DC59`，既有的
 `SECURE_SafetyOtaConfirmRunningImages()` 保持在 `0x0C05DC89`。后续 ABI 采用
 严格追加：v2 在 `0x0C05DCA9` 固定转向快照，v3 在 `0x0C05DCB1` 固定只读
-J1939 快照；v3 include v2、v2 include v1，旧地址不改写。signed build 会在
+J1939 快照，v4 在 `0x0C05DCB9/0x0C05DCC1` 固定网络急停断言/解除；v4 include
+v3、v3 include v2、v2 include v1，旧地址不改写。signed build 会在
 source map、Secure ELF、私有 import object 与最终 NonSecure ELF 四处核对每个
 地址。OTA 确认状态仍只在 `GetStatus` 的 32 bit 保留位定义
 `SAFETY_STATUS_OTA_UNCONFIRMED`，没有添加
@@ -230,7 +236,8 @@ FIH 编码的相等性结果作控制流判定；读取失败或任一字段不�
 S/NS 镜像互相声明对同一 version 的 dependency，使用同一个签名
 `security_counter`，secondary trailer 只能请求 TEST swap。
 
-UDP 50006 只接受源地址 `172.16.0.10`。BEGIN 会立即释放全部输出并进入 quarantine；
+UDP 50006 只接受源地址 `172.16.0.10`。BEGIN 还要求实体急停已经按下；随后立即
+硬失能 K12 与全部自动输出并进入 quarantine；
 CHUNK 使用 512 B payload、CRC-32C、连续 offset 和 16 B Flash 编程粒度，重复的
 已写 chunk 只有内容完全一致才允许恢复；FINISH 核对整镜像哈希和 trailer 后以
 schema-2 journal 原子保存接受序号并 reset。journal 最终 quadword 同时保存 commit、
@@ -241,7 +248,9 @@ MCUboot 的完整 secondary 镜像本身带 trailer magic，因此“完整传�
 后再复位，OEMiROT 仍可能评估并试启动这个已签名镜像；FINISH 是 transport 防重放
 journal 的提交点，不是唯一的 swap 触发点。不完整或被篡改的镜像不能通过 OEMiROT
 签名/哈希验证。BEGIN 至结束期间执行器保持 quarantine，生产升级工具必须完成
-FINISH 并核对 `accepted_sequence`，不得把“只传输不 FINISH”作为正常流程。
+FINISH 并核对 `accepted_sequence`，且实体急停必须持续按住到 reset/test swap 和
+新镜像确认完成；不得把“只传输不 FINISH”作为正常流程。若在确认前松开实体急停，
+Secure 域拒绝写入双 `image_ok`，NonSecure 停止喂狗，OEMiROT 回滚旧的已确认配对。
 
 `update_sequence` 是 ECU transport journal 的单调防重放序号；`security_counter`
 是签名镜像中的发布身份及 OEMiROT 硬件防降级计数的输入。两者必须独立
@@ -288,7 +297,9 @@ UDP 授权没有绑定源端口；每个控制白名单 IP 上的进程共享该
 | `1.0.15` | 15 | 15 | 已安装、双确认并完成 fresh audit；当前 CLOSED 不可变转换与 schema-v4 Full Regression recovery 基线，身份已消耗不得复用 |
 | `1.0.16` | 16 | 16 | 已唯一签名并经 CLOSED Ethernet OTA 安装；成对 TEST swap/确认、runtime 和一次无探针冷启动 PASS，身份已消耗不得复用 |
 | `1.0.17` | 17 | 17 | 已唯一签名并经 CLOSED Ethernet OTA 接受；DA 精确回读/重锁、无探针冷启动、runtime/零输出/CAN2 失联 fail-closed/网络延迟 PASS；电机主动测试 PENDING；身份已消耗不得复用 |
-| `1.0.18` | 18 | 18 | 已唯一签名并完成离线四文件、transport ECDSA、双 OEMiROT 镜像签名及 1.0.17 swap-reference 审计；等待从 macOS 执行 CLOSED Ethernet OTA，身份已消耗不得复用 |
+| `1.0.18` | 18 | 18 | **REVOKED / 禁止刷写**；从未安装，包与 marker 仅保留作取证；身份已消耗不得复用 |
+| `1.0.19` | 19 | 19 | **REVOKED / 禁止刷写**；签名后严格审计发现 NonSecure initial/update payload 几何为 31096/31104 B；从未外发或安装，身份已消耗不得复用 |
+| `1.0.20` | 20 | 20 | raw payload 统一预对齐后唯一签名；离线密码学/几何验证 PASS；2026-09-05 从 Linux Ethernet OTA 安装、双确认和仅 ECU 冷启动 PASS；身份已消耗，不得复用 |
 
 `1.0.13` 不得通过 Ethernet OTA、ST-Link、factory initial image 或任何恢复流程
 写入 ECU，也不得修改内容后重新使用 version 1.0.13 或 counter 13。打包工具在
@@ -296,14 +307,16 @@ UDP 授权没有绑定源端口；每个控制白名单 IP 上的进程共享该
 counter、不完整/不可信发布历史或指向旧发布的 output directory 都 fail closed；
 `--force` 不能绕过身份门禁。`1.0.15` 仍是不可变 CLOSED 转换和恢复
 基线，禁止重新打包、改写或重放。当前目标在执行本次 OTA 前仍只接受到
-sequence17；`1.0.16`、`1.0.17` 和已经签发的 `1.0.18` 身份均已消耗，不得通过
-改写内容或任何绕过手段复用。
+sequence17；`1.0.16`、`1.0.17`、已撤销的 `1.0.18`/`1.0.19` 和当前签发的
+`1.0.20` 身份均已消耗，不得通过改写内容或任何绕过手段复用。
 
 ```sh
 sha256sum artifacts/firmware/1.0.15/roller-ecu-1.0.15.recu
 sha256sum artifacts/firmware/1.0.16/roller-ecu-1.0.16.recu
 sha256sum artifacts/firmware/1.0.17/roller-ecu-1.0.17.recu
-sha256sum artifacts/firmware/1.0.18/roller-ecu-1.0.18.recu
+sha256sum artifacts/firmware/1.0.18/roller-ecu-1.0.18.recu.REVOKED_DO_NOT_FLASH
+sha256sum artifacts/firmware/1.0.19/roller-ecu-1.0.19.recu.REVOKED_DO_NOT_FLASH
+sha256sum artifacts/firmware/1.0.20/roller-ecu-1.0.20.recu
 ```
 
 固定的 1.0.15 转换/恢复基线包 SHA-256 为
@@ -311,33 +324,57 @@ sha256sum artifacts/firmware/1.0.18/roller-ecu-1.0.18.recu
 1.0.16/counter16/update-sequence16 包 SHA-256 为
 `3e5ab07c7b6127dcedb46a1b4b1a695740904dd940d7128631f714d959a0b623`。已唯一签名并
 安装的 1.0.17/counter17/update-sequence17 包 SHA-256 为
-`75948795f39d898795b85841e4ad2e06c47738240184ff9ffbdc729fc11ab599`。待安装的唯一
-1.0.18/counter18/update-sequence18 包 SHA-256 为
-`4586f106b91fe91f293643a356105c26bf3af74161ac28034fc3494f999a517a`。
+`75948795f39d898795b85841e4ad2e06c47738240184ff9ffbdc729fc11ab599`。已撤销的
+1.0.18 和 1.0.19 取证包 SHA-256 分别为
+`4586f106b91fe91f293643a356105c26bf3af74161ac28034fc3494f999a517a`、
+`cda2ef7c0900ebdda029f2e39abfc6f5cc2e7baf86a82a044b9e6ed1d92316b2`。
+2026-09-05 已安装的唯一 1.0.20/counter20/update-sequence20 包 SHA-256 为
+`9c370f279fde039cadb329390e9dd857a9235fdea81eda247ec92e7ee8263ace`。
 
 主机网络和升级：
 
 ```sh
 sudo ./tools/configure_ecu_network.sh
 python3 tools/ethernet_ota.py --status
-# 1.0.17 的已完成历史命令；当前 accepted_sequence=17，禁止重放
+# 已完成的历史命令；本板当前 accepted_sequence=20，禁止重放旧包
 python3 tools/ethernet_ota.py \
   artifacts/firmware/1.0.17/roller-ecu-1.0.17.recu
 
-# 1.0.18 当前发布命令；必须从固定服务地址 172.16.0.10 执行
+# 1.0.20 已完成的历史安装命令，本板不得重复 OTA
+# 仅向满足发布门禁且尚未安装的目标板发布时使用；服务源地址固定为 172.16.0.10
 python3 tools/ethernet_ota.py \
   --host-ip 172.16.0.10 --ecu-ip 172.16.0.11 \
-  artifacts/firmware/1.0.18/roller-ecu-1.0.18.recu
+  artifacts/firmware/1.0.20/roller-ecu-1.0.20.recu
 ```
 
 也可在 `./tools/ecu_debug_ui.py --ecu-ip 172.16.0.11` 的固件升级页选择 `.recu`。
-1.0.17 传输、reset/test swap 和应用确认已完成；最终 OTA 为
+历史 1.0.17 传输、reset/test swap 和应用确认已完成；当时最终 OTA 为
 `state=IDLE/result=0/ota_result=0/accepted_sequence=17`，全部 session 字段为 0。
 post-OTA ATECC/MCU/配对身份、无 quarantine、零输出和调参关闭均 PASS；完整
 1.0.17 DA/重锁/冷启动、当前网络及 CAN2 失联安全状态见第 8.4 节。
-1.0.18 尚未在目标板执行传输、swap、确认或冷启动验证；执行后必须看到
-`state=IDLE/result=0/ota_result=0/accepted_sequence=18`，再按本文 runtime、零输出、
-网络延迟和无探针冷启动门禁完成验收，不能把离线签名 PASS 记作硬件 OTA PASS。
+2026-09-05 已从本机 Linux 的 `172.16.0.10` 经以太网安装 1.0.20，
+传输、swap 和双镜像运行确认通过，读回
+`state=IDLE/result=0/ota_result=0/accepted_sequence=20`。ATECC/MCU 配对、参数保留、
+实体急停保持时 K12/自动输出为零、PI 遥测开关和网络延迟通过。
+后续仅 ECU 冷启动、30 项控制安全/继电器命令和 22 项真实多 IP 仲裁/急停/
+服务限制测试通过；前后退阀已完成 100–500 mA 范围的 PI 实测。
+仅通过原有调参接口将两路 Ki=8000 保存为 generation=3（Kp=400 不变），
+SAVE/RELOAD 和闭环回归通过；操作者随后再次断电上电，新参数掉电保持 PASS，
+generation=3/CRC32C=951452805、身份认证和零输出/遥测关闭均正常。
+无固件/Bootloader/密钥/Option Bytes/生命周期修改。详见
+[本轮台架记录](ECU_SN-EJAHGJI_2026-09-05_Test.md)，不能扩大为整车全项验收。
+
+本次升级前的 1.0.17 尚不包含新 Secure OTA 实体急停入口门禁，因此
+`1.0.17 -> 1.0.20` 是一次受控 bootstrap：必须使用本仓库更新后的
+`ethernet_ota.py` 或同源 UI，由主机在 BEGIN/每个 CHUNK/FINISH 前持续核对新鲜 PB2
+诊断；reset 后启动的 1.0.20 会在镜像确认点由 Secure 域再次强制实体急停。操作者
+必须从 BEGIN 前一直按住到工具明确提示可释放。1.0.20 安装后，后续 OTA 的主机和
+Secure 端均会在服务入口 fail closed；旧版 Mac 工具禁止用于本次 bootstrap。
+macOS 必须重新复制整个更新后的 `tools/`（至少包含 `ethernet_ota.py`、
+`ecu_debug_ui.py`、`ecu_debug_ui/index.html` 和 `ota-transport-public.pem`）及唯一
+1.0.20 `.recu`。随工具提供的是公开验签密钥，SHA-256=
+`9c26918e79143d8721cc24b0bae1aa118eb0c1b7565f5e54e5faff9352e403c4`，不含私钥或
+口令；CLI 和 UI 均从脚本同目录解析它，不再依赖 Linux 工作站的 PKI 绝对路径。
 
 `--stop-after-bytes` 仅用于受控台架的掉电/中断恢复试验，不能出现在生产 SOP。
 
@@ -487,6 +524,23 @@ payload、离线 clone/fsck 和 overlay 还原全部通过才可作为恢复输�
 `diff -qr` 验证一致。1.0.17 正式签名后必须使用
 `tools/create_development_backup.sh --label release-1.0.17 --release 1.0.17`
 另建不可覆盖的发布快照并再次执行其独立验证器，不能覆盖上述签名前证据。
+
+2026-09-01 的 1.0.20 发布备份进一步把完整 `artifacts/firmware` 身份账本复制为
+`release-history/`，而不是只保存当前四件套。输入和复制后的账本都拒绝 symlink/
+特殊文件并进行全树内容 fingerprint，发布前再次复核；因此 direct previous-swap
+所需 1.0.17、已撤销 1.0.18/1.0.19 的 marker/隔离包和当前 1.0.20 可以作为一个
+独立恢复集合验证。最终权威目录及预期对象计数记录在
+`/home/plac/Documents/ECU_PKI/README.md`。创建命令为：
+
+```sh
+./tools/create_development_backup.sh \
+  --label release-final-ledger-1.0.20 --release 1.0.20
+```
+
+发布后必须在新目录独立执行 `python3 VERIFY_BACKUP.py` 和
+`sha256sum --strict --quiet -c MANIFEST.sha256`，并确认工作 PKI 与
+`/home/plac/Documents/ECU_PKI/roller-ecu-pki` 的 `diff -qr` 为空。用户此前创建的
+`ECU_PKI.zip` 不会自动包含本次新快照，必须重新生成加密归档并同步到离线/异地设备。
 
 ### 6.2 1.0.15 CLOSED 门禁与受控事务流程
 

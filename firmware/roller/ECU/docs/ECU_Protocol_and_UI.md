@@ -48,7 +48,7 @@ ECU 授权不绑定 UDP 源端口，因此每个白名单 IP 上的全部进程�
 timestamp；不能从不存在的字段推导时间。接收时用本机单调时钟建立 250 ms
 watchdog，会话存活期间要求 sequence 严格递增并支持 uint32 自然回绕；超时后
 才允许客户端从新序号建立会话。V1 与 V2 使用同一套发送方槽、优先级、实体急停、
-网络紧急、输出失联释放和 Secure 300 ms 二级超时，不提供 V1 版
+网络急停断言、输出失联归零和 Secure 300 ms 二级超时，不提供 V1 版
 `CLEAR_FAULT` 或 `RELEASE`，普通 V1 帧的 flags 必须为 0。
 
 结构、固定长度、结束字节和 XOR 均正确的 V1 帧中，只要
@@ -165,7 +165,9 @@ ABI 定义在 `NonSecure/App/Inc/ecu_protocol.h`。固件用 `_Static_assert` �
 `flags.bit0=CLEAR_FAULT` 只允许配合全中性 payload；`flags.bit1=RELEASE` 只允许
 全中性 payload，并立即结束该 sender 的控制会话。`flags.bit2=STEERING_RATE`
 把偏移 24 的原有两字节重解释为带符号转向角速度；未设置时保持
-1.0.16 及更旧固件的无转向动作语义。除 bit0..2 外的标志拒绝。
+1.0.16 及更旧固件的无转向动作语义。`flags.bit3=ESTOP_RESET` 是独立的全中性
+网络急停解除事务，不能与 bit0..2 组合，priority 不能为 255。除 bit0..3 外的
+标志拒绝。
 
 控制权优先级为：实体急停 > 网络紧急 255 > 普通发送方显式 priority 1..254 >
 IDLE；数值越大越优先，相同 priority 时较小 `sender_id` 胜出。priority=0 仅为
@@ -175,15 +177,45 @@ IDLE；数值越大越优先，相同 priority 时较小 `sender_id` 胜出。pr
 相同 slot，仍先 IDLE/Disarm 完整 20 ms；该 sender 只有提交全中性、转向禁用帧且
 Secure 已实际接受后才解除 rearm，251..299 ms 周期包不能夹在 300 ms Secure
 watchdog 之前恢复非零输出。普通控制还必须来自 `.9/.10/.12`，活动发送方按源
-地址绑定。无有效控制源
-时全部继电器和两个 PWM 释放；Secure 域另有 300 ms 命令
-超时，NonSecure 卡死也不能保持输出。
+地址绑定。无有效控制源时所有自动控制继电器、两个 PWM 和 CAN2 电机命令归零，
+但在启动认证通过、实体急停释放且运行镜像已确认时，Secure 域独立保留 K12
+人工驾驶许可。Secure 域另有 300 ms 命令超时，NonSecure 卡死也不能保持自动
+控制输出。
 
 正电流目标只驱动前进阀，负目标只驱动后退阀，`|target|<50 mA` 归零。方向切换
 必须先按下降斜率降到零，检测活动电流低于 50 mA 持续 20 ms，再等待 5 ms
 死区后才允许另一方向。两路 PWM 在 Secure 域硬互斥。
 
-### 3.1 CAN2 转向速率控制
+### 3.1 K12 行车许可与急停锁存
+
+K12 不是普通控制租约的一部分，而是 Secure 域拥有的“人工驾驶运行许可”。启动时
+TPIC/PWM 先保持硬失能；只有 ATECC608C/MCU 配对认证通过、两个运行镜像均已确认、
+实体急停输入连续健康 20 ms 且无 Secure 关键故障时，Secure 域才只写入 bit22 并
+打开 TPIC 输出。此过程不等待 Ethernet、域控、遥控器或调试 UI。诊断中的 K12
+仅表示 TPIC 命令；本版 PCB 没有继电器触点反馈，不能据此证明触点实际闭合。
+
+| 事件/状态 | K12 | 其他继电器、阀 PWM、CAN2 | 恢复条件 |
+|---|---|---|---|
+| 启动认证和镜像确认通过，实体急停健康 | 20 ms 后闭合 | 保持零 | 普通控制仍须中性 rearm |
+| 普通 RELEASE、控制端断链、250/300 ms 超时 | 保持闭合 | 全部归零 | 新会话先经过安全轮次和中性 rearm |
+| 阀局部保护故障 | 保持闭合 | 自动控制全部归零并锁存 fault | 目标/反馈安全后 CLEAR_FAULT，再中性 rearm |
+| CAN1 遥测或 CAN2 转向局部故障 | 保持闭合 | 故障域隔离；CAN2 执行零速/禁用 | 按对应域健康/清故障条件恢复 |
+| 实体急停按下 | 立即断开 | 全部归零 | 松开后健康 20 ms 只恢复 K12；fault 保留，CLEAR_FAULT+中性 rearm 后才能自动控制 |
+| 网络急停 | 立即断开并锁存 bit28 | 全部归零 | 显式 `ESTOP_RESET`；普通帧、RELEASE、超时和 CLEAR_FAULT 均不能解除 |
+| ATECC/SW-I²C/TPIC/GTZC/internal、OTA active/ready/unconfirmed | 保持断开 | 全部归零 | 修复关键条件；OTA 按受控确认/回滚流程 |
+
+网络急停断言是 fail-safe 主导路径：结构/CRC 正确的 V1/V2 帧只要请求急停或
+priority=255，就先跨 NSC 锁存 Secure bit28，再处理普通来源和执行字段限制。锁存
+只保留到本次 ECU 运行周期，不写 Flash。任何 `.9/.10/.12` 白名单控制器都可解除，
+但必须满足：全中性、仅设置 bit3、非 255 priority、同一 sender/IP 的活动会话、
+严格更新的 sequence，且没有另一个仍存活的紧急发送者。解除报文本身不能创建
+控制权；对已失去原紧急发送者的孤立锁存，控制器先发送一帧中性且失能的普通绑定
+帧，再发送更新 sequence 的独立 RESET。RESET 成功后该临时绑定会被立即销毁；
+网络锁存位清除后还须经过实体输入连续健康 20 ms，才只恢复 K12，不会吸合普通
+控制的接管继电器。后续控制必须重新建立会话并完成中性 rearm。调试 UI 自动完成
+解除两步，并在诊断 bit28 未清除时显示拒绝。V1 只能断言急停，不能解除。
+
+### 3.2 CAN2 转向速率控制
 
 本版转向是开环速率执行接口，不是 ECU 内的转角闭环。正数表示车辆
 定义的正向，单位为 0.1°/s，协议兼容范围为 `-6000..6000`。电机对象
@@ -259,8 +291,9 @@ PI 使用定点运算、条件积分抗饱和和应用新参数时的无扰切�
 硬限制，不可由网络修改：单点 2500 mA、2200 mA 持续 2 ms、非活动方向
 150 mA 持续 10 ms、PWM 全关仍有 100 mA 持续 100 ms、目标≥300 mA 且达到
 占空比上限但反馈<50 mA 持续 300 ms、ADC 贴上电源轨、换向超时 500 ms。
-任一阀故障都会锁存全局故障，两个 PWM=0，所有继电器（含 K12）释放。仅在目标
-为零、输出已释放且两路反馈<50 mA 时允许人工清故障。
+任一阀故障都会锁存全局故障，两个 PWM 和所有自动控制继电器归零；只要启动身份、
+实体急停和 Secure 关键边界仍健康，K12 人工驾驶许可保持闭合。仅在目标为零、
+输出已释放且两路反馈<50 mA 时允许人工清故障。
 
 参数结构为 `version:uint32 + size:uint32 + forward:20 B + reverse:20 B`，共
 48 B。APPLY 实时修改 RAM 并设置 dirty，不写 Flash；SAVE 要求控制权已释放和
@@ -321,13 +354,16 @@ RELEASE；页面关闭也会尝试发送 RELEASE，但 ECU 自身超时仍是最
 
 ## 6. Ethernet OTA
 
-OTA 只在 UDP 50006 上处理，来源必须为 `172.16.0.10`。ECU 在 BEGIN 时先释放
-全部输出，再验证固定 128 B manifest 的 P-256 签名与单调 `update_sequence`；
+OTA 只在 UDP 50006 上处理，来源必须为 `172.16.0.10`，且 BEGIN 前必须按下实体
+急停并持续保持到传输、reset/test swap 和成对镜像确认全部完成。ECU 在 BEGIN
+时硬失能 K12 及全部自动输出，再验证固定 128 B manifest 的 P-256 签名与单调
+`update_sequence`；
 CHUNK 按 16 B Flash 编程粒度、CRC-32C 和连续 offset 写入两个 secondary slot；
 FINISH 再核对成对镜像 SHA-256、加密标志和 MCUboot trailer。随后 OEMiROT 在
 reset 后独立验证镜像签名、依赖版本和 `security_counter`，以 test swap 启动。
-只有 ATECC 身份验证、Secure ADC 初始化和 NonSecure 通信初始化全部成功，应用
-才写入 `image_ok` 确认；否则 watchdog reset 后回滚。
+只有实体急停仍按下、ATECC 身份验证、Secure ADC 初始化和 NonSecure 通信初始化
+全部成功，应用才写入 `image_ok` 确认；提前释放实体急停会拒绝确认并停止喂狗，
+随后由 OEMiROT 回滚。
 
 `update_sequence` 防止传输包重放，`security_counter` 防止已签名旧固件降级，两者
 用途不同且发布时都必须单调递增。一次签名正确、序号更新但 security counter 过低
@@ -341,8 +377,20 @@ python3 tools/ethernet_ota.py --status
 python3 tools/ethernet_ota.py artifacts/firmware/<version>/roller-ecu-<version>.recu
 ```
 
-UI“固件升级”页调用相同的本机校验和传输实现；升级过程中控制权会释放且输出保持
-隔离。
+UI“固件升级”页调用相同的本机校验和传输实现；没有新鲜的实体急停按下诊断时
+按钮不可用。CLI 在 BEGIN 前、每个 CHUNK 前和 FINISH 前都检查新鲜 PB2 状态；
+UI 复用自身已校验来源/CRC 的诊断流，避免同一进程重复绑定 UDP 50003。FINISH 后
+工具继续等待目标 `accepted_sequence`、1.0.20 锁存急停能力、ATECC auth、OTA 状态清零
+以及 K12 命令为断，只有全部成立才提示可释放实体急停。升级过程中必须持续按住
+实体急停，控制权释放且 K12/自动输出保持隔离。
+macOS 调试目录必须同时复制 `tools/ota-transport-public.pem`；它只是公开验签密钥，
+CLI/UI 会从 `ethernet_ota.py` 同目录读取，不能用私钥目录替代，也不能漏复制后跳过
+本地签名验证。
+
+MCU/OEMiROT reset 期间没有 Ethernet 诊断，主机无法从软件上排除“完全发生在该
+黑屏窗口内的释放后再次按下”。因此 SOP 要求操作者从 BEGIN 前一直物理保持到工具
+明确提示可释放，外部急停供电链是该窗口的独立安全边界；若量产流程要求自动证明
+连续性，必须增加硬件锁存/维护联锁，不能仅凭前后两个 UDP 样本宣称连续保持。
 
 ## 7. 继电器位映射
 
@@ -360,12 +408,13 @@ UI“固件升级”页调用相同的本机校验和传输实现；升级过程
 | 17/18 | K6/K5 | 小振档位/接管 |
 | 20 | K17 | 倒车蜂鸣 |
 | 21 | K11 | 驻车 |
-| 22 | K12 | 行车许可，失电安全 |
+| 22 | K12 | Secure 人工驾驶行车许可；关键故障/急停/OTA 时失电安全 |
 | 23/28 | K18/K19 | 左/右转 |
 | 24/27 | K25/K24 | GND 低速/BAT 高速，闭合 1 s 后释放 |
 | 25/26 | K14/K13 | 龟兔选择/原车接管 |
 | 31 | K20 | 发动机启动 |
 
-bit 5、10..13 未布线并强制为零。普通控制 ARM 后 K1/K2/K5/K7/K9/K13
-自动接管，K12 行车许可吸合；K3 只在高低转速切换时接管。K24/K25 先释放，
+bit 5、10..13 未布线并强制为零。认证启动后 Secure 域不依赖网络先只吸合 K12；
+普通控制 ARM 后再由 K1/K2/K5/K7/K9/K13 自动接管。K3 只在高低转速切换时
+接管。K24/K25 先释放，
 50 ms 后 K3 恢复原车；K24/K25 始终硬互斥。

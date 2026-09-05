@@ -65,6 +65,58 @@ class NetworkPolicySourceTests(unittest.TestCase):
         self.assertLess(accepted, trusted)
         self.assertLess(trusted, semantic)
 
+    def test_network_estop_reset_is_session_bound_and_never_creates_authority(self):
+        reset_start = self.source.index(
+            "static bool Network_ResetNetworkEStop"
+        )
+        reset_end = self.source.index(
+            "static bool Network_AcceptControl", reset_start
+        )
+        reset = self.source[reset_start:reset_end]
+        self.assertIn("flags != ECU_CONTROL_FLAG_ESTOP_RESET", reset)
+        self.assertIn("Network_ControlHostAuthorized(address)", reset)
+        self.assertIn("ECU_DataModelControlIsNeutral", reset)
+        self.assertIn("reset_session == NULL", reset)
+        self.assertIn("ip_addr_cmp(address, &reset_session->source_address)", reset)
+        self.assertIn("Network_SequenceIsNewer", reset)
+        self.assertNotIn("Network_AcquireSlot", reset)
+        self.assertIn("Network_OtherEmergencyIsLive", reset)
+        self.assertIn("SAFETY_NETWORK_ESTOP_RESET_TOKEN", reset)
+        self.assertIn("Network_RequireRearmForAllNormalSenders", reset)
+        self.assertIn("reset_session->active = false", reset)
+        self.assertNotIn("Retain the neutral binding", reset)
+        self.assertIn("ControlAuthorityPolicy_RequireSafeRound", reset)
+        self.assertIn("ECU_DataModelControlLost", reset)
+
+    def test_estop_assertion_crosses_secure_boundary_before_semantic_filters(self):
+        start = self.source.index("static bool Network_AcceptControl")
+        end = self.source.index("static void Network_ReceiveControl", start)
+        function = self.source[start:end]
+        emergency = function.index("if (emergency_requested)")
+        secure_assert = function.index(
+            "SECURE_SafetyAssertNetworkEStop", emergency
+        )
+        host_filter = function.index(
+            "Network_ControlHostAuthorized", secure_assert
+        )
+        value_filter = function.index(
+            "ECU_ProtocolControlValuesValid", host_filter
+        )
+        self.assertLess(emergency, secure_assert)
+        self.assertLess(secure_assert, host_filter)
+        self.assertLess(host_filter, value_filter)
+
+    def test_diagnostics_advertise_latched_estop_reset_capability(self):
+        self.assertRegex(
+            self.source,
+            r"#define ECU_CAP_LATCHED_ESTOP_RESET\s+\(1UL << 11\)",
+        )
+        self.assertIn("ECU_CAP_LATCHED_ESTOP_RESET", self.source)
+        model = (PROJECT_ROOT / "NonSecure/App/Src/ecu_data_model.c").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("SAFETY_STATUS_NETWORK_ESTOP_LATCHED", model)
+
     def test_live_sender_session_is_bound_to_its_source_address(self):
         start = self.source.index("static bool Network_AcceptControl")
         end = self.source.index("static void Network_ReceiveControl", start)

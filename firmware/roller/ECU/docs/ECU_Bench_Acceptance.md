@@ -15,8 +15,10 @@
    留有充足余量，人员离开夹挤区，并可立即切断电机供电。断电测量 J7-13
    `CAN2_H` 到 J7-16 `CAN2_L` 的总终端约为 60 Ω，然后才允许非零速度。
 
-控制值归零仍保持原车线路接管；只有发送 RELEASE、关闭 UI 或等待控制超时，
-K1/K2/K5/K7/K9/K13/K12 等接管继电器才会释放。
+控制值归零时，普通接管继电器仍按活动控制帧维持；发送 RELEASE、关闭 UI 或等待
+控制超时后，K1/K2/K5/K7/K9/K13 等自动接管继电器全部释放，但在认证、镜像、
+实体急停和 Secure 关键边界健康时 **K12 人工驾驶许可保持闭合**。只有实体/网络
+急停、OTA/factory 或 ATECC/SWI2C/TPIC/GTZC/internal 关键故障才硬断 K12。
 
 ## 2. 构建、审计与烧录
 
@@ -137,10 +139,11 @@ sudo nmcli connection up 'Wired connection 1'
 - K20 主动释放和 Secure 3 s 强制释放；
 - K3 临时接管，K24(BAT/高) 或 K25(GND/低) 闭合 1 s，再恢复原车；
 - `emergency_stop_request` 和 priority 255 紧急关断；
-- sender 3 对 sender 1 的仲裁、超时回退、250 ms 后 IDLE/全继电器释放。
+- sender 3 对 sender 1 的仲裁、超时回退、250 ms 后 IDLE/仅 K12 基线。
 
-脚本失败或退出时主动发送 RELEASE；Secure 300 ms 超时是独立最终关断。诊断
-mask 只证明软件要求的 TPIC 位，不证明触点、电磁阀或线束实际动作。
+脚本失败或退出时主动发送 RELEASE；Secure 300 ms 超时独立归零所有自动输出，
+但不把普通控制失联误当成车辆急停。诊断 mask 只证明软件要求的 TPIC 位，不证明
+K12 或其他继电器触点、电磁阀和线束实际动作。
 
 ## 5. UI 电流调试与 DMM 验收
 
@@ -176,7 +179,9 @@ mask 只证明软件要求的 TPIC 位，不证明触点、电磁阀或线束实
    再“保存到 Flash”。保存成功后记录 active revision、generation 和 CRC。
 8. 断电至少 10 s 后重上电，重新读取，参数和 generation 必须保持；然后再进行
    100 mA 低能量复验。这一步才构成掉电保存验收，ST-Link reset 不能替代断电。
-9. 结束时目标归零、释放控制，确认 IDLE、requested/applied mask=0、两个 duty=0。
+9. 结束时目标归零、释放控制，确认 IDLE、requested/applied mask 仅含
+   K12 bit22 (`0x00400000`)、两个 duty=0；若实体/网络急停或关键故障仍有效，则
+   mask 必须为 0。
 
 UI 波形包含请求目标、斜坡目标、带符号反馈、两路占空比，支持 CSV 导出。原始
 文件应随测试编号、固件 commit、板号和仪表信息归档。
@@ -212,6 +217,12 @@ UI 波形包含请求目标、斜坡目标、带符号反馈、两路占空比�
    记录同一 IP 属于一个主机信任域而可接管相同 sender；同时确认不同 IP 不能续租
    已绑定 sender。生产主机进程隔离和点对点二层隔离必须纳入系统验收，不能把
    源端口、源 IP 或 CRC 当作密码学身份认证。
+8. 从 `.12` 断言网络急停，确认 bit28 锁存、K12/自动输出立即为零；停止发送并等待
+   300 ms，再分别发送普通中性、RELEASE 和 CLEAR_FAULT，bit28 必须仍保持。随后
+   从 `.9` 先建立全中性禁用绑定，再发送唯一 flag bit3 的严格更新 sequence
+   `ESTOP_RESET`；确认 bit28 清除，PB2 连续健康 20 ms 后只恢复 K12，reset 会话
+   已销毁且所有普通 sender 仍须新会话/中性 rearm。最后让 `.9` 与 `.12` 同时持续
+   断言，确认任一紧急 sender 仍存活时 reset 被拒绝。
 
 只有本文第 1 节与转向附加安全条件均已由现场人员确认，才进入第二阶段：
 
@@ -253,12 +264,12 @@ NVM-04/05 会反复擦写或故意断电，只能在开发样件和受控供电�
 
 | 编号 | 项目 | 通过标准 |
 |---|---|---|
-| HW-01 | 实体急停 | 输出立即全关、故障锁存、恢复后不自动 ARM |
+| HW-01 | 实体急停 | 按下时 K12/TPIC/PWM 立即全关并锁存；释放连续健康 20 ms 后只恢复 K12，不自动 ARM；CLEAR_FAULT+中性 rearm 后才允许自动输出 |
 | HW-02 | TPIC 位序/触点 | 每 bit 与 K1..K27 一致，保留位不动作，失电回到安全触点 |
 | HW-03 | K20 启动 | 示波器确认连续高电平不超过 3 s |
 | HW-04 | K3/K24/K25 | K3 先 50 ms；K24 或 K25 1 s 且互斥；源先释放，50 ms 后 K3 恢复 |
 | HW-05 | PWM/ADC 同步 | 20 kHz 中心对齐；ADC 在导通脉冲中心采样；换向无重叠脉冲 |
-| HW-06 | 阀故障注入 | 过流、开路、反馈轨故障、非活动电流均锁存并全局关断 |
+| HW-06 | 阀故障注入 | 过流、开路、反馈轨故障、非活动电流均锁存并归零全部自动输出；若 Secure 关键边界及急停健康，K12 保持人工驾驶许可 |
 | HW-07 | 速度 PA0 | 20000 pulse/km 换算正确，1500 ms 后信号丢失 |
 | HW-08 | 慢 ADC | 各通道顺序、电压换算、开短路行为符合传感器规范 |
 | HW-09 | Secure CAN1/J1939 | 250 kbit/s 六 PGN 解析与旧车一致，1000 ms 有效/1001 ms 过期，非法格式/其他 ID 拒绝；NonSecure 仅见 NSC 快照；warning/passive/bus-off 置 bit27，恢复后清除且不影响 Ethernet/CAN2 |
@@ -266,6 +277,7 @@ NVM-04/05 会反复擦写或故意断电，只能在开发样件和受控供电�
 | HW-11 | PB8/PB9 软件 I²C/ATECC reset recovery | PB9=SCL、PB8=SDA；启动无条件 START+9 clocks+START+STOP，随后 reset/sleep；最长 725 ms 有界重试期间服务 IWDG；当前 R1 无飞线 |
 | HW-12 | IWDG/CSS | NonSecure 停止或 HSE 故障时先关输出，约 2 s 复位 |
 | HW-13 | 电源/EMC/热/耐久 | 无非预期吸合，等级符合整机风险分析和目标标准 |
+| HW-14 | 网络急停锁存/解除 | `.9/.10/.12` 任一源可断言；断链、超时、普通中性、RELEASE、CLEAR_FAULT 均不能解除；独立全中性 ESTOP_RESET 后 PB2 健康 20 ms 只恢复 K12，重新控制须新会话和中性 rearm |
 
 该固件的故障安全设计不能替代独立硬件安全链，也不构成 IEC 61508、ISO 13849
 或整车功能安全认证。
@@ -277,9 +289,9 @@ NVM-04/05 会反复擦写或故意断电，只能在开发样件和受控供电�
 故障注入固件或夹具执行的项目。HOST 通过只能证明策略和构建产物结构，不能替代
 真实 Flash、复位、IWDG 和掉电时序证据。
 
-量产板逐板进入 CLOSED 前的本板门禁是 OTA-H01..H06、OTA-P01 正常安装、两个
+量产板逐板进入 CLOSED 前的本板门禁是 OTA-H01..H07、OTA-P01 正常安装、两个
 primary 的独立验签/完整身份/双确认审计，以及 JP1 断开、完全移除 ST-Link 后的
-仅 ECU 冷启动、ATECC/零输出和 Ethernet 延迟复核。OTA-P02..P16 是绑定硬件版本、
+仅 ECU 冷启动、ATECC/安全基线和 Ethernet 延迟复核。OTA-P02..P17 是绑定硬件版本、
 loader 源码与发布 hash 的**发布/型式鉴定矩阵**，只在具备完整恢复能力的专用 OPEN
 样件或可替换 Flash 夹具上执行；它们不是每块量产 ECU 在 CLOSED 前重复承受的测试。
 
@@ -293,6 +305,7 @@ loader 源码与发布 hash 的**发布/型式鉴定矩阵**，只在具备完�
 | OTA-H04 | `./tools/audit_config.sh` | clean/partial PERM、双 counter 提交谓词、最终身份门、FIH 判定、双 controller relock-or-reset 和 gate 顺序锚点均存在 | HOST |
 | OTA-H05 | `python3 -m unittest discover -s tests -p 'test_package_firmware.py' -v` | version/counter 不可重用，发布历史不完整时 fail closed，已进入发布历史的 1.0.13 身份不能被重用 | HOST |
 | OTA-H06 | `./tools/test.sh` 后构建两个 OEMiROT profile | trusted-pair 谓词拒绝未确认/半确认、单侧未验签或身份不一致；派生 loader 中 FIH 授权默认失败，只能在完整提交门后打开，且 FAIL guard 严格早于 `swap_set_image_ok()` | HOST |
+| OTA-H07 | `test_ota_physical_estop_source.py`、Secure source audit 和主机包校验 | BEGIN/每个 CHUNK/FINISH/未确认镜像确认都要求实体急停；主机收到新鲜 PB2 急停诊断后才开始，并在报告完成前核对目标 sequence、1.0.20 锁存急停 capability、ATECC auth、无 OTA 状态且 K12 命令为断 | HOST |
 
 ### 8.2 发布/型式鉴定硬件矩阵
 
@@ -314,20 +327,20 @@ loader 源码与发布 hash 的**发布/型式鉴定矩阵**，只在具备完�
 | OTA-P14 | 构造两侧 interrupted PERM，并组合双 `image_ok=0x01`、单侧/双侧有效签名尝试绕过确认 | 无论先处理哪一侧，partial-PERM guard 都先于恢复与 counter 路径拒绝；两个 NV counter 均不改变，任何镜像组合均不跳转应用 | HW-FI |
 | OTA-P15 | 安装尚未确认的同身份 TEST pair，再破坏两个 rollback secondary，使两侧均进入 `BOOT_SWAP_TYPE_FAIL` | FIH trusted-pair 授权保持失败；在任一 `swap_set_image_ok()` 前 fail closed，两个 primary flag 保持原未确认值，两个 NV counter 不变且应用不启动 | HW-FI |
 | OTA-P16 | 以已双确认、当次双侧完整验签且身份一致的 primary pair，注入单侧及双侧坏 staging/FAIL | 只有该 trusted pair 允许幂等 FAIL 清理；flag 保持 `0x01`、发布身份和 NV counter 不被伪造或意外改变，最终仍只启动同一 trusted pair | HW-FI |
+| OTA-P17 | 正常 OTA 全程人工持续按住实体急停；分别在 BEGIN 前、CHUNK、FINISH 后/reset、确认前尝试释放 | 未按下时 BEGIN 拒绝；传输中释放使后续 CHUNK/FINISH 拒绝；未确认镜像在 PB2 释放时不写 image_ok 并由 IWDG 回滚；正常保持时主机只在 accepted sequence、能力、ATECC、无 OTA 状态和 K12 断开均确认后提示可释放 | HW |
 
 OTA-P01 必须在待转换板或 CLOSED 后唯一发布形成独立实测记录；第 10 节历史
 OTA PASS 不能替代第 11.2 节的 1.0.15 转换基线、第 11.3 节的 1.0.16
 完整终验或第 11.4 节的 1.0.17 CLOSED Ethernet OTA。第 11.1 节的 1.0.14 三次无探针
-冷启动保留为历史证据，不能冒充当前发布。OTA-P02..P16 的发布/型式鉴定记录
+冷启动保留为历史证据，不能冒充当前发布。OTA-P02..P17 的发布/型式鉴定记录
 必须精确绑定固件包 SHA-256、S/NS version/counter、update sequence、loader 源码和
 硬件版本；相关断电记录还应包含注入时刻、掉电保持时间、重启后的
 swap/flag/counter、零输出和网络状态。已批准且绑定相同发布基线的型式试验证据可供
 该批量产板 CLOSED 评审引用，不在每块生产板上重做破坏性注入。
 
-不得刷写已撤销的 1.0.13，也不得为了补测而复用已经接受的 1.0.14、1.0.15、
-1.0.16 或 1.0.17
-identity；尚未
-完成的 OTA-P02..P16 必须在下一唯一发布身份或专用测试发布上执行，并明确记录为
+不得刷写已撤销的 1.0.13、1.0.18 或 1.0.19，也不得为了补测而复用已经接受的
+1.0.14、1.0.15、1.0.16、1.0.17，或已经签发后撤销的 1.0.18/1.0.19 identity；尚未
+完成的 OTA-P02..P17 必须在下一唯一发布身份或专用测试发布上执行，并明确记录为
 PENDING，不能写成 PASS。OTA-P15/P16 会故意破坏 rollback/staging，只能使用具备
 完整恢复包的 OPEN 专用样件或可替换 Flash 夹具执行，不得在生产 ECU、唯一验收板
 或 CLOSED 样件上试验。
@@ -458,7 +471,7 @@ DA 回读、关闭调试和最终无探针冷启动也已独立完成。1.0.17 �
 | DA 后最终仅 ECU 冷启动 | 完整移除 ST-Link、保持 JP1 断开并断电至少 10 s；MCU/ATECC/pairing/no-quarantine、relay/阀/PWM/转向零输出、调参关闭、telemetry=0；OTA IDLE/result=0/accepted17；100 包 0% 丢包，RTT min/avg/max=`0.066/0.103/0.146 ms` | PASS |
 | DA 证据外部备份 | 已复制到 `/home/plac/Documents/ECU_PKI/artifacts/hardware-regression/20260830T154340Z-closed-da-readback-1.0.17/`；0700/0600、逐字节 diff 和 manifest 均通过 | PASS |
 
-### 11.5 1.0.18 控制端白名单、优先级仲裁与 OTA 发布准备
+### 11.5 1.0.18 控制端白名单、优先级仲裁与撤销记录
 
 | 项目 | 2026-08-31 结果 | 结论 |
 |---|---|---|
@@ -467,16 +480,48 @@ DA 回读、关闭调试和最终无探针冷启动也已独立完成。1.0.17 �
 | 多源仲裁 | 显式 priority `1..254` 数值越大越优先；同优先级较小 sender ID 胜出；0 仅兼容旧客户端，255 保留网络紧急 | PASS（自动化测试） |
 | UI | sender ID 与 priority 独立配置；活动控制期间修改任一项均要求先 RELEASE | PASS（自动化测试） |
 | 主机回归 | `tools/test.sh` 的 Python/静态 199 项通过；本机无 `cc`，C 主机行为断言降级为 ARM `-Werror` 交叉编译，签名 Release 同源构建/链接通过；`tools/audit_config.sh` 与 `git diff --check` 通过；NonSecure Flash=`30752 B/311 KiB`、RAM=`91960 B/320 KiB` | C 主机运行时断言 SKIP；目标 ARM 构建 PASS |
-| 唯一发布 | version 1.0.18/counter18/update-sequence18；package SHA-256=`4586f106b91fe91f293643a356105c26bf3af74161ac28034fc3494f999a517a` | PASS；身份已消耗 |
+| 唯一发布 | version 1.0.18/counter18/update-sequence18；package SHA-256=`4586f106b91fe91f293643a356105c26bf3af74161ac28034fc3494f999a517a` | **REVOKED / 禁止刷写**；身份已消耗 |
 | 离线密码学/格式 | transport ECDSA、双 initial/加密 update OEMiROT 签名、镜像 identity/counter/dependency、1.0.17 previous-swap reference 与双 key-area hash 均固定并验证 | PASS |
-| CLOSED Ethernet OTA | 等待从 macOS 固定服务地址 `172.16.0.10` 向 ECU `172.16.0.11` 执行；当前板仍为 accepted sequence 17 | **PENDING** |
-| post-OTA runtime/冷启动 | 必须验证 accepted sequence 18、ATECC/MCU pairing、无 quarantine、零输出、PI telemetry 关闭、网络延迟和仅 ECU 冷启动 | **PENDING** |
+| CLOSED Ethernet OTA | 包在安装前撤销并改名为 `.recu.REVOKED_DO_NOT_FLASH`；当前板仍为 accepted sequence 17 | **NOT RUN / REVOKED** |
+| post-OTA runtime/冷启动 | 从未安装，不得用离线结果替代实机验收 | **NOT RUN** |
+
+### 11.6 1.0.20 K12/锁存急停安全发布准备
+
+| 项目 | 2026-09-01 结果 | 结论 |
+|---|---|---|
+| K12 启动策略 | ATECC/MCU 认证、成对镜像确认、PB2 连续健康 20 ms 后只闭合 K12；无需 Ethernet lease；普通控制断开及隔离的阀/CAN 故障保留 K12，自动输出归零 | PASS（主机真值表、源码审计与目标编译） |
+| 锁存急停 | `.9/.10/.12` 任一来源可断开 K12并置 RAM latch；断线不清除；仅显式 V2 reset、认证/确认/非关键故障且 PB2 释放后重新连续健康 20 ms 才恢复 K12；V1 只能置位 | PASS（自动化测试） |
+| OTA 实体急停门禁 | 主机在 BEGIN、每个 CHUNK、FINISH 及 reset/确认前后监视新鲜 PB2；新 Secure 镜像在服务入口和确认点再次强制 PB2；K12/自动输出在 OTA 期间硬断 | PASS（主机/源码/构建）；实物连续保持 PENDING |
+| 1.0.18 撤销 | 从未安装；包改名 `.REVOKED_DO_NOT_FLASH` 并保留 metadata、固定哈希和 revocation marker 作取证 | PASS；身份 18 永久保留 |
+| 1.0.19 撤销 | 签名后严格审计发现 NonSecure initial payload=31096 B、encrypted update payload=31104 B；未外发、未安装，包已隔离 | PASS（fail-closed）；身份 19 永久保留 |
+| 打包器修复 | raw Secure/NonSecure 在任何签名之前统一按 16 B 以 `0xFF` 对齐；空 payload 拒绝；行为测试和静态顺序门禁通过 | PASS |
+| 最终主机/构建回归 | `tools/test.sh` 227 项、`audit_config.sh`、`git diff --check`、签名应用与 ReleaseOpen/ReleaseClosed 全部通过；S Flash/RAM=`57924/29764 B`，NS=`31092/91960 B`，Open/Closed loader Flash=`51742/51758 B` | PASS；本机无 native `cc`，C 行为断言仅 ARM `-Werror` compile-only，运行时断言 SKIP |
+| 唯一发布 | version 1.0.20/counter20/update-sequence20；package SHA-256=`9c370f279fde039cadb329390e9dd857a9235fdea81eda247ec92e7ee8263ace` | PASS；身份已消耗 |
+| 四文件哈希 | metadata=`f8509da9a6f1b635ad3e53abd0df2a23e106429ab8b13fdcf5f4f040900f40bd`；S initial=`e15ad3c57afe9f3b105e41e433cf7307d8611dbe3b23c57800cbe7f0fa279e5f`；NS initial=`3729dddf4bdceb9f271dbccb7228a0de5f82b03d766196f5a5fcb0376c36e837` | PASS（精确固定） |
+| 离线密码学/几何 | transport ECDSA、双 OEMiROT 签名、dependency/counter、direct 1.0.17 previous-swap 和双 key-area hash 验证；S payload=`186592/186592 B`、NS=`31104/31104 B`；swap S=`0x2DE08`、NS=`0x7EA8` | PASS |
+| CLOSED Ethernet OTA | 只能从更新后的 macOS 工具、固定服务地址 `172.16.0.10` 向 ECU `172.16.0.11` 执行；当前板仍为 accepted sequence 17 | **PENDING** |
+| post-OTA runtime/冷启动 | 必须验证 accepted sequence 20、ATECC/MCU pairing、双确认、无 quarantine、K12/急停真值表、自动输出归零、PI telemetry 关闭、网络延迟和仅 ECU 冷启动 | **PENDING** |
+
+2026-09-05 实板更新：上表保留 2026-09-01 发布准备时的状态。本机 Linux 已通过
+Ethernet 将 SN-EJAHGJI 从 1.0.17 更新到 1.0.20（accepted_sequence=20）；
+双镜像运行确认、同一配对身份、原 PI 参数保留、实体急停保持时零输出、遥测订阅/
+取消订阅和升级后仅 ECU 冷启动通过。继电器命令/控制安全 30 项及真实来源 IP
+仲裁/并行急停/服务限制 22 项通过，临时 `.9/.12/.13` 已删除；这不是触点测量。
+接阀 100/200 mA 验收和 100/200/500 mA PI 候选实测完成，两路 Kp=400 不变、
+Ki=8000 已写入 Flash 并 RELOAD 读回（generation=3、CRC32C=951452805）。
+随后操作者再次断电上电，generation=3 新参数掉电保持 PASS（独立记录
+`pi-cold-start.json`）：配置/CRC 不变、启动后无控制帧、IDLE/仅 K12、阀目标/
+PWM/反馈为零、高速遥测未启动；100 包无丢包，RTT 平均/最大 0.121/0.241 ms。
+新参数下中性/前进 200 mA/后退 200 mA 波形回传期间各 100 包无丢包，平均
+RTT 为 0.118/0.110/0.111 ms，最大 0.373 ms；关闭波形后停止高速发送。
+ECU 仍为原签名 1.0.20，未因临时线束问题更改固件保护。完整记录和日志链接见
+[本轮台架记录](ECU_SN-EJAHGJI_2026-09-05_Test.md)。
 
 以下项目仍为 PENDING，不得继承历史记录或把软件 mask 当作硬件 PASS：
 
-- 阀体到货后的真实前进/后退电流闭环、PI 标定、开路/短路/过流和换向故障注入；
+- 阀的 0–2 A 全范围、实际液压负载/热态、外部电流标定、开路/短路/过流和换向故障注入；100–500 mA 台架结果不能替代这些项目；
 - K1..K27 实际触点、车辆负载、急停/驻车/启动/高低转速/龟兔档失电恢复；
 - CAN1/J1939 车辆报文、速度输入和油温/油压/水位等传感器实信号；
 - 接入真实转向电机后的 CAN2 enable/速度/停止/超时/DTC/bus-off/急停测试；
 - 电源瞬态、IWDG/CSS、PHY 故障、EMC、环境、热和耐久型式试验；
-- 第 8.2 节 OTA-P02..P16 专用可恢复样件发布/型式鉴定。
+- 第 8.2 节 OTA-P02..P17 专用可恢复样件发布/型式鉴定。

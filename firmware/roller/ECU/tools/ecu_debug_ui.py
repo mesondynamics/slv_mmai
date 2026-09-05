@@ -71,6 +71,29 @@ MSG_TELEMETRY_UNSUBSCRIBE = 0x17
 CONTROL_FLAG_CLEAR_FAULT = 1 << 0
 CONTROL_FLAG_RELEASE = 1 << 1
 CONTROL_FLAG_STEERING_RATE = 1 << 2
+CONTROL_FLAG_ESTOP_RESET = 1 << 3
+
+SAFETY_STATUS_PHYSICAL_ESTOP = 1 << 1
+SAFETY_STATUS_GTZC = 1 << 5
+SAFETY_STATUS_INTERNAL = 1 << 6
+SAFETY_STATUS_TPIC = 1 << 8
+SAFETY_STATUS_SW_I2C = 1 << 11
+SAFETY_STATUS_ATECC_MISSING = 1 << 19
+SAFETY_STATUS_ATECC_UNPAIRED = 1 << 20
+SAFETY_STATUS_ATECC_AUTH_FAILED = 1 << 21
+SAFETY_STATUS_OTA_ACTIVE = 1 << 23
+SAFETY_STATUS_OTA_READY = 1 << 24
+SAFETY_STATUS_OTA_UNCONFIRMED = 1 << 25
+SAFETY_STATUS_NETWORK_ESTOP = 1 << 28
+SAFETY_RELAY_K12_RUN_PERMIT = 1 << 22
+ECU_CAP_LATCHED_ESTOP_RESET = 1 << 11
+SAFETY_CRITICAL_INHIBIT_MASK = (
+    SAFETY_STATUS_GTZC | SAFETY_STATUS_INTERNAL | SAFETY_STATUS_TPIC |
+    SAFETY_STATUS_SW_I2C | SAFETY_STATUS_ATECC_MISSING |
+    SAFETY_STATUS_ATECC_UNPAIRED | SAFETY_STATUS_ATECC_AUTH_FAILED |
+    SAFETY_STATUS_OTA_ACTIVE | SAFETY_STATUS_OTA_READY |
+    SAFETY_STATUS_OTA_UNCONFIRMED
+)
 
 STEERING_STATUS_READY = 1 << 0
 
@@ -355,6 +378,8 @@ class BenchState:
     engine_reset_at: float = 0.0
     tx_error: str = ""
     tuning_error: str = ""
+    estop_reset_error: str = ""
+    estop_reset_requested_at: float = 0.0
     ota: dict[str, Any] = field(default_factory=lambda: {
         "active": False, "stage": "idle", "error": "",
         "transferred": 0, "total": 0, "metadata": None,
@@ -605,6 +630,7 @@ class BenchBridge:
                     self.state.control["engine_speed_level"] = 0
                     self.state.engine_reset_at = 0.0
                 self._enforce_steering_safety_locked(now)
+                self._refresh_estop_reset_locked(now)
                 if self.state.enabled and (
                     not self.state.browser_heartbeat_at
                     or now - self.state.browser_heartbeat_at > BROWSER_DEADMAN_S
@@ -773,12 +799,19 @@ class BenchBridge:
                         with self.lock:
                             self.state.status = dict(zip(STATUS_FIELDS, values))
                             self.state.status_received_at = received_at
-                    elif message_type == MSG_DIAGNOSTIC and len(payload) == struct.calcsize(DIAGNOSTIC_FORMAT):
+                    elif message_type == MSG_DIAGNOSTIC and \
+                            sock is self.diagnostic_socket and \
+                            source[1] == STATUS_PORT and \
+                            len(payload) == struct.calcsize(DIAGNOSTIC_FORMAT):
                         values = struct.unpack(DIAGNOSTIC_FORMAT, payload)
                         with self.lock:
                             self.state.diagnostic = dict(zip(DIAGNOSTIC_FIELDS, values))
                             self.state.diagnostic_received_at = received_at
-                    elif message_type == MSG_SECURITY and len(payload) == struct.calcsize(SECURITY_FORMAT):
+                            self._refresh_estop_reset_locked(received_at)
+                    elif message_type == MSG_SECURITY and \
+                            sock is self.diagnostic_socket and \
+                            source[1] == STATUS_PORT and \
+                            len(payload) == struct.calcsize(SECURITY_FORMAT):
                         values = struct.unpack(SECURITY_FORMAT, payload)
                         security = {
                             "api_version": values[0], "flags": values[1],
@@ -894,14 +927,34 @@ class BenchBridge:
     def snapshot(self) -> dict[str, Any]:
         now = time.monotonic()
         with self.lock:
+            self._refresh_estop_reset_locked(now)
             tuning_clients = sum(
                 1 for expires_at in self.tuning_clients.values()
                 if expires_at > now
             )
+            diagnostic = self.state.diagnostic or {}
+            safety_status = int(diagnostic.get("safety_status", 0))
+            security_flags = int((self.state.security or {}).get("flags", 0))
             return {
                 "ecu_ip": self.state.ecu_ip, "sender_id": self.state.sender_id,
                 "priority": self.state.priority,
                 "enabled": self.state.enabled, "emergency": self.state.emergency,
+                "local_emergency_transmitting": self.state.emergency,
+                "network_estop_latched": bool(
+                    safety_status & SAFETY_STATUS_NETWORK_ESTOP
+                ),
+                "physical_estop_active": bool(
+                    safety_status & SAFETY_STATUS_PHYSICAL_ESTOP
+                ),
+                "k12_run_permit_commanded": bool(
+                    int(diagnostic.get("applied_relay_mask", 0)) &
+                    SAFETY_RELAY_K12_RUN_PERMIT
+                ),
+                "k12_contact_feedback_available": False,
+                "critical_inhibit": bool(
+                    safety_status & SAFETY_CRITICAL_INHIBIT_MASK
+                ) or not bool(security_flags & (1 << 4)),
+                "estop_reset_error": self.state.estop_reset_error,
                 "control": dict(self.state.control), "status": self.state.status,
                 "diagnostic": self.state.diagnostic,
                 "steering_status": self.state.steering_status,
@@ -929,6 +982,21 @@ class BenchBridge:
                 "ota": dict(self.state.ota),
             }
 
+    def _ota_diagnostic_observation(
+        self,
+    ) -> tuple[dict[str, int] | None, float]:
+        """Share the already source/CRC-validated diagnostic stream with OTA.
+
+        Reusing this receiver avoids platform-dependent delivery when two UDP
+        sockets in the same UI process bind the diagnostic broadcast port.
+        """
+        with self.lock:
+            diagnostic = self.state.diagnostic
+            return (
+                None if diagnostic is None else dict(diagnostic),
+                self.state.diagnostic_received_at,
+            )
+
     def start_ota(self, package_data: bytes) -> dict[str, Any]:
         if not package_data or len(package_data) > OTA_MAX_PACKAGE_SIZE:
             raise ValueError("OTA package must be 1 byte to 2 MiB")
@@ -952,6 +1020,19 @@ class BenchBridge:
             if self.state.ota["active"]:
                 package_path.unlink(missing_ok=True)
                 raise ValueError("an OTA transfer is already active")
+            if (self.state.diagnostic is None or
+                    time.monotonic() - self.state.diagnostic_received_at > 0.8):
+                package_path.unlink(missing_ok=True)
+                raise ValueError(
+                    "fresh ECU diagnostics are required before OTA"
+                )
+            if not (int(self.state.diagnostic.get("safety_status", 0)) &
+                    SAFETY_STATUS_PHYSICAL_ESTOP):
+                package_path.unlink(missing_ok=True)
+                raise ValueError(
+                    "press and hold the physical E-stop before OTA; "
+                    "the ECU Secure domain requires ESTOP_DETECT active"
+                )
             self.state.control = neutral_control()
             self.state.enabled = False
             self.state.emergency = False
@@ -973,7 +1054,10 @@ class BenchBridge:
             client = ota.OtaClient(ota.HOST_IP, ecu_ip)
             try:
                 self.release_control()
-                ota.transfer(client, package_path, ota.DEFAULT_PUBLIC_KEY, update)
+                ota.transfer(
+                    client, package_path, ota.DEFAULT_PUBLIC_KEY, update,
+                    diagnostic_provider=self._ota_diagnostic_observation,
+                )
                 with self.lock:
                     self.state.ota["active"] = False
                     self.state.ota["stage"] = "complete"
@@ -1097,6 +1181,10 @@ class BenchBridge:
             self.state.sender_id = new_sender
             self.state.priority = new_priority
             if "enabled" in request:
+                if bool(requested_enabled) and self._network_estop_latched_locked():
+                    raise ValueError(
+                        "network E-stop is latched; explicitly reset it first"
+                    )
                 self.state.enabled = bool(requested_enabled)
                 if not self.state.enabled:
                     self._disarm_steering_locked()
@@ -1122,6 +1210,12 @@ class BenchBridge:
             updated = dict(self.state.control)
             updated.update({key: int(value) for key, value in patch.items()})
             updated = sanitize_control(updated)
+            if (self._network_estop_latched_locked() and
+                    (any(updated.get(name, 0) for name in CONTROL_FIELDS) or
+                     updated.get(STEERING_VELOCITY_FIELD, 0))):
+                raise ValueError(
+                    "network E-stop is latched; actuator controls are inhibited"
+                )
             if "steering_enable" in patch and \
                     updated["steering_enable"] == 0:
                 updated[STEERING_VELOCITY_FIELD] = 0
@@ -1302,18 +1396,85 @@ class BenchBridge:
         self.tx_socket.sendto(packet, target)
 
     def set_emergency(self, active: bool) -> None:
+        packets: list[bytes] = []
+        target = ("0.0.0.0", 0)
         with self.lock:
             self.state.emergency = active
             self.state.browser_heartbeat_at = time.monotonic()
             if active:
                 self.state.control = neutral_control()
+                self.state.enabled = False
                 self._disarm_steering_locked()
+                self.state.estop_reset_requested_at = 0.0
+                self.state.estop_reset_error = ""
+                emergency_control = neutral_control()
+                emergency_control["emergency_stop_request"] = 1
+                packets.append(self._control_packet(
+                    emergency_control, 0, priority=255
+                ))
+                target = (self.state.ecu_ip, CONTROL_PORT)
+            else:
+                self.state.control = neutral_control()
+                self.state.enabled = False
+                self._disarm_steering_locked()
+                # First bind a fresh, source-address-specific neutral session.
+                # The following standalone RESET has a strictly newer
+                # sequence and cannot itself establish control authority.
+                packets.append(self._control_packet(self.state.control, 0))
+                packets.append(self._control_packet(
+                    self.state.control, CONTROL_FLAG_ESTOP_RESET
+                ))
+                target = (self.state.ecu_ip, CONTROL_PORT)
+                self.state.estop_reset_requested_at = time.monotonic()
+                self.state.estop_reset_error = ""
+        if packets:
+            try:
+                for packet in packets:
+                    self.tx_socket.sendto(packet, target)
+            except OSError as error:
+                with self.lock:
+                    self.state.estop_reset_requested_at = 0.0
+                    self.state.estop_reset_error = str(error)
+                raise
+
+    def _network_estop_latched_locked(self) -> bool:
+        return bool(
+            self.state.diagnostic is not None and
+            int(self.state.diagnostic.get("safety_status", 0)) &
+            SAFETY_STATUS_NETWORK_ESTOP
+        )
+
+    def _refresh_estop_reset_locked(self, now: float) -> None:
+        requested_at = self.state.estop_reset_requested_at
+        if not requested_at:
+            return
+        diagnostic = self.state.diagnostic
+        if (diagnostic is not None and
+                self.state.diagnostic_received_at >= requested_at):
+            if not (int(diagnostic.get("capability_flags", 0)) &
+                    ECU_CAP_LATCHED_ESTOP_RESET):
+                self.state.estop_reset_error = (
+                    "ECU firmware does not support explicit network E-stop reset"
+                )
+                self.state.estop_reset_requested_at = 0.0
+                return
+            if not (int(diagnostic.get("safety_status", 0)) &
+                    SAFETY_STATUS_NETWORK_ESTOP):
+                self.state.estop_reset_error = ""
+                self.state.estop_reset_requested_at = 0.0
+                return
+        if now - requested_at >= 1.0:
+            self.state.estop_reset_error = (
+                "ECU rejected E-stop reset: another live emergency sender, "
+                "physical E-stop, or a critical Secure inhibit is still active"
+            )
+            self.state.estop_reset_requested_at = 0.0
 
     def clear_fault(self) -> None:
         with self.lock:
             self.state.control = neutral_control()
             self.state.emergency = False
-            self.state.enabled = True
+            self.state.enabled = not self._network_estop_latched_locked()
             self._disarm_steering_locked()
             self.state.browser_heartbeat_at = time.monotonic()
             self.state.pending_flags |= CONTROL_FLAG_CLEAR_FAULT

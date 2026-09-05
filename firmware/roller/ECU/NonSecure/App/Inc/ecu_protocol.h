@@ -25,9 +25,11 @@ extern "C" {
 #define ECU_CONTROL_FLAG_CLEAR_FAULT    (1U << 0)
 #define ECU_CONTROL_FLAG_RELEASE        (1U << 1)
 #define ECU_CONTROL_FLAG_STEERING_RATE  (1U << 2)
+#define ECU_CONTROL_FLAG_ESTOP_RESET    (1U << 3)
 #define ECU_CONTROL_ALLOWED_FLAGS       (ECU_CONTROL_FLAG_CLEAR_FAULT | \
                                          ECU_CONTROL_FLAG_RELEASE | \
-                                         ECU_CONTROL_FLAG_STEERING_RATE)
+                                         ECU_CONTROL_FLAG_STEERING_RATE | \
+                                         ECU_CONTROL_FLAG_ESTOP_RESET)
 
 typedef enum
 {

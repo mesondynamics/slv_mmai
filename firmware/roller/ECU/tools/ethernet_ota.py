@@ -23,16 +23,29 @@ from cryptography.hazmat.primitives.asymmetric.utils import encode_dss_signature
 HOST_IP = "172.16.0.10"
 ECU_IP = "172.16.0.11"
 OTA_PORT = 50006
+DIAGNOSTIC_PORT = 50003
+ECU_STATUS_SOURCE_PORT = 50001
 V2_MAGIC = 0x32554345
 V2_VERSION = 2
 V2_HEADER_FORMAT = "<IBBHHHIII"
 V2_HEADER_SIZE = struct.calcsize(V2_HEADER_FORMAT)
 V2_CRC_OFFSET = 20
+MSG_DIAGNOSTIC = 0x03
 MSG_STATUS, MSG_BEGIN, MSG_CHUNK, MSG_FINISH = 0x40, 0x41, 0x42, 0x43
 STATUS_FORMAT = "<iIIi7I"
+DIAGNOSTIC_FORMAT = "<12I12Hb5BII"
 MANIFEST_FORMAT = "<12I32s32s4I"
 CHUNK_FORMAT = "<IB3xIHHI512s"
-DEFAULT_PUBLIC_KEY = Path("/home/plac/.local/share/roller-ecu-pki/ota-transport-public.pem")
+DEFAULT_PUBLIC_KEY = Path(__file__).with_name("ota-transport-public.pem")
+
+SAFETY_STATUS_PHYSICAL_ESTOP = 1 << 1
+SAFETY_STATUS_ATECC_AUTHENTICATED = 1 << 22
+SAFETY_STATUS_OTA_ACTIVE = 1 << 23
+SAFETY_STATUS_OTA_READY = 1 << 24
+SAFETY_STATUS_OTA_UNCONFIRMED = 1 << 25
+SAFETY_RELAY_K12_RUN_PERMIT = 1 << 22
+ECU_CAP_LATCHED_ESTOP_RESET = 1 << 11
+OTA_RUNTIME_CONFIRM_TIMEOUT_S = 30.0
 
 
 class IntentionalInterruption(RuntimeError):
@@ -110,10 +123,182 @@ def decode_status(frame: bytes, expected_sequence: int) -> dict[str, int]:
     return status
 
 
+def decode_diagnostic(frame: bytes) -> dict[str, int]:
+    expected_payload_size = struct.calcsize(DIAGNOSTIC_FORMAT)
+    if len(frame) != V2_HEADER_SIZE + expected_payload_size:
+        raise ValueError("invalid diagnostic frame length")
+    header = struct.unpack_from(V2_HEADER_FORMAT, frame)
+    if header[0:5] != (
+            V2_MAGIC, V2_VERSION, MSG_DIAGNOSTIC, V2_HEADER_SIZE,
+            expected_payload_size):
+        raise ValueError("invalid diagnostic header")
+    checked = bytearray(frame)
+    received_crc = struct.unpack_from("<I", checked, V2_CRC_OFFSET)[0]
+    struct.pack_into("<I", checked, V2_CRC_OFFSET, 0)
+    if crc32c(checked) != received_crc:
+        raise ValueError("invalid diagnostic CRC")
+    values = struct.unpack_from(DIAGNOSTIC_FORMAT, frame, V2_HEADER_SIZE)
+    return {
+        "capability_flags": values[0],
+        "safety_status": values[1],
+        "requested_relay_mask": values[2],
+        "applied_relay_mask": values[3],
+        "secure_uptime_ms": values[4],
+    }
+
+
+def release_requires_latched_estop_capability(version: str) -> bool:
+    numeric = version.split("+", 1)[0].split(".")
+    if len(numeric) != 3 or any(not value.isdigit() for value in numeric):
+        raise ValueError("invalid release version in signed OTA metadata")
+    return tuple(int(value) for value in numeric) >= (1, 0, 20)
+
+
+DiagnosticProvider = Callable[[], tuple[dict[str, int] | None, float]]
+
+
+class OtaSafetyMonitor:
+    """Observe the independent E-stop input on ECU diagnostic broadcasts."""
+
+    def __init__(self, ecu_ip: str,
+                 diagnostic_provider: DiagnosticProvider | None = None) -> None:
+        self.ecu_ip = ecu_ip
+        self.diagnostic_provider = diagnostic_provider
+        self.socket: socket.socket | None = None
+        if diagnostic_provider is None:
+            self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            self.socket.bind(("0.0.0.0", DIAGNOSTIC_PORT))
+            self.socket.setblocking(False)
+        self.latest: dict[str, int] | None = None
+        self.latest_received_at = 0.0
+        self.provider_received_at = 0.0
+        self.generation = 0
+        self.armed = False
+        self.release_observed = False
+
+    def close(self) -> None:
+        if self.socket is not None:
+            self.socket.close()
+
+    def _record(self, diagnostic: dict[str, int], received_at: float) -> None:
+        self.latest = diagnostic
+        self.latest_received_at = received_at
+        self.generation += 1
+        if (self.armed and not (
+                diagnostic["safety_status"] &
+                SAFETY_STATUS_PHYSICAL_ESTOP)):
+            self.release_observed = True
+
+    def drain(self) -> None:
+        if self.diagnostic_provider is not None:
+            diagnostic, received_at = self.diagnostic_provider()
+            if (diagnostic is not None and
+                    received_at > self.provider_received_at):
+                self.provider_received_at = received_at
+                self._record(dict(diagnostic), received_at)
+            return
+
+        assert self.socket is not None
+        while True:
+            try:
+                frame, source = self.socket.recvfrom(2048)
+            except BlockingIOError:
+                return
+            if (source[0] != self.ecu_ip or
+                    source[1] != ECU_STATUS_SOURCE_PORT):
+                continue
+            try:
+                diagnostic = decode_diagnostic(frame)
+            except ValueError:
+                continue
+            self._record(diagnostic, time.monotonic())
+
+    def wait_until_held(self, timeout: float = 2.0, *,
+                        after_generation: int | None = None) -> dict[str, int]:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            self.drain()
+            if self.release_observed:
+                raise RuntimeError(
+                    "physical E-stop release was observed during OTA; "
+                    "the transfer/confirmation cannot continue"
+                )
+            if (self.latest is not None and
+                    (after_generation is None or
+                     self.generation > after_generation) and
+                    (self.latest["safety_status"] &
+                     SAFETY_STATUS_PHYSICAL_ESTOP)):
+                return self.latest
+            time.sleep(0.02)
+        raise RuntimeError(
+            "no fresh ECU diagnostic proves that the physical E-stop is held"
+        )
+
+    def arm(self) -> None:
+        self.armed = False
+        self.release_observed = False
+        self.drain()
+        baseline = self.generation
+        self.wait_until_held(after_generation=baseline)
+        self.armed = True
+
+    def require_held(self) -> None:
+        self.drain()
+        if self.release_observed:
+            raise RuntimeError(
+                "physical E-stop release was observed during OTA; keep the "
+                "button held through transfer, reset, and confirmation"
+            )
+        if (self.latest is None or
+                not (self.latest["safety_status"] &
+                     SAFETY_STATUS_PHYSICAL_ESTOP)):
+            raise RuntimeError("physical E-stop is not held")
+        if time.monotonic() - self.latest_received_at > 0.5:
+            baseline = self.generation
+            self.wait_until_held(after_generation=baseline)
+
+    def wait_for_confirmed_runtime(self, *, after_generation: int,
+                                   require_new_capability: bool,
+                                   timeout: float = 3.0) -> dict[str, int]:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            diagnostic = self.wait_until_held(
+                timeout=max(0.02, deadline - time.monotonic()),
+                after_generation=after_generation,
+            )
+            status = diagnostic["safety_status"]
+            if (require_new_capability and not (
+                    diagnostic["capability_flags"] &
+                    ECU_CAP_LATCHED_ESTOP_RESET)):
+                raise RuntimeError(
+                    "post-reset ECU lacks the required latched-E-stop capability; "
+                    "the new paired image was not confirmed (possible rollback)"
+                )
+            if not (status & SAFETY_STATUS_ATECC_AUTHENTICATED):
+                raise RuntimeError("post-reset ECU identity is not authenticated")
+            if status & (SAFETY_STATUS_OTA_ACTIVE |
+                         SAFETY_STATUS_OTA_READY |
+                         SAFETY_STATUS_OTA_UNCONFIRMED):
+                after_generation = self.generation
+                continue
+            if diagnostic["applied_relay_mask"] & \
+                    SAFETY_RELAY_K12_RUN_PERMIT:
+                raise RuntimeError(
+                    "K12 is commanded on while the physical E-stop is held"
+                )
+            return diagnostic
+        raise RuntimeError(
+            "no confirmed post-reset safety diagnostic was received"
+        )
+
+
 class OtaClient:
     def __init__(self, host_ip: str, ecu_ip: str, timeout: float = 0.6,
                  retries: int = 8) -> None:
         self.target = (ecu_ip, OTA_PORT)
+        self.host_ip = host_ip
+        self.ecu_ip = ecu_ip
         self.timeout = timeout
         self.retries = retries
         self.sequence = 0
@@ -125,14 +310,18 @@ class OtaClient:
         self.socket.close()
 
     def request(self, message_type: int, payload: bytes,
-                timeout: float | None = None) -> dict[str, int]:
+                timeout: float | None = None,
+                attempts: int | None = None) -> dict[str, int]:
         self.sequence = (self.sequence + 1) & 0xFFFFFFFF
         sequence = self.sequence
         frame = encode_v2(message_type, sequence, payload)
+        attempt_count = self.retries if attempts is None else attempts
+        if attempt_count <= 0:
+            raise ValueError("OTA request attempts must be positive")
         old_timeout = self.socket.gettimeout()
         self.socket.settimeout(timeout or self.timeout)
         try:
-            for _ in range(self.retries):
+            for _ in range(attempt_count):
                 self.socket.sendto(frame, self.target)
                 try:
                     while True:
@@ -190,12 +379,19 @@ def load_package(path: Path, public_key_path: Path) -> tuple[bytes, bytes, bytes
 
 def require_ok(status: dict[str, int], operation: str) -> None:
     if status["result"] != 0:
+        if operation == "begin" and status["result"] == -2:
+            raise RuntimeError(
+                "begin rejected: press and hold the ECU physical E-stop; "
+                "Secure ESTOP_DETECT must remain active through transfer, "
+                "swap, and image confirmation"
+            )
         raise RuntimeError(f"{operation} rejected: {status}")
 
 
 def transfer(client: OtaClient, package: Path, public_key: Path,
              progress: Callable[[dict], None] | None = None,
-             stop_after_bytes: int | None = None) -> None:
+             stop_after_bytes: int | None = None,
+             diagnostic_provider: DiagnosticProvider | None = None) -> None:
     def report(stage: str, **values: object) -> None:
         if progress is not None:
             progress({"stage": stage, **values})
@@ -205,52 +401,120 @@ def transfer(client: OtaClient, package: Path, public_key: Path,
     total_size = len(secure) + len(nonsecure)
     if stop_after_bytes is not None and not 0 < stop_after_bytes < total_size:
         raise ValueError("stop-after-bytes must be inside the paired image payload")
-    report("begin", metadata=metadata, transferred=0,
-           total=total_size)
-    status = client.request(MSG_BEGIN, begin, timeout=20.0)
-    require_ok(status, "begin")
-    report("transfer", metadata=metadata,
-           transferred=status["secure_received"] + status["nonsecure_received"],
-           total=len(secure) + len(nonsecure), ecu_status=status)
-    print(f"ECU accepted {metadata['version']}; safe output quarantine active")
-    for image_index, image, received_name in (
-            (0, secure, "secure_received"),
-            (1, nonsecure, "nonsecure_received")):
-        offset = status[received_name]
-        if offset > len(image) or offset % 16:
-            raise RuntimeError(f"ECU reported invalid resume offset {offset}")
-        while offset < len(image):
-            data = image[offset:offset + 512]
-            padded = data + bytes(512 - len(data))
-            payload = struct.pack(CHUNK_FORMAT, update_sequence, image_index,
-                                  offset, len(data), 0, crc32c(data), padded)
-            status = client.request(MSG_CHUNK, payload)
-            require_ok(status, f"image {image_index} offset {offset:#x}")
-            offset += len(data)
-            report("transfer", metadata=metadata,
-                   transferred=status["secure_received"] +
-                               status["nonsecure_received"],
-                   total=total_size, ecu_status=status)
-            transferred = (status["secure_received"] +
-                           status["nonsecure_received"])
-            if stop_after_bytes is not None and transferred >= stop_after_bytes:
-                report("interrupted", metadata=metadata,
-                       transferred=transferred, total=total_size,
-                       ecu_status=status)
-                raise IntentionalInterruption(
-                    f"bench interruption after {transferred}/{total_size} bytes; "
-                    "FINISH was not sent and the ECU was not reset"
+    monitor = OtaSafetyMonitor(client.ecu_ip, diagnostic_provider)
+    try:
+        report("waiting-estop", metadata=metadata, transferred=0,
+               total=total_size)
+        print("Waiting for a fresh physical E-stop diagnostic...")
+        monitor.arm()
+        monitor.require_held()
+        report("begin", metadata=metadata, transferred=0,
+               total=total_size)
+        status = client.request(MSG_BEGIN, begin, timeout=20.0)
+        require_ok(status, "begin")
+        monitor.require_held()
+        report("transfer", metadata=metadata,
+               transferred=status["secure_received"] +
+                           status["nonsecure_received"],
+               total=total_size, ecu_status=status)
+        print(f"ECU accepted {metadata['version']}; safe output quarantine active")
+        for image_index, image, received_name in (
+                (0, secure, "secure_received"),
+                (1, nonsecure, "nonsecure_received")):
+            offset = status[received_name]
+            if offset > len(image) or offset % 16:
+                raise RuntimeError(f"ECU reported invalid resume offset {offset}")
+            while offset < len(image):
+                monitor.require_held()
+                data = image[offset:offset + 512]
+                padded = data + bytes(512 - len(data))
+                payload = struct.pack(
+                    CHUNK_FORMAT, update_sequence, image_index, offset,
+                    len(data), 0, crc32c(data), padded
                 )
-            if offset % 0x8000 == 0 or offset == len(image):
-                print(f"image {image_index}: {offset}/{len(image)} bytes")
-    status = client.request(MSG_FINISH, struct.pack("<I", update_sequence),
-                            timeout=2.0)
-    require_ok(status, "finish")
-    if status["state"] != 2:
-        raise RuntimeError(f"ECU did not enter ready-to-swap state: {status}")
-    report("reset", metadata=metadata, transferred=len(secure) + len(nonsecure),
-           total=len(secure) + len(nonsecure), ecu_status=status)
-    print("Transfer verified; ECU is resetting into OEMiROT test swap")
+                status = client.request(MSG_CHUNK, payload)
+                require_ok(status, f"image {image_index} offset {offset:#x}")
+                offset += len(data)
+                report("transfer", metadata=metadata,
+                       transferred=status["secure_received"] +
+                                   status["nonsecure_received"],
+                       total=total_size, ecu_status=status)
+                transferred = (status["secure_received"] +
+                               status["nonsecure_received"])
+                if (stop_after_bytes is not None and
+                        transferred >= stop_after_bytes):
+                    report("interrupted", metadata=metadata,
+                           transferred=transferred, total=total_size,
+                           ecu_status=status)
+                    raise IntentionalInterruption(
+                        f"bench interruption after {transferred}/{total_size} "
+                        "bytes; FINISH was not sent and the ECU was not reset"
+                    )
+                if offset % 0x8000 == 0 or offset == len(image):
+                    print(f"image {image_index}: {offset}/{len(image)} bytes")
+
+        monitor.require_held()
+        pre_finish_generation = monitor.generation
+        status = client.request(
+            MSG_FINISH, struct.pack("<I", update_sequence), timeout=2.0
+        )
+        require_ok(status, "finish")
+        if status["state"] != 2:
+            raise RuntimeError(
+                f"ECU did not enter ready-to-swap state: {status}"
+            )
+        monitor.wait_until_held(
+            timeout=1.0, after_generation=pre_finish_generation
+        )
+        report("reset", metadata=metadata, transferred=total_size,
+               total=total_size, ecu_status=status)
+        print("Transfer verified; keep the physical E-stop held while ECU "
+              "resets, swaps, authenticates, and confirms both images")
+
+        report("confirming", metadata=metadata, transferred=total_size,
+               total=total_size, ecu_status=status)
+        deadline = time.monotonic() + OTA_RUNTIME_CONFIRM_TIMEOUT_S
+        runtime_status: dict[str, int] | None = None
+        time.sleep(0.55)
+        while time.monotonic() < deadline:
+            monitor.drain()
+            if monitor.release_observed:
+                monitor.require_held()
+            try:
+                candidate = client.request(
+                    MSG_STATUS, b"", timeout=0.4, attempts=1
+                )
+            except TimeoutError:
+                time.sleep(0.10)
+                continue
+            if candidate["accepted_sequence"] > update_sequence:
+                raise RuntimeError(
+                    "ECU accepted sequence is newer than this release"
+                )
+            if (candidate["result"] == 0 and candidate["ota_result"] == 0 and
+                    candidate["state"] == 0 and
+                    candidate["accepted_sequence"] == update_sequence):
+                runtime_status = candidate
+                break
+            time.sleep(0.10)
+        if runtime_status is None:
+            raise RuntimeError(
+                "ECU did not return with the expected confirmed OTA sequence"
+            )
+        monitor.drain()
+        diagnostic_generation = monitor.generation
+        monitor.wait_for_confirmed_runtime(
+            after_generation=diagnostic_generation,
+            require_new_capability=release_requires_latched_estop_capability(
+                str(metadata["version"])
+            ),
+        )
+        report("complete", metadata=metadata, transferred=total_size,
+               total=total_size, ecu_status=runtime_status)
+        print("Paired runtime confirmation verified; the physical E-stop may "
+              "now be released")
+    finally:
+        monitor.close()
 
 
 def main() -> int:

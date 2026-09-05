@@ -8,6 +8,7 @@
 #include "atecc608.h"
 #include "iwdg.h"
 #include "main.h"
+#include "run_permit_policy.h"
 #include "security_identity.h"
 #include "security_mcu_identity.h"
 #include "security_ota.h"
@@ -31,6 +32,7 @@
 #define VALVE_TELEMETRY_RING_SIZE     128U
 #define VALVE_CONFIG_SAVE_INTERVAL_MS 10000UL
 #define OTA_CONFIRM_WATCHDOG_GRACE_MS  5000UL
+#define ESTOP_RELEASE_DEBOUNCE_MS         20U
 #define ADC_VREFINT_INDEX                7U
 
 _Static_assert(sizeof(SAFETY_ActuatorCommand) == 36U,
@@ -126,6 +128,9 @@ static int8_t previous_engine_speed_request;
 static uint8_t ota_running_images_confirmed;
 static uint8_t ota_confirmation_deadline_armed;
 static uint32_t ota_confirmation_deadline;
+static uint8_t tpic_outputs_enabled;
+static uint8_t run_permit_restore_pending;
+static uint16_t physical_estop_inactive_ms;
 
 static void Safety_RecordValveTelemetry(void)
 {
@@ -274,8 +279,6 @@ static bool Safety_TpicShift(uint32_t relay_mask)
 
 static void Safety_ResetCommandState(void)
 {
-  requested_relay_mask = 0U;
-  applied_relay_mask = 0U;
   ValveControl_ForceSafe(&valve_control);
   command_sequence_valid = 0U;
   command_fresh = 0U;
@@ -291,7 +294,20 @@ static void Safety_ResetCommandState(void)
   SteeringCan_RequestSafe(secure_uptime_ms);
 }
 
-static void Safety_ForceOutputsSafe(void)
+static bool Safety_PhysicalEStopActive(void)
+{
+  return HAL_GPIO_ReadPin(ESTOP_DETECT_GPIO_Port,
+                          ESTOP_DETECT_Pin) == GPIO_PIN_SET;
+}
+
+static bool Safety_RunPermitCanClose(void)
+{
+  return RunPermitPolicy_CanClose(
+      safety_status, security_status.flags, Safety_PhysicalEStopActive(),
+      ota_running_images_confirmed != 0U);
+}
+
+static void Safety_StopControlledOutputs(void)
 {
   if (timer_ready != 0U)
   {
@@ -299,20 +315,94 @@ static void Safety_ForceOutputsSafe(void)
     TIM4->CCR2 = 0U;
   }
 
+  Safety_ResetCommandState();
+  safety_status &= ~SAFETY_STATUS_OUTPUTS_ARMED;
+}
+
+static void Safety_HardDisableOutputs(void)
+{
+  Safety_StopControlledOutputs();
+
   /* OE_N high immediately removes relay drive. CLR_N and the AHCT541 buffer
      enable low then make the stored command safe even if NonSecure stalls. */
   GPIOE->BSRR = TPIC_OE_N_Pin;
   GPIOE->BSRR = (uint32_t)(TPIC_CLR_N_Pin | TPIC_CTRL_BUF_EN_Pin |
                            TPIC_RCK_Pin) << 16U;
-  Safety_ResetCommandState();
-  safety_status &= ~SAFETY_STATUS_OUTPUTS_ARMED;
+  requested_relay_mask = 0U;
+  applied_relay_mask = 0U;
+  tpic_outputs_enabled = 0U;
 }
 
-static void Safety_LatchFault(uint32_t reason)
+static bool Safety_EnableTpicBaseline(uint32_t baseline_mask)
+{
+  /* OE_N remains high until the buffer, clear line, shift register and storage
+     register all contain the reviewed baseline. This prevents a stale TPIC
+     register from appearing at a relay during startup or physical-E-stop
+     recovery. */
+  GPIOE->BSRR = TPIC_OE_N_Pin;
+  GPIOE->BSRR = (uint32_t)(TPIC_CLR_N_Pin | TPIC_CTRL_BUF_EN_Pin |
+                           TPIC_RCK_Pin) << 16U;
+  GPIOE->BSRR = TPIC_CTRL_BUF_EN_Pin;
+  if (!Safety_TpicDelayUs(TPIC_LATCH_PULSE_US))
+  {
+    return false;
+  }
+  GPIOE->BSRR = TPIC_CLR_N_Pin;
+  if (!Safety_TpicShift(baseline_mask))
+  {
+    return false;
+  }
+  GPIOE->BSRR = (uint32_t)TPIC_OE_N_Pin << 16U;
+  tpic_outputs_enabled = 1U;
+  return true;
+}
+
+static bool Safety_ApplyRunPermitBaseline(void)
+{
+  const uint32_t baseline_mask = SAFETY_RELAY_ESTOP_RUN_PERMIT;
+
+  Safety_StopControlledOutputs();
+  if (!Safety_RunPermitCanClose())
+  {
+    run_permit_restore_pending = 0U;
+    Safety_HardDisableOutputs();
+    return true;
+  }
+
+  if (((tpic_outputs_enabled != 0U) &&
+       !Safety_TpicShift(baseline_mask)) ||
+      ((tpic_outputs_enabled == 0U) &&
+       !Safety_EnableTpicBaseline(baseline_mask)))
+  {
+    safety_status |= SAFETY_STATUS_TPIC_ERROR |
+                     SAFETY_STATUS_FAULT_LATCHED;
+    Safety_HardDisableOutputs();
+    return false;
+  }
+  requested_relay_mask = baseline_mask;
+  applied_relay_mask = baseline_mask;
+  run_permit_restore_pending = 0U;
+  return true;
+}
+
+static void Safety_QuiesceControlledOutputs(void)
+{
+  (void)Safety_ApplyRunPermitBaseline();
+}
+
+static void Safety_LatchCriticalFault(uint32_t reason)
 {
   uint32_t primask = Safety_EnterCritical();
   safety_status |= SAFETY_STATUS_FAULT_LATCHED | reason;
-  Safety_ForceOutputsSafe();
+  Safety_HardDisableOutputs();
+  Safety_ExitCritical(primask);
+}
+
+static void Safety_LatchIsolatedFault(uint32_t reason)
+{
+  uint32_t primask = Safety_EnterCritical();
+  safety_status |= SAFETY_STATUS_FAULT_LATCHED | reason;
+  Safety_QuiesceControlledOutputs();
   Safety_ExitCritical(primask);
 }
 
@@ -322,7 +412,7 @@ static bool Safety_RefreshStartupWatchdog(void)
   {
     return true;
   }
-  Safety_LatchFault(SAFETY_STATUS_INTERNAL_ERROR);
+  Safety_LatchCriticalFault(SAFETY_STATUS_INTERNAL_ERROR);
   return false;
 }
 
@@ -480,8 +570,8 @@ static void Safety_ApplyEngineRequest(int8_t request)
     engine_speed_level = 0;
     engine_speed_remaining = 0;
     /* A normal cancel releases K24/K25 first and retains K3 for the contact
-       settling interval. Fault/timeout paths still force every output off
-       immediately through Safety_ForceOutputsSafe(). */
+       settling interval. Fault/timeout paths quiesce all controlled outputs;
+       only the independently managed K12 manual-drive baseline may remain. */
     if ((engine_speed_state == ENGINE_SPEED_TAKEOVER_SETTLE) ||
         (engine_speed_state == ENGINE_SPEED_TRIGGER_ACTIVE) ||
         (engine_speed_state == ENGINE_SPEED_RESTORE_SETTLE))
@@ -604,12 +694,28 @@ static void Safety_OneMillisecondTick(void)
        relays and valve control remain under the normal Secure watchdog. */
     safety_status |= SAFETY_STATUS_STEERING_CAN_FAULT;
   }
-  if (HAL_GPIO_ReadPin(ESTOP_DETECT_GPIO_Port, ESTOP_DETECT_Pin) == GPIO_PIN_SET)
+  if (Safety_PhysicalEStopActive())
   {
     safety_status |= SAFETY_STATUS_ESTOP_ACTIVE | SAFETY_STATUS_FAULT_LATCHED;
-    Safety_ForceOutputsSafe();
+    physical_estop_inactive_ms = 0U;
+    run_permit_restore_pending = 1U;
+    Safety_HardDisableOutputs();
     Safety_ExitCritical(primask);
     return;
+  }
+  safety_status &= ~SAFETY_STATUS_ESTOP_ACTIVE;
+  if (run_permit_restore_pending != 0U)
+  {
+    if (physical_estop_inactive_ms < ESTOP_RELEASE_DEBOUNCE_MS)
+    {
+      ++physical_estop_inactive_ms;
+    }
+    if ((physical_estop_inactive_ms >= ESTOP_RELEASE_DEBOUNCE_MS) &&
+        !Safety_ApplyRunPermitBaseline())
+    {
+      Safety_ExitCritical(primask);
+      return;
+    }
   }
 
   if (((safety_status & SAFETY_STATUS_ADC_RUNNING) != 0U) &&
@@ -618,7 +724,7 @@ static void Safety_OneMillisecondTick(void)
     safety_status |= SAFETY_STATUS_VALVE_SENSOR_FAULT |
                      SAFETY_STATUS_FAULT_LATCHED;
     valve_control.fault_flags |= SAFETY_STATUS_VALVE_SENSOR_FAULT;
-    Safety_ForceOutputsSafe();
+    Safety_QuiesceControlledOutputs();
     Safety_ExitCritical(primask);
     return;
   }
@@ -628,7 +734,7 @@ static void Safety_OneMillisecondTick(void)
       ((secure_uptime_ms - last_command_tick) > SAFETY_COMMAND_TIMEOUT_MS))
   {
     safety_status |= SAFETY_STATUS_COMMAND_TIMEOUT;
-    Safety_ForceOutputsSafe();
+    Safety_QuiesceControlledOutputs();
     Safety_ExitCritical(primask);
     return;
   }
@@ -649,7 +755,7 @@ static void Safety_OneMillisecondTick(void)
     if (!Safety_TpicShift(dynamic_mask))
     {
       safety_status |= SAFETY_STATUS_TPIC_ERROR | SAFETY_STATUS_FAULT_LATCHED;
-      Safety_ForceOutputsSafe();
+      Safety_HardDisableOutputs();
     }
     else
     {
@@ -677,6 +783,9 @@ int32_t Safety_ServiceInit(void)
   primask = Safety_EnterCritical();
   safety_status = 0U;
   secure_uptime_ms = 0U;
+  tpic_outputs_enabled = 0U;
+  run_permit_restore_pending = 0U;
+  physical_estop_inactive_ms = 0U;
   valve_telemetry_write_sequence = 0U;
   valve_telemetry_read_sequence = 0U;
   valve_telemetry_dropped = 0U;
@@ -698,7 +807,7 @@ int32_t Safety_ServiceInit(void)
   valve_config_snapshot.persisted_crc32c = persisted_crc;
   valve_config_snapshot.persisted_valid = persisted_valid ? 1U : 0U;
   valve_config_snapshot.using_defaults = persisted_valid ? 0U : 1U;
-  Safety_ForceOutputsSafe();
+  Safety_HardDisableOutputs();
   if (VehicleCan_Init(secure_uptime_ms) != SAFETY_RESULT_OK)
   {
     /* CAN1 is read-only vehicle telemetry. Keep Ethernet/OTA and unrelated
@@ -712,7 +821,7 @@ int32_t Safety_ServiceInit(void)
        visible in diagnostics without preventing Ethernet or other outputs. */
     safety_status |= SAFETY_STATUS_STEERING_CAN_FAULT;
   }
-  if (HAL_GPIO_ReadPin(ESTOP_DETECT_GPIO_Port, ESTOP_DETECT_Pin) == GPIO_PIN_SET)
+  if (Safety_PhysicalEStopActive())
   {
     safety_status |= SAFETY_STATUS_ESTOP_ACTIVE | SAFETY_STATUS_FAULT_LATCHED;
   }
@@ -798,7 +907,7 @@ int32_t Safety_ServiceInit(void)
   if (SecurityOta_RunningImagesConfirmed(&running_images_confirmed) !=
       SAFETY_RESULT_OK)
   {
-    Safety_LatchFault(SAFETY_STATUS_INTERNAL_ERROR);
+    Safety_LatchCriticalFault(SAFETY_STATUS_INTERNAL_ERROR);
     return SAFETY_RESULT_INTERNAL_ERROR;
   }
   Safety_SetOtaConfirmationState(running_images_confirmed);
@@ -813,7 +922,7 @@ int32_t Safety_ServiceInit(void)
   if ((HAL_ADCEx_Calibration_Start(&hadc1, ADC_SINGLE_ENDED) != HAL_OK) ||
       (HAL_ADCEx_Calibration_Start(&hadc2, ADC_SINGLE_ENDED) != HAL_OK))
   {
-    Safety_LatchFault(SAFETY_STATUS_INTERNAL_ERROR);
+    Safety_LatchCriticalFault(SAFETY_STATUS_INTERNAL_ERROR);
     return SAFETY_RESULT_INTERNAL_ERROR;
   }
   valve_watchdog.WatchdogNumber = ADC_ANALOGWATCHDOG_1;
@@ -825,7 +934,7 @@ int32_t Safety_ServiceInit(void)
   valve_watchdog.FilteringConfig = ADC_AWD_FILTERING_NONE;
   if (HAL_ADC_AnalogWDGConfig(&hadc2, &valve_watchdog) != HAL_OK)
   {
-    Safety_LatchFault(SAFETY_STATUS_INTERNAL_ERROR);
+    Safety_LatchCriticalFault(SAFETY_STATUS_INTERNAL_ERROR);
     return SAFETY_RESULT_INTERNAL_ERROR;
   }
   if ((HAL_ADC_Start_DMA(&hadc1, (uint32_t *)(uintptr_t)slow_adc_dma,
@@ -833,7 +942,7 @@ int32_t Safety_ServiceInit(void)
       (HAL_ADC_Start_DMA(&hadc2, (uint32_t *)(uintptr_t)current_adc_dma,
                          SAFETY_CURRENT_ADC_COUNT) != HAL_OK))
   {
-    Safety_LatchFault(SAFETY_STATUS_INTERNAL_ERROR);
+    Safety_LatchCriticalFault(SAFETY_STATUS_INTERNAL_ERROR);
     return SAFETY_RESULT_INTERNAL_ERROR;
   }
 
@@ -842,15 +951,20 @@ int32_t Safety_ServiceInit(void)
       (HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_4) != HAL_OK) ||
       (HAL_TIM_Base_Start_IT(&htim6) != HAL_OK))
   {
-    Safety_LatchFault(SAFETY_STATUS_INTERNAL_ERROR);
+    Safety_LatchCriticalFault(SAFETY_STATUS_INTERNAL_ERROR);
     return SAFETY_RESULT_INTERNAL_ERROR;
   }
 
   safety_status |= SAFETY_STATUS_READY | SAFETY_STATUS_ADC_RUNNING |
                    SAFETY_STATUS_VALVE_CALIBRATING;
+  /* K12 is never coupled to Ethernet readiness. It is restored by the Secure
+     1 ms owner only after a stable physical-input interval, authenticated
+     ATECC/MCU pairing, and confirmed running images. */
+  run_permit_restore_pending = 1U;
+  physical_estop_inactive_ms = 0U;
   if (HAL_IWDG_Refresh(&hiwdg) != HAL_OK)
   {
-    Safety_LatchFault(SAFETY_STATUS_INTERNAL_ERROR);
+    Safety_LatchCriticalFault(SAFETY_STATUS_INTERNAL_ERROR);
     return SAFETY_RESULT_INTERNAL_ERROR;
   }
   return SAFETY_RESULT_OK;
@@ -861,10 +975,12 @@ uint32_t Safety_GetStatus(void)
   uint32_t primask = Safety_EnterCritical();
   uint32_t status;
 
-  if (HAL_GPIO_ReadPin(ESTOP_DETECT_GPIO_Port, ESTOP_DETECT_Pin) == GPIO_PIN_SET)
+  if (Safety_PhysicalEStopActive())
   {
     safety_status |= SAFETY_STATUS_ESTOP_ACTIVE | SAFETY_STATUS_FAULT_LATCHED;
-    Safety_ForceOutputsSafe();
+    physical_estop_inactive_ms = 0U;
+    run_permit_restore_pending = 1U;
+    Safety_HardDisableOutputs();
   }
   else
   {
@@ -993,6 +1109,8 @@ int32_t Safety_GetSecurityStatus(SAFETY_SecurityStatus *status)
 
 static void Safety_UpdateOtaStatusBits(const SAFETY_OtaStatus *status)
 {
+  uint32_t primask = Safety_EnterCritical();
+
   safety_status &= ~(SAFETY_STATUS_OTA_ACTIVE | SAFETY_STATUS_OTA_READY);
   if (status->state == SAFETY_OTA_STATE_RECEIVING)
   {
@@ -1002,6 +1120,48 @@ static void Safety_UpdateOtaStatusBits(const SAFETY_OtaStatus *status)
   {
     safety_status |= SAFETY_STATUS_OTA_READY;
   }
+  Safety_ExitCritical(primask);
+}
+
+static void Safety_EnterOtaQuarantine(void)
+{
+  uint32_t primask = Safety_EnterCritical();
+
+  /* Set the policy inhibit before the first potentially long erase/program
+     operation. If the physical E-stop is released during that operation, the
+     1 ms owner still sees OTA_ACTIVE and cannot restore K12. */
+  safety_status |= SAFETY_STATUS_OTA_ACTIVE;
+  run_permit_restore_pending = 0U;
+  Safety_HardDisableOutputs();
+  Safety_ExitCritical(primask);
+}
+
+static int32_t Safety_CompleteOtaOperation(int32_t operation_result,
+                                           SAFETY_OtaStatus *status)
+{
+  SAFETY_OtaStatus actual_status;
+
+  if (SecurityOta_GetStatus(&actual_status) != SAFETY_RESULT_OK)
+  {
+    Safety_LatchCriticalFault(SAFETY_STATUS_INTERNAL_ERROR);
+    return SAFETY_RESULT_INTERNAL_ERROR;
+  }
+  *status = actual_status;
+  Safety_UpdateOtaStatusBits(&actual_status);
+  if ((operation_result != SAFETY_RESULT_OK) &&
+      (actual_status.state != SAFETY_OTA_STATE_RECEIVING) &&
+      (actual_status.state != SAFETY_OTA_STATE_READY))
+  {
+    uint32_t primask = Safety_EnterCritical();
+
+    /* A rejected/failed BEGIN that never opened an OTA session must not
+       strand manual driving. Recovery remains deferred until PB2 has been
+       inactive for the reviewed debounce interval. */
+    run_permit_restore_pending = 1U;
+    physical_estop_inactive_ms = 0U;
+    Safety_ExitCritical(primask);
+  }
+  return operation_result;
 }
 
 int32_t Safety_OtaGetStatus(SAFETY_OtaStatus *status)
@@ -1015,7 +1175,6 @@ int32_t Safety_OtaBegin(const SAFETY_OtaBeginRequest *request,
                         SAFETY_OtaStatus *status)
 {
   int32_t result;
-  uint32_t primask;
 
   if ((request == NULL) || (status == NULL))
   {
@@ -1025,12 +1184,16 @@ int32_t Safety_OtaBegin(const SAFETY_OtaBeginRequest *request,
   {
     return SAFETY_RESULT_NOT_READY;
   }
-  primask = Safety_EnterCritical();
-  Safety_ForceOutputsSafe();
-  Safety_ExitCritical(primask);
+  /* Service update is permitted only in a mechanically verified stopped
+     state. The NC physical E-stop both opens the external K12 coil supply and
+     provides this independent Secure input. */
+  if (!Safety_PhysicalEStopActive())
+  {
+    return SAFETY_RESULT_NOT_READY;
+  }
+  Safety_EnterOtaQuarantine();
   result = SecurityOta_Begin(request, status);
-  Safety_UpdateOtaStatusBits(status);
-  return result;
+  return Safety_CompleteOtaOperation(result, status);
 }
 
 int32_t Safety_OtaWrite(const SAFETY_OtaChunk *chunk,
@@ -1046,12 +1209,20 @@ int32_t Safety_OtaWrite(const SAFETY_OtaChunk *chunk,
   {
     return SAFETY_RESULT_NOT_READY;
   }
-  primask = Safety_EnterCritical();
-  Safety_ForceOutputsSafe();
-  Safety_ExitCritical(primask);
+  if (!Safety_PhysicalEStopActive())
+  {
+    primask = Safety_EnterCritical();
+    if ((safety_status & (SAFETY_STATUS_OTA_ACTIVE |
+                          SAFETY_STATUS_OTA_READY)) != 0U)
+    {
+      Safety_HardDisableOutputs();
+    }
+    Safety_ExitCritical(primask);
+    return SAFETY_RESULT_NOT_READY;
+  }
+  Safety_EnterOtaQuarantine();
   result = SecurityOta_Write(chunk, status);
-  Safety_UpdateOtaStatusBits(status);
-  return result;
+  return Safety_CompleteOtaOperation(result, status);
 }
 
 int32_t Safety_OtaFinish(uint32_t update_sequence,
@@ -1064,12 +1235,20 @@ int32_t Safety_OtaFinish(uint32_t update_sequence,
   {
     return SAFETY_RESULT_NOT_READY;
   }
-  primask = Safety_EnterCritical();
-  Safety_ForceOutputsSafe();
-  Safety_ExitCritical(primask);
+  if (!Safety_PhysicalEStopActive())
+  {
+    primask = Safety_EnterCritical();
+    if ((safety_status & (SAFETY_STATUS_OTA_ACTIVE |
+                          SAFETY_STATUS_OTA_READY)) != 0U)
+    {
+      Safety_HardDisableOutputs();
+    }
+    Safety_ExitCritical(primask);
+    return SAFETY_RESULT_NOT_READY;
+  }
+  Safety_EnterOtaQuarantine();
   result = SecurityOta_Finish(update_sequence, status);
-  Safety_UpdateOtaStatusBits(status);
-  return result;
+  return Safety_CompleteOtaOperation(result, status);
 }
 
 int32_t Safety_OtaConfirmRunningImages(void)
@@ -1083,11 +1262,23 @@ int32_t Safety_OtaConfirmRunningImages(void)
     return SAFETY_RESULT_AUTHENTICATION;
   }
   if ((ota_running_images_confirmed == 0U) &&
+      !Safety_PhysicalEStopActive())
+  {
+    /* The independent stop input must remain asserted across transfer,
+       reset, Secure authentication and paired-image confirmation.  Releasing
+       it early cannot make the test image operational; the watchdog then
+       leaves OEMiROT to revert the unconfirmed pair. */
+    uint32_t primask = Safety_EnterCritical();
+    Safety_HardDisableOutputs();
+    Safety_ExitCritical(primask);
+    return SAFETY_RESULT_NOT_READY;
+  }
+  if ((ota_running_images_confirmed == 0U) &&
       (ota_confirmation_deadline_armed != 0U) &&
       Safety_TimeReached(secure_uptime_ms, ota_confirmation_deadline))
   {
     uint32_t primask = Safety_EnterCritical();
-    Safety_ForceOutputsSafe();
+    Safety_HardDisableOutputs();
     Safety_ExitCritical(primask);
     return SAFETY_RESULT_NOT_READY;
   }
@@ -1105,6 +1296,8 @@ int32_t Safety_OtaConfirmRunningImages(void)
   }
   Safety_SetOtaConfirmationState(1U);
   ota_confirmation_deadline_armed = 0U;
+  run_permit_restore_pending = 1U;
+  physical_estop_inactive_ms = 0U;
   return SAFETY_RESULT_OK;
 }
 
@@ -1126,7 +1319,9 @@ int32_t Safety_FactoryProvision(
     return SAFETY_RESULT_BAD_ARGUMENT;
   }
   primask = Safety_EnterCritical();
-  Safety_ForceOutputsSafe();
+  safety_status |= SAFETY_STATUS_OTA_ACTIVE;
+  run_permit_restore_pending = 0U;
+  Safety_HardDisableOutputs();
   Safety_ExitCritical(primask);
   return SecurityFactory_Provision(request, status);
 }
@@ -1204,7 +1399,7 @@ int32_t Safety_SaveValveConfig(void)
   (void)HAL_IWDG_Refresh(&hiwdg);
   if (!ValveConfigStore_Save(&config, generation, &crc32c))
   {
-    Safety_LatchFault(SAFETY_STATUS_INTERNAL_ERROR);
+    Safety_LatchCriticalFault(SAFETY_STATUS_INTERNAL_ERROR);
     return SAFETY_RESULT_INTERNAL_ERROR;
   }
   (void)HAL_IWDG_Refresh(&hiwdg);
@@ -1297,10 +1492,10 @@ int32_t Safety_ClearFault(uint32_t request_token)
     return SAFETY_RESULT_BAD_ARGUMENT;
   }
   primask = Safety_EnterCritical();
-  if (HAL_GPIO_ReadPin(ESTOP_DETECT_GPIO_Port, ESTOP_DETECT_Pin) == GPIO_PIN_SET)
+  if (Safety_PhysicalEStopActive())
   {
     safety_status |= SAFETY_STATUS_ESTOP_ACTIVE | SAFETY_STATUS_FAULT_LATCHED;
-    Safety_ForceOutputsSafe();
+    Safety_HardDisableOutputs();
     Safety_ExitCritical(primask);
     return SAFETY_RESULT_ESTOP_ACTIVE;
   }
@@ -1311,7 +1506,7 @@ int32_t Safety_ClearFault(uint32_t request_token)
     Safety_ExitCritical(primask);
     return SAFETY_RESULT_INTERNAL_ERROR;
   }
-  Safety_ForceOutputsSafe();
+  Safety_QuiesceControlledOutputs();
   if ((valve_control.forward_current_ma >= SAFETY_VALVE_TARGET_DEADBAND_MA) ||
       (valve_control.reverse_current_ma >= SAFETY_VALVE_TARGET_DEADBAND_MA))
   {
@@ -1360,18 +1555,13 @@ int32_t Safety_ArmOutputs(uint32_t request_token)
     Safety_ExitCritical(primask);
     return SAFETY_RESULT_NOT_READY;
   }
-  if ((security_status.flags & SAFETY_SECURITY_AUTHENTICATED) == 0U)
+  if (!Safety_RunPermitCanClose())
   {
-    Safety_ForceOutputsSafe();
+    Safety_HardDisableOutputs();
     Safety_ExitCritical(primask);
-    return SAFETY_RESULT_NOT_READY;
-  }
-  if (HAL_GPIO_ReadPin(ESTOP_DETECT_GPIO_Port, ESTOP_DETECT_Pin) == GPIO_PIN_SET)
-  {
-    safety_status |= SAFETY_STATUS_ESTOP_ACTIVE | SAFETY_STATUS_FAULT_LATCHED;
-    Safety_ForceOutputsSafe();
-    Safety_ExitCritical(primask);
-    return SAFETY_RESULT_ESTOP_ACTIVE;
+    return ((safety_status & SAFETY_STATUS_NETWORK_ESTOP_LATCHED) != 0U ||
+            Safety_PhysicalEStopActive()) ? SAFETY_RESULT_ESTOP_ACTIVE :
+                                           SAFETY_RESULT_NOT_READY;
   }
   if ((safety_status & SAFETY_STATUS_FAULT_LATCHED) != 0U)
   {
@@ -1379,23 +1569,13 @@ int32_t Safety_ArmOutputs(uint32_t request_token)
     return SAFETY_RESULT_FAULT_LATCHED;
   }
 
-  Safety_ForceOutputsSafe();
-  /* Keep TPIC OE_N high while reconnecting the AHCT541.  CLR_N is still low
-     at this point, so enabling the buffer cannot expose an old shift value.
-     Release CLR_N, explicitly shift/latch 32 zeroes, and only then expose the
-     TPIC outputs.  A latch pulse issued while the buffer is disabled would
-     never reach the TPIC and could restore a stale storage-register value. */
-  GPIOE->BSRR = TPIC_CTRL_BUF_EN_Pin;
-  Safety_TpicDelayUs(TPIC_LATCH_PULSE_US);
-  GPIOE->BSRR = TPIC_CLR_N_Pin;
-  if (!Safety_TpicShift(0U))
+  /* Preserve the already energized K12 baseline while preparing the general
+     actuator owner. No zero-mask pulse is allowed at this transition. */
+  if (!Safety_ApplyRunPermitBaseline())
   {
-    safety_status |= SAFETY_STATUS_TPIC_ERROR | SAFETY_STATUS_FAULT_LATCHED;
-    Safety_ForceOutputsSafe();
     Safety_ExitCritical(primask);
     return SAFETY_RESULT_TPIC_ERROR;
   }
-  GPIOE->BSRR = (uint32_t)TPIC_OE_N_Pin << 16U;
   safety_status &= ~(SAFETY_STATUS_COMMAND_TIMEOUT |
                      SAFETY_STATUS_COMMAND_REJECTED |
                      SAFETY_STATUS_START_LIMIT);
@@ -1409,7 +1589,54 @@ int32_t Safety_ArmOutputs(uint32_t request_token)
 int32_t Safety_DisarmOutputs(void)
 {
   uint32_t primask = Safety_EnterCritical();
-  Safety_ForceOutputsSafe();
+  Safety_QuiesceControlledOutputs();
+  Safety_ExitCritical(primask);
+  return SAFETY_RESULT_OK;
+}
+
+int32_t Safety_AssertNetworkEStop(void)
+{
+  uint32_t primask = Safety_EnterCritical();
+
+  safety_status |= SAFETY_STATUS_NETWORK_ESTOP_LATCHED;
+  run_permit_restore_pending = 0U;
+  Safety_HardDisableOutputs();
+  Safety_ExitCritical(primask);
+  return SAFETY_RESULT_OK;
+}
+
+int32_t Safety_ResetNetworkEStop(uint32_t request_token)
+{
+  uint32_t primask;
+
+  if (request_token != SAFETY_NETWORK_ESTOP_RESET_TOKEN)
+  {
+    return SAFETY_RESULT_BAD_ARGUMENT;
+  }
+  primask = Safety_EnterCritical();
+  if (Safety_PhysicalEStopActive())
+  {
+    safety_status |= SAFETY_STATUS_ESTOP_ACTIVE | SAFETY_STATUS_FAULT_LATCHED;
+    Safety_HardDisableOutputs();
+    Safety_ExitCritical(primask);
+    return SAFETY_RESULT_ESTOP_ACTIVE;
+  }
+  if (((safety_status & SAFETY_STATUS_READY) == 0U) ||
+      ((security_status.flags & SAFETY_SECURITY_AUTHENTICATED) == 0U) ||
+      (ota_running_images_confirmed == 0U) ||
+      ((safety_status & RUN_PERMIT_CRITICAL_STATUS_MASK) != 0U))
+  {
+    Safety_HardDisableOutputs();
+    Safety_ExitCritical(primask);
+    return SAFETY_RESULT_NOT_READY;
+  }
+
+  safety_status &= ~SAFETY_STATUS_NETWORK_ESTOP_LATCHED;
+  run_permit_restore_pending = 1U;
+  /* Do not bypass the PB2 release debounce even for an authenticated RESET.
+     The 1 ms Secure owner restores exactly the K12 baseline only after a new
+     continuously inactive 20 ms interval. */
+  physical_estop_inactive_ms = 0U;
   Safety_ExitCritical(primask);
   return SAFETY_RESULT_OK;
 }
@@ -1422,6 +1649,12 @@ int32_t Safety_SubmitActuatorCommand(const SAFETY_ActuatorCommand *command)
   bool steering_rejected = false;
   bool steering_values_valid;
   int32_t result = Safety_ValidateCommand(command);
+
+  if ((command != NULL) && (command->run_permit_on == 0U))
+  {
+    (void)Safety_AssertNetworkEStop();
+    return SAFETY_RESULT_ESTOP_ACTIVE;
+  }
 
   if (ota_running_images_confirmed == 0U)
   {
@@ -1442,14 +1675,20 @@ int32_t Safety_SubmitActuatorCommand(const SAFETY_ActuatorCommand *command)
   if ((safety_status & (SAFETY_STATUS_OTA_ACTIVE |
                         SAFETY_STATUS_OTA_READY)) != 0U)
   {
-    Safety_ForceOutputsSafe();
+    Safety_HardDisableOutputs();
     Safety_ExitCritical(primask);
     return SAFETY_RESULT_BUSY;
   }
-  if (HAL_GPIO_ReadPin(ESTOP_DETECT_GPIO_Port, ESTOP_DETECT_Pin) == GPIO_PIN_SET)
+  if (Safety_PhysicalEStopActive())
   {
     safety_status |= SAFETY_STATUS_ESTOP_ACTIVE | SAFETY_STATUS_FAULT_LATCHED;
-    Safety_ForceOutputsSafe();
+    Safety_HardDisableOutputs();
+    Safety_ExitCritical(primask);
+    return SAFETY_RESULT_ESTOP_ACTIVE;
+  }
+  if ((safety_status & SAFETY_STATUS_NETWORK_ESTOP_LATCHED) != 0U)
+  {
+    Safety_HardDisableOutputs();
     Safety_ExitCritical(primask);
     return SAFETY_RESULT_ESTOP_ACTIVE;
   }
@@ -1500,7 +1739,7 @@ int32_t Safety_SubmitActuatorCommand(const SAFETY_ActuatorCommand *command)
   if (!Safety_TpicShift(new_mask))
   {
     safety_status |= SAFETY_STATUS_TPIC_ERROR | SAFETY_STATUS_FAULT_LATCHED;
-    Safety_ForceOutputsSafe();
+    Safety_HardDisableOutputs();
     Safety_ExitCritical(primask);
     return SAFETY_RESULT_TPIC_ERROR;
   }
@@ -1510,7 +1749,7 @@ int32_t Safety_SubmitActuatorCommand(const SAFETY_ActuatorCommand *command)
   if (result != SAFETY_RESULT_OK)
   {
     safety_status |= SAFETY_STATUS_COMMAND_REJECTED;
-    Safety_ForceOutputsSafe();
+    Safety_QuiesceControlledOutputs();
     Safety_ExitCritical(primask);
     return result;
   }
@@ -1550,14 +1789,14 @@ int32_t Safety_KickWatchdog(uint32_t heartbeat)
         Safety_TimeReached(secure_uptime_ms, ota_confirmation_deadline))
     {
       primask = Safety_EnterCritical();
-      Safety_ForceOutputsSafe();
+      Safety_HardDisableOutputs();
       Safety_ExitCritical(primask);
       return SAFETY_RESULT_NOT_READY;
     }
   }
   if (HAL_IWDG_Refresh(&hiwdg) != HAL_OK)
   {
-    Safety_LatchFault(SAFETY_STATUS_INTERNAL_ERROR);
+    Safety_LatchCriticalFault(SAFETY_STATUS_INTERNAL_ERROR);
     return SAFETY_RESULT_INTERNAL_ERROR;
   }
   last_watchdog_heartbeat = heartbeat;
@@ -1566,14 +1805,20 @@ int32_t Safety_KickWatchdog(uint32_t heartbeat)
 
 void Safety_FaultFromException(void)
 {
-  Safety_LatchFault(SAFETY_STATUS_INTERNAL_ERROR);
+  Safety_LatchCriticalFault(SAFETY_STATUS_INTERNAL_ERROR);
 }
 
 void HAL_GPIO_EXTI_Rising_Callback(uint16_t gpio_pin)
 {
   if (gpio_pin == ESTOP_DETECT_Pin)
   {
-    Safety_LatchFault(SAFETY_STATUS_ESTOP_ACTIVE);
+    uint32_t primask = Safety_EnterCritical();
+    safety_status |= SAFETY_STATUS_ESTOP_ACTIVE |
+                     SAFETY_STATUS_FAULT_LATCHED;
+    physical_estop_inactive_ms = 0U;
+    run_permit_restore_pending = 1U;
+    Safety_HardDisableOutputs();
+    Safety_ExitCritical(primask);
   }
 }
 
@@ -1583,6 +1828,8 @@ void HAL_GPIO_EXTI_Falling_Callback(uint16_t gpio_pin)
   {
     uint32_t primask = Safety_EnterCritical();
     safety_status &= ~SAFETY_STATUS_ESTOP_ACTIVE;
+    physical_estop_inactive_ms = 0U;
+    run_permit_restore_pending = 1U;
     Safety_ExitCritical(primask);
   }
 }
@@ -1653,7 +1900,7 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc)
     {
       safety_status |= SAFETY_STATUS_FAULT_LATCHED |
                        valve_control.fault_flags;
-      Safety_ForceOutputsSafe();
+      Safety_QuiesceControlledOutputs();
     }
   }
 }
@@ -1661,7 +1908,7 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc)
 void HAL_ADC_ErrorCallback(ADC_HandleTypeDef *hadc)
 {
   (void)hadc;
-  Safety_LatchFault(SAFETY_STATUS_INTERNAL_ERROR);
+  Safety_LatchCriticalFault(SAFETY_STATUS_INTERNAL_ERROR);
 }
 
 void HAL_ADC_LevelOutOfWindowCallback(ADC_HandleTypeDef *hadc)
@@ -1669,12 +1916,12 @@ void HAL_ADC_LevelOutOfWindowCallback(ADC_HandleTypeDef *hadc)
   if (hadc->Instance == ADC2)
   {
     valve_control.fault_flags |= SAFETY_STATUS_VALVE_OVERCURRENT;
-    Safety_LatchFault(SAFETY_STATUS_VALVE_OVERCURRENT);
+    Safety_LatchIsolatedFault(SAFETY_STATUS_VALVE_OVERCURRENT);
   }
 }
 
 void HAL_GTZC_TZIC_Callback(uint32_t periph_id)
 {
   (void)periph_id;
-  Safety_LatchFault(SAFETY_STATUS_GTZC_VIOLATION);
+  Safety_LatchCriticalFault(SAFETY_STATUS_GTZC_VIOLATION);
 }

@@ -149,6 +149,42 @@ print(result.hexdigest())
 PY
 }
 
+validate_regular_tree() {
+  local task_root="$1"
+  local task_description="$2"
+  python3 - "${task_root}" "${task_description}" <<'PY'
+import os
+import re
+import stat
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1])
+description = sys.argv[2]
+safe_name = re.compile(r"[A-Za-z0-9._-]+")
+if not root.is_dir() or root.is_symlink():
+    raise SystemExit(f"{description} root is not a real directory: {root}")
+
+
+def visit(directory: Path) -> None:
+    for entry in os.scandir(directory):
+        if safe_name.fullmatch(entry.name) is None:
+            raise SystemExit(
+                f"{description} contains an unsafe member name: {entry.path}")
+        info = entry.stat(follow_symlinks=False)
+        path = Path(entry.path)
+        if stat.S_ISDIR(info.st_mode):
+            visit(path)
+        elif not stat.S_ISREG(info.st_mode):
+            raise SystemExit(
+                f"{description} contains a symlink or special file: {path}")
+
+
+visit(root)
+print(f"{description}: real directory/regular-file tree verified")
+PY
+}
+
 git_stream_sha256() {
   sha256sum | cut -d ' ' -f 1
 }
@@ -619,6 +655,7 @@ task_project_relative="${task_project_dir#"${task_repo_dir}/"}"
   fail "a shallow repository cannot produce the required complete Git bundle"
 
 task_release_dir=""
+task_release_root=""
 if [[ -n "${task_release_version}" ]]; then
   task_release_root="${task_project_dir}/artifacts/firmware"
   [[ -d "${task_release_root}" && ! -L "${task_release_root}" ]] || \
@@ -633,6 +670,7 @@ if [[ -n "${task_release_version}" ]]; then
   [[ "$(dirname -- "${task_release_dir}")" == "${task_release_root}" &&
      "$(basename -- "${task_release_dir}")" == "${task_release_version}" ]] || \
     fail "release directory is not the canonical project release path"
+  validate_regular_tree "${task_release_root}" "Firmware release ledger"
 fi
 
 # Serialize publishers on the backup-root directory inode. No lock pathname
@@ -700,8 +738,11 @@ task_pki_fingerprint="$(tree_fingerprint "${task_pki_dir}" content)"
 task_assets_fingerprint="$(tree_fingerprint \
   "${task_security_assets_dir}" content)"
 task_release_fingerprint=""
+task_release_history_fingerprint=""
 if [[ -n "${task_release_dir}" ]]; then
   task_release_fingerprint="$(tree_fingerprint "${task_release_dir}" content)"
+  task_release_history_fingerprint="$(
+    tree_fingerprint "${task_release_root}" content)"
 fi
 
 mkdir -m 700 -- "${task_staging_dir}/source" \
@@ -746,8 +787,11 @@ cp -a -- "${task_pki_dir}/." "${task_staging_dir}/pki/"
 cp -a -- "${task_security_assets_dir}/." \
   "${task_staging_dir}/security-provisioning/"
 if [[ -n "${task_release_dir}" ]]; then
-  mkdir -m 700 -- "${task_staging_dir}/release"
+  mkdir -m 700 -- "${task_staging_dir}/release" \
+    "${task_staging_dir}/release-history"
   cp -a -- "${task_release_dir}/." "${task_staging_dir}/release/"
+  cp -a -- "${task_release_root}/." \
+    "${task_staging_dir}/release-history/"
 fi
 find "${task_staging_dir}" -type d -exec chmod 700 -- {} +
 find "${task_staging_dir}" -type f -exec chmod 600 -- {} +
@@ -774,6 +818,11 @@ if [[ -n "${task_release_dir}" ]]; then
     "${task_staging_dir}/pki/ota-transport-public.pem"
   [[ "$(tree_fingerprint "${task_staging_dir}/release" content)" == \
      "${task_release_fingerprint}" ]] || fail "copied release differs from its source"
+  validate_regular_tree "${task_staging_dir}/release-history" \
+    "Copied firmware release ledger"
+  [[ "$(tree_fingerprint "${task_staging_dir}/release-history" content)" == \
+     "${task_release_history_fingerprint}" ]] || \
+    fail "copied firmware release ledger differs from its source"
 fi
 
 # Offline restore drill: the only inputs are the staged bundle and archive.
@@ -982,6 +1031,8 @@ PY
   printf 'security_assets_tree_sha256=%s\n' "${task_assets_fingerprint}"
   printf 'release_version=%s\n' "${task_release_version:-none}"
   printf 'release_tree_sha256=%s\n' "${task_release_fingerprint:-none}"
+  printf 'release_history_tree_sha256=%s\n' \
+    "${task_release_history_fingerprint:-none}"
   printf 'baseline_recovery_path=%s\n' "${task_baseline_dir}"
   printf 'baseline_recovery_name=%s\n' "$(basename -- "${task_baseline_dir}")"
   printf 'baseline_manifest_sha256=%s\n' "${task_baseline_manifest_sha}"
@@ -994,7 +1045,9 @@ cat > "${task_staging_dir}/RESTORE.md" <<EOF
 This non-overwriting snapshot contains the exact dirty/untracked ECU source
 overlay, a complete Git bundle, an independent binary patch, the encrypted
 working PKI, matching security-provisioning assets, and an optional signed
-release. The automatic offline restore drill passed before publication.
+release. Release snapshots also carry the complete immutable firmware release
+ledger needed to preserve consumed identities, revoked evidence, and previous
+swap references. The automatic offline restore drill passed before publication.
 
 Verify hashes and private modes first:
 
@@ -1069,6 +1122,9 @@ python3 "${task_staging_dir}/VERIFY_BACKUP.py"
 if [[ -n "${task_release_dir}" ]]; then
   [[ "$(tree_fingerprint "${task_release_dir}" content)" == \
      "${task_release_fingerprint}" ]] || fail "release changed during backup"
+  [[ "$(tree_fingerprint "${task_release_root}" content)" == \
+     "${task_release_history_fingerprint}" ]] || \
+    fail "firmware release ledger changed during backup"
 fi
 
 [[ ! -e "${task_output_dir}" && ! -L "${task_output_dir}" ]] || \

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+import json
 import pathlib
 import select
 import socket
@@ -23,6 +24,7 @@ SPEC.loader.exec_module(UI)
 # Every live normal authority takes over the persistent selectable OEM inputs
 # and closes K12. K3 (bit 16) is deliberately absent: it is active only while
 # an engine high/low trigger is in progress.
+RUN_PERMIT_BASE = 1 << 22
 BASE = sum(1 << bit for bit in (1, 3, 4, 8, 18, 22, 26))
 RELAY_CASES = [
     ("喇叭 K21", {"buzzer_main_on": 1}, 1 << 2),
@@ -61,6 +63,11 @@ class Bench:
         self.status = None
         self.diagnostic = None
         self.steering_status = None
+        self.guard_loaded_valves = False
+        self.status_received_at = 0.0
+        self.diagnostic_received_at = 0.0
+        self.guard_target = 0
+        self.guard_target_since = 0.0
 
     @staticmethod
     def receiver(port: int) -> socket.socket:
@@ -85,32 +92,78 @@ class Bench:
     def receive(self, timeout: float) -> None:
         readable, _, _ = select.select(self.rx, [], [], timeout)
         for sock in readable:
-            packet, source = sock.recvfrom(2048)
-            if source[0] != self.target[0] or source[1] != UI.STATUS_PORT:
-                continue
-            decoded = UI.decode_v2(packet)
-            if decoded is None:
-                continue
-            header, payload = decoded
-            port = sock.getsockname()[1]
-            if (port == UI.STATUS_PORT and
-                    header["message_type"] == UI.MSG_STATUS and
-                    len(payload) == struct.calcsize(UI.STATUS_FORMAT)):
-                self.status = dict(zip(UI.STATUS_FIELDS, struct.unpack(UI.STATUS_FORMAT, payload)))
-            elif (port == UI.STATUS_PORT and
-                  header["message_type"] == UI.MSG_STEERING_STATUS and
-                  len(payload) == struct.calcsize(UI.STEERING_STATUS_FORMAT)):
-                self.steering_status = dict(zip(
-                    UI.STEERING_STATUS_FIELDS,
-                    struct.unpack(UI.STEERING_STATUS_FORMAT, payload),
-                ))
-            elif (port == UI.DIAGNOSTIC_PORT and
-                  header["message_type"] == UI.MSG_DIAGNOSTIC and
-                  len(payload) == struct.calcsize(UI.DIAGNOSTIC_FORMAT)):
-                self.diagnostic = dict(zip(
-                    UI.DIAGNOSTIC_FIELDS,
-                    struct.unpack(UI.DIAGNOSTIC_FORMAT, payload),
-                ))
+            # UDP/50001 carries V1 + V2 + steering (~50 frames/s). Reading
+            # one frame per 25 Hz control cycle accumulates stale feedback.
+            # Drain the queue, but fail closed on unexpected flooding.
+            for _ in range(256):
+                try:
+                    packet, source = sock.recvfrom(2048)
+                except BlockingIOError:
+                    break
+                if source[0] != self.target[0] or source[1] != UI.STATUS_PORT:
+                    continue
+                decoded = UI.decode_v2(packet)
+                if decoded is None:
+                    continue
+                header, payload = decoded
+                port = sock.getsockname()[1]
+                if (port == UI.STATUS_PORT and
+                        header["message_type"] == UI.MSG_STATUS and
+                        len(payload) == struct.calcsize(UI.STATUS_FORMAT)):
+                    self.status = dict(zip(UI.STATUS_FIELDS, struct.unpack(UI.STATUS_FORMAT, payload)))
+                    self.status_received_at = time.monotonic()
+                elif (port == UI.STATUS_PORT and
+                      header["message_type"] == UI.MSG_STEERING_STATUS and
+                      len(payload) == struct.calcsize(UI.STEERING_STATUS_FORMAT)):
+                    self.steering_status = dict(zip(
+                        UI.STEERING_STATUS_FIELDS,
+                        struct.unpack(UI.STEERING_STATUS_FORMAT, payload),
+                    ))
+                elif (port == UI.DIAGNOSTIC_PORT and
+                      header["message_type"] == UI.MSG_DIAGNOSTIC and
+                      len(payload) == struct.calcsize(UI.DIAGNOSTIC_FORMAT)):
+                    self.diagnostic = dict(zip(
+                        UI.DIAGNOSTIC_FIELDS,
+                        struct.unpack(UI.DIAGNOSTIC_FORMAT, payload),
+                    ))
+                    self.diagnostic_received_at = time.monotonic()
+            else:
+                raise BenchFailure("host receive queue exceeded bounded drain budget")
+        if self.guard_loaded_valves:
+            self.check_loaded_valve_guard()
+
+    def check_loaded_valve_guard(self) -> None:
+        """Upper-host guards for this <=200 mA bench sequence, not ECU policy."""
+        now = time.monotonic()
+        for name, received in (
+            ("status", self.status_received_at),
+            ("diagnostic", self.diagnostic_received_at),
+        ):
+            if received and now - received > 0.30:
+                raise BenchFailure(f"host guard: stale {name}")
+        if self.diagnostic and self.diagnostic["valve_fault_flags"]:
+            raise BenchFailure("host guard: ECU valve fault")
+        if self.status is None:
+            return
+        status = self.status
+        forward = int(status["forward_current_ma"])
+        reverse = int(status["reverse_current_ma"])
+        fd = int(status["forward_duty_permille"])
+        rd = int(status["reverse_duty_permille"])
+        if max(forward, reverse) > 450 or max(fd, rd) > 350 or (fd and rd):
+            raise BenchFailure(
+                f"host guard: current={forward}/{reverse} mA, PWM={fd}/{rd} permille"
+            )
+        target = int(status["valve_requested_target_ma"])
+        if target != self.guard_target:
+            self.guard_target = target
+            self.guard_target_since = now
+        if abs(target) >= 100 and now - self.guard_target_since >= 0.4:
+            feedback = forward if target > 0 else reverse
+            if feedback < 20:
+                raise BenchFailure(
+                    f"host guard: no current response; target={target}, feedback={feedback} mA"
+                )
 
     def next_frame(self, control: dict[str, int], sender: int, *, flags: int = 0,
                    emergency: bool = False) -> bytes:
@@ -152,6 +205,15 @@ class Bench:
                 matched = True
         return matched if predicate is not None else True
 
+    def send_once(self, control: dict[str, int], sender: int, *,
+                  flags: int = 0, emergency: bool = False) -> None:
+        self.tx.sendto(
+            self.next_frame(
+                control, sender, flags=flags, emergency=emergency
+            ),
+            self.target,
+        )
+
 
 def require(condition: bool, message: str) -> None:
     if not condition:
@@ -173,6 +235,7 @@ def main() -> int:
         parser.error("--accept-unloaded-actuation is required")
 
     bench = Bench(args.ecu_ip)
+    bench.guard_loaded_valves = not args.accept_disconnected_valves
     neutral = UI.neutral_control()
     passed = 0
 
@@ -315,6 +378,50 @@ def main() -> int:
         print("PASS  网络紧急优先级 255")
         passed += 1
 
+        require(bench.wait(
+            0.40,
+            lambda: (
+                relay_mask() == 0 and mode() == 4 and
+                bool(int(bench.diagnostic["safety_status"]) &
+                     UI.SAFETY_STATUS_NETWORK_ESTOP)
+            ),
+        ), "network E-stop did not remain latched after sender timeout")
+        bench.send_once(neutral, 2, flags=UI.CONTROL_FLAG_RELEASE)
+        require(bench.wait(
+            0.12,
+            lambda: (
+                relay_mask() == 0 and
+                bool(int(bench.diagnostic["safety_status"]) &
+                     UI.SAFETY_STATUS_NETWORK_ESTOP)
+            ),
+        ), "RELEASE unexpectedly cleared the network E-stop latch")
+
+        # The expired/orphaned latch needs a source-specific neutral binding,
+        # followed by a strictly newer standalone RESET. Neither timeout,
+        # RELEASE nor the binding frame itself may restore K12.
+        bench.send_once(neutral, 2)
+        require(bench.wait(
+            0.12,
+            lambda: (
+                relay_mask() == 0 and
+                bool(int(bench.diagnostic["safety_status"]) &
+                     UI.SAFETY_STATUS_NETWORK_ESTOP)
+            ),
+        ), "ordinary neutral binding unexpectedly cleared network E-stop")
+        bench.send_once(
+            neutral, 2, flags=UI.CONTROL_FLAG_ESTOP_RESET
+        )
+        require(bench.wait(
+            0.45,
+            lambda: (
+                relay_mask() == RUN_PERMIT_BASE and mode() == 0 and
+                not bool(int(bench.diagnostic["safety_status"]) &
+                         UI.SAFETY_STATUS_NETWORK_ESTOP)
+            ),
+        ), "explicit network E-stop reset was not accepted safely")
+        print("PASS  断链/RELEASE 保持急停；显式解除后 IDLE / 仅 K12")
+        passed += 1
+
         sender1 = {**neutral, "buzzer_main_on": 1}
         sender3 = {**neutral, "led_front_on": 1}
         require(bench.drive([(sender1, 1, False), (sender3, 3, False)], 0.4,
@@ -327,12 +434,16 @@ def main() -> int:
         passed += 1
 
         bench.drive([(neutral, 1, False)], 0.2)
-        require(bench.wait(0.55, lambda: mode() == 0 and relay_mask() == 0),
-                "control timeout did not restore IDLE/all-off")
-        print("PASS  250 ms 控制丢失恢复 IDLE / relay mask 0")
+        require(bench.wait(
+            0.55,
+            lambda: mode() == 0 and relay_mask() == RUN_PERMIT_BASE,
+        ), "control timeout did not restore IDLE/K12-only baseline")
+        print("PASS  250 ms 控制丢失恢复 IDLE / 仅 K12 人工驾驶许可")
         passed += 1
     except BenchFailure as error:
         print(f"FAIL  {error}", file=sys.stderr)
+        print(json.dumps({"status": bench.status, "diagnostic": bench.diagnostic},
+                         ensure_ascii=False), file=sys.stderr)
         return 1
     finally:
         # Stop transmitting; the ECU's independent timeout is the final safe

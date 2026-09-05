@@ -33,6 +33,7 @@ extern "C" {
 
 #define SAFETY_ARM_TOKEN               0x41524D21UL /* "ARM!" */
 #define SAFETY_CLEAR_FAULT_TOKEN       0x434C5246UL /* "CLRF" */
+#define SAFETY_NETWORK_ESTOP_RESET_TOKEN 0x45525354UL /* "ERST" */
 
 enum
 {
@@ -65,7 +66,8 @@ enum
      this reserved bit clear, which is intentionally backward-compatible. */
   SAFETY_STATUS_OTA_UNCONFIRMED    = (1UL << 25),
   SAFETY_STATUS_STEERING_CAN_FAULT = (1UL << 26),
-  SAFETY_STATUS_VEHICLE_CAN_FAULT  = (1UL << 27)
+  SAFETY_STATUS_VEHICLE_CAN_FAULT  = (1UL << 27),
+  SAFETY_STATUS_NETWORK_ESTOP_LATCHED = (1UL << 28)
 };
 
 enum

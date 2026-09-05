@@ -18,6 +18,15 @@ sys.modules[SPEC.name] = UI
 SPEC.loader.exec_module(UI)
 
 
+class DatagramRecorder:
+    def __init__(self):
+        self.sent = []
+
+    def sendto(self, packet, target):
+        self.sent.append((bytes(packet), target))
+        return len(packet)
+
+
 class ProtocolV2Test(unittest.TestCase):
     ARM_TOKEN = "arm-token-00000001"
     HOLD_TOKEN = "hold-token-0000001"
@@ -33,7 +42,18 @@ class ProtocolV2Test(unittest.TestCase):
         bridge.tuning_tombstones = {}
         bridge.cancelled_hold_tokens = set()
         bridge.cancelled_hold_order = deque()
+        bridge.tx_socket = DatagramRecorder()
         return bridge
+
+    @staticmethod
+    def decoded_control(packet):
+        header, payload = UI.decode_v2(packet)
+        sender_id, priority, reserved = struct.unpack_from("<BBH", payload)
+        fields = dict(zip(
+            UI.CONTROL_FIELDS,
+            struct.unpack(UI.CONTROL_FORMAT, payload)[3:],
+        ))
+        return header, sender_id, priority, reserved, fields
 
     @staticmethod
     def steering_status(sequence=10, timestamp_ms=100, *, active=False):
@@ -109,6 +129,9 @@ class ProtocolV2Test(unittest.TestCase):
         self.assertEqual(len(UI.CONTROL_FIELDS), 29)
         self.assertEqual(UI.MSG_STEERING_STATUS, 0x06)
         self.assertEqual(UI.CONTROL_FLAG_STEERING_RATE, 1 << 2)
+        self.assertEqual(UI.CONTROL_FLAG_ESTOP_RESET, 1 << 3)
+        self.assertEqual(UI.SAFETY_STATUS_NETWORK_ESTOP, 1 << 28)
+        self.assertEqual(UI.ECU_CAP_LATCHED_ESTOP_RESET, 1 << 11)
 
     def test_crc32c_known_vector(self):
         self.assertEqual(UI.crc32c(b"123456789"), 0xE3069283)
@@ -160,6 +183,99 @@ class ProtocolV2Test(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "1..254"):
             bridge.configure({"priority": 255})
         self.assertEqual(bridge.state.priority, 47)
+
+    def test_emergency_assert_and_reset_are_explicit_safe_transactions(self):
+        bridge = self.bridge(sender_id=2, enabled=True)
+        bridge.state.priority = 47
+        bridge.state.control["pump_enable"] = 1
+
+        bridge.set_emergency(True)
+        self.assertFalse(bridge.state.enabled)
+        self.assertTrue(bridge.state.emergency)
+        self.assertEqual(len(bridge.tx_socket.sent), 1)
+        asserted, target = bridge.tx_socket.sent[0]
+        header, sender, priority, reserved, control = \
+            self.decoded_control(asserted)
+        self.assertEqual(target, ("172.16.0.11", UI.CONTROL_PORT))
+        self.assertEqual(header["flags"], 0)
+        self.assertEqual((sender, priority, reserved), (2, 255, 0))
+        self.assertEqual(control["emergency_stop_request"], 1)
+        self.assertFalse(any(
+            value for name, value in control.items()
+            if name != "emergency_stop_request"
+        ))
+
+        bridge.set_emergency(False)
+        self.assertFalse(bridge.state.enabled)
+        self.assertFalse(bridge.state.emergency)
+        self.assertGreater(bridge.state.estop_reset_requested_at, 0.0)
+        self.assertEqual(len(bridge.tx_socket.sent), 3)
+        bind, bind_target = bridge.tx_socket.sent[1]
+        reset, reset_target = bridge.tx_socket.sent[2]
+        bind_header, sender, priority, reserved, bind_control = \
+            self.decoded_control(bind)
+        reset_header, reset_sender, reset_priority, reset_reserved, \
+            reset_control = self.decoded_control(reset)
+        self.assertEqual(bind_target, reset_target)
+        self.assertEqual(bind_header["flags"], 0)
+        self.assertEqual(reset_header["flags"], UI.CONTROL_FLAG_ESTOP_RESET)
+        self.assertEqual((sender, priority, reserved), (2, 47, 0))
+        self.assertEqual(
+            (reset_sender, reset_priority, reset_reserved), (2, 47, 0)
+        )
+        self.assertTrue(UI.u32_is_newer(
+            reset_header["sequence"], bind_header["sequence"]
+        ))
+        self.assertFalse(any(bind_control.values()))
+        self.assertFalse(any(reset_control.values()))
+
+    def test_latched_estop_blocks_control_and_snapshot_exposes_safety_state(self):
+        bridge = self.bridge(enabled=False)
+        now = time.monotonic()
+        bridge.state.diagnostic = {
+            "capability_flags": UI.ECU_CAP_LATCHED_ESTOP_RESET,
+            "safety_status": UI.SAFETY_STATUS_NETWORK_ESTOP,
+            "applied_relay_mask": UI.SAFETY_RELAY_K12_RUN_PERMIT,
+        }
+        bridge.state.diagnostic_received_at = now
+        bridge.state.security = {"flags": 1 << 4}
+        bridge.state.security_received_at = now
+        snapshot = bridge.snapshot()
+        self.assertTrue(snapshot["network_estop_latched"])
+        self.assertFalse(snapshot["physical_estop_active"])
+        self.assertTrue(snapshot["k12_run_permit_commanded"])
+        self.assertFalse(snapshot["k12_contact_feedback_available"])
+        self.assertFalse(snapshot["critical_inhibit"])
+
+        with self.assertRaisesRegex(ValueError, "explicitly reset"):
+            bridge.configure({"enabled": True})
+        with self.assertRaisesRegex(ValueError, "actuator controls"):
+            bridge.patch_control({"buzzer_main_on": 1})
+        bridge.patch_control({"buzzer_main_on": 0})
+        self.assertFalse(bridge.state.enabled)
+
+    def test_estop_reset_rejection_and_confirmation_are_visible(self):
+        bridge = self.bridge(enabled=False)
+        requested_at = time.monotonic() - 2.0
+        bridge.state.estop_reset_requested_at = requested_at
+        bridge.state.diagnostic = {
+            "capability_flags": UI.ECU_CAP_LATCHED_ESTOP_RESET,
+            "safety_status": UI.SAFETY_STATUS_NETWORK_ESTOP,
+        }
+        bridge.state.diagnostic_received_at = requested_at + 0.01
+        bridge._refresh_estop_reset_locked(time.monotonic())
+        self.assertIn("rejected E-stop reset", bridge.state.estop_reset_error)
+        self.assertEqual(bridge.state.estop_reset_requested_at, 0.0)
+
+        bridge.state.estop_reset_requested_at = time.monotonic() - 0.1
+        bridge.state.diagnostic = {
+            "capability_flags": UI.ECU_CAP_LATCHED_ESTOP_RESET,
+            "safety_status": 0,
+        }
+        bridge.state.diagnostic_received_at = time.monotonic()
+        bridge._refresh_estop_reset_locked(time.monotonic())
+        self.assertEqual(bridge.state.estop_reset_error, "")
+        self.assertEqual(bridge.state.estop_reset_requested_at, 0.0)
 
     def test_corrupt_and_v1_frames_are_rejected(self):
         frame = bytearray(UI.encode_v2(UI.MSG_CONFIG_GET, 0, 7, b"", 1))

@@ -75,6 +75,8 @@ int32_t SECURE_SafetyGetSteeringSnapshot(
 int32_t SECURE_SafetyGetJ1939Snapshot(
     uint32_t requested_version, SAFETY_J1939Snapshot *snapshot,
     uint32_t snapshot_capacity);
+int32_t SECURE_SafetyAssertNetworkEStop(void);
+int32_t SECURE_SafetyResetNetworkEStop(uint32_t request_token);
 
 #endif /* SECURE_NSC_H */
 /* USER CODE END Non_Secure_CallLib_h */

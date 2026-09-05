@@ -25,6 +25,8 @@ PROJECT = MODULE_PATH.parents[1]
 PINNED_RELEASE = PROJECT / "artifacts" / "firmware" / "1.0.16"
 PINNED_RELEASE_1_0_17 = PROJECT / "artifacts" / "firmware" / "1.0.17"
 PINNED_RELEASE_1_0_18 = PROJECT / "artifacts" / "firmware" / "1.0.18"
+REVOKED_RELEASE_1_0_19 = PROJECT / "artifacts" / "firmware" / "1.0.19"
+PINNED_RELEASE_1_0_20 = PROJECT / "artifacts" / "firmware" / "1.0.20"
 PKI_DIR = Path("/home/plac/.local/share/roller-ecu-pki")
 
 
@@ -170,9 +172,17 @@ def decrypt_release_image_key(version, name):
         (PKI_DIR / "oemirot-encryption.pem").read_bytes(),
         password=(PKI_DIR / "key-passphrase.txt").read_bytes().strip(),
     )
+    profile = MODULE.RELEASE_PROFILES.get(version)
+    if profile is None:
+        package_names = [f"roller-ecu-{version}.recu"]
+    else:
+        package_names = [
+            name for name in profile.artifact_map()
+            if name.startswith(f"roller-ecu-{version}.recu")
+        ]
+        assert len(package_names) == 1
     package = (
-        PROJECT / "artifacts" / "firmware" / version /
-        f"roller-ecu-{version}.recu"
+        PROJECT / "artifacts" / "firmware" / version / package_names[0]
     )
     with zipfile.ZipFile(package) as archive:
         image = archive.read(f"{name}.bin")
@@ -378,7 +388,8 @@ class ClosedOtaReadbackTests(unittest.TestCase):
                 shutil.copytree(PINNED_RELEASE_1_0_18, current)
                 shutil.copytree(PINNED_RELEASE_1_0_17, previous)
                 path = (
-                    current / "roller-ecu-1.0.18.recu"
+                    current /
+                    "roller-ecu-1.0.18.recu.REVOKED_DO_NOT_FLASH"
                     if mutation == "current" else
                     previous / "roller-ecu-1.0.17.recu"
                 )
@@ -398,36 +409,131 @@ class ClosedOtaReadbackTests(unittest.TestCase):
         self.assertEqual(secure_report.identity, expected)
         self.assertEqual(nonsecure_report.identity, expected)
 
+    @unittest.skipUnless(PINNED_RELEASE_1_0_20.is_dir(),
+                         "reviewed 1.0.20 artifacts unavailable")
+    def test_immutable_pinned_1_0_20_release_and_1_0_17_swap_load(self):
+        release = MODULE.load_release(PINNED_RELEASE_1_0_20)
+        self.assertEqual(release.profile.version, "1.0.20")
+        self.assertEqual(release.profile.previous_version, "1.0.17")
+        self.assertEqual(release.metadata["version"], "1.0.20")
+        self.assertEqual(release.metadata["security_counter"], 20)
+        self.assertEqual(release.metadata["update_sequence"], 20)
+        self.assertEqual(
+            release.secure.initial_record.identity,
+            MODULE.ReleaseIdentity(1, 0, 20, 0, 20),
+        )
+        self.assertEqual(release.secure.previous_record_size, 0x2DDE7)
+        self.assertEqual(release.secure.update_record.record_end, 0x2DE08)
+        self.assertEqual(release.secure.swap_size, 0x2DE08)
+        self.assertEqual(release.nonsecure.previous_record_size, 0x7D38)
+        self.assertEqual(release.nonsecure.update_record.record_end, 0x7EA8)
+        self.assertEqual(release.nonsecure.swap_size, 0x7EA8)
+
+    @unittest.skipUnless(PINNED_RELEASE_1_0_20.is_dir(),
+                         "reviewed 1.0.20 artifacts unavailable")
+    def test_1_0_20_post_swap_key_slots_and_installed_pair_are_exact(self):
+        if not (PKI_DIR / "oemirot-encryption.pem").is_file() or not \
+                (PKI_DIR / "key-passphrase.txt").is_file():
+            self.skipTest("local OEMiROT encryption PKI unavailable")
+        release = MODULE.load_release(PINNED_RELEASE_1_0_20)
+        secure_keys = (
+            decrypt_release_image_key("1.0.20", "secure") +
+            decrypt_release_image_key("1.0.17", "secure")
+        )
+        nonsecure_keys = (
+            decrypt_release_image_key("1.0.20", "nonsecure") +
+            decrypt_release_image_key("1.0.17", "nonsecure")
+        )
+        self.assertEqual(
+            hashlib.sha256(secure_keys).hexdigest(),
+            release.profile.secure_key_area_sha256,
+        )
+        self.assertEqual(
+            hashlib.sha256(nonsecure_keys).hexdigest(),
+            release.profile.nonsecure_key_area_sha256,
+        )
+        secure = make_installed(release.secure, key_area=secure_keys)
+        nonsecure = make_installed(release.nonsecure, key_area=nonsecure_keys)
+        secure_report, nonsecure_report = MODULE.validate_pair(
+            secure, nonsecure, release)
+        self.assertEqual(secure_report.identity,
+                         MODULE.ReleaseIdentity(1, 0, 20, 0, 20))
+        self.assertEqual(nonsecure_report.identity, secure_report.identity)
+        self.assertEqual((secure_report.image_ok, nonsecure_report.image_ok),
+                         (1, 1))
+
+    @unittest.skipUnless(PINNED_RELEASE_1_0_20.is_dir(),
+                         "reviewed 1.0.20 artifacts unavailable")
+    def test_1_0_20_profile_rejects_changed_current_or_1_0_17_release(self):
+        for mutation in ("current", "previous"):
+            with self.subTest(mutation=mutation), \
+                    tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                current = root / "1.0.20"
+                previous = root / "1.0.17"
+                shutil.copytree(PINNED_RELEASE_1_0_20, current)
+                shutil.copytree(PINNED_RELEASE_1_0_17, previous)
+                path = (
+                    current / "roller-ecu-1.0.20.recu"
+                    if mutation == "current" else
+                    previous / "roller-ecu-1.0.17.recu"
+                )
+                data = bytearray(path.read_bytes())
+                data[-1] ^= 1
+                path.write_bytes(data)
+                with self.assertRaises(MODULE.ReadbackVerificationError):
+                    MODULE.load_release(current)
+
+    def test_1_0_20_synthetic_pair_validates_without_private_key(self):
+        release = make_synthetic_release("1.0.20")
+        secure = make_installed(release.secure, key_seed=1)
+        nonsecure = make_installed(release.nonsecure, key_seed=65)
+        secure_report, nonsecure_report = MODULE.validate_pair(
+            secure, nonsecure, release)
+        expected = MODULE.ReleaseIdentity(1, 0, 20, 0, 20)
+        self.assertEqual(secure_report.identity, expected)
+        self.assertEqual(nonsecure_report.identity, expected)
+
+    @unittest.skipUnless(REVOKED_RELEASE_1_0_19.is_dir(),
+                         "revoked 1.0.19 evidence unavailable")
+    def test_malformed_revoked_1_0_19_is_not_a_readback_profile(self):
+        self.assertNotIn("1.0.19", MODULE.RELEASE_PROFILES)
+        with self.assertRaisesRegex(
+                MODULE.ReadbackVerificationError, "not reviewed"):
+            MODULE.load_release(REVOKED_RELEASE_1_0_19)
+
     @unittest.skipUnless(
         PINNED_RELEASE.is_dir() and PINNED_RELEASE_1_0_17.is_dir() and
-        PINNED_RELEASE_1_0_18.is_dir(),
-        "reviewed 1.0.16/1.0.17/1.0.18 artifacts unavailable",
+        PINNED_RELEASE_1_0_18.is_dir() and PINNED_RELEASE_1_0_20.is_dir(),
+        "reviewed 1.0.16/1.0.17/1.0.18/1.0.20 artifacts unavailable",
     )
     def test_release_profiles_are_immutable_across_load_order(self):
-        release18 = MODULE.load_release(PINNED_RELEASE_1_0_18)
+        release20 = MODULE.load_release(PINNED_RELEASE_1_0_20)
         key_area = bytes(range(32))
-        reference18 = replace(
-            release18.secure,
+        reference20 = replace(
+            release20.secure,
             encrypted_key_area_sha256=hashlib.sha256(key_area).hexdigest(),
         )
-        installed18 = make_installed(reference18, key_area=key_area)
+        installed20 = make_installed(reference20, key_area=key_area)
 
+        release18 = MODULE.load_release(PINNED_RELEASE_1_0_18)
         release17 = MODULE.load_release(PINNED_RELEASE_1_0_17)
         release16 = MODULE.load_release(PINNED_RELEASE)
         self.assertEqual(release16.profile.version, "1.0.16")
         self.assertEqual(release17.profile.version, "1.0.17")
-        report18 = MODULE.validate_installed_image(installed18, reference18)
-        self.assertEqual(
-            report18.identity, MODULE.ReleaseIdentity(1, 0, 18, 0, 18))
         self.assertEqual(release18.profile.version, "1.0.18")
+        report20 = MODULE.validate_installed_image(installed20, reference20)
+        self.assertEqual(
+            report20.identity, MODULE.ReleaseIdentity(1, 0, 20, 0, 20))
+        self.assertEqual(release20.profile.version, "1.0.20")
 
         with self.assertRaises(TypeError):
-            MODULE.RELEASE_PROFILES["1.0.19"] = release18.profile
+            MODULE.RELEASE_PROFILES["1.0.21"] = release20.profile
 
     def test_unreviewed_release_profile_is_rejected_before_file_access(self):
         with self.assertRaisesRegex(
                 MODULE.ReadbackVerificationError, "not reviewed"):
-            MODULE.load_release(Path("/does/not/exist/1.0.19"))
+            MODULE.load_release(Path("/does/not/exist/1.0.21"))
 
     @unittest.skipUnless(PINNED_RELEASE.is_dir(),
                          "reviewed 1.0.16 artifacts unavailable")

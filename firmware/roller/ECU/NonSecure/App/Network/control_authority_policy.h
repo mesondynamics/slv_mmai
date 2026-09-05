@@ -96,6 +96,15 @@ static inline void ControlAuthorityPolicy_MarkAuthorityExpired(
   policy->safety_round_pending = 1U;
 }
 
+static inline void ControlAuthorityPolicy_RequireSafeRound(
+    ControlAuthorityPolicy *policy)
+{
+  if (policy != NULL)
+  {
+    policy->safety_round_pending = 1U;
+  }
+}
+
 static inline bool ControlAuthorityPolicy_BeginSafetyRound(
     ControlAuthorityPolicy *policy, uint32_t now, uint32_t hold_ms)
 {

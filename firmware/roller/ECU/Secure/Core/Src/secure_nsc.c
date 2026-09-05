@@ -282,6 +282,16 @@ CMSE_NS_ENTRY int32_t SECURE_SafetyDisarmOutputs(void)
   return Safety_DisarmOutputs();
 }
 
+CMSE_NS_ENTRY int32_t SECURE_SafetyAssertNetworkEStop(void)
+{
+  return Safety_AssertNetworkEStop();
+}
+
+CMSE_NS_ENTRY int32_t SECURE_SafetyResetNetworkEStop(uint32_t request_token)
+{
+  return Safety_ResetNetworkEStop(request_token);
+}
+
 CMSE_NS_ENTRY int32_t SECURE_SafetySubmitActuatorCommand(
     const SAFETY_ActuatorCommand *command)
 {

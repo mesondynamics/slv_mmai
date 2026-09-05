@@ -52,6 +52,11 @@ NSC_ABI_V3_ADDITIONS = (
     ("SECURE_SafetyGetJ1939Snapshot", 0x0C05DCB1),
 )
 NSC_ABI_V3_BY_NAME = dict(NSC_ABI_V3_ADDITIONS)
+NSC_ABI_V4_ADDITIONS = (
+    ("SECURE_SafetyAssertNetworkEStop", 0x0C05DCB9),
+    ("SECURE_SafetyResetNetworkEStop", 0x0C05DCC1),
+)
+NSC_ABI_V4_BY_NAME = dict(NSC_ABI_V4_ADDITIONS)
 
 _SOURCE_INVOCATION = re.compile(
     r"^\s*nsc_v1_symbol\s+([A-Za-z_][A-Za-z0-9_]*)\s*,\s*"
@@ -162,6 +167,21 @@ def validate_abi_v3_source(text: str) -> None:
         )
     if errors:
         raise AbiCheckError("ABI v3 source mismatch: " + "; ".join(errors))
+
+
+def validate_abi_v4_source(text: str) -> None:
+    """Validate the append-only v4 map without redefining v1 through v3."""
+    parsed = parse_abi_source(text)
+    errors: list[str] = []
+    if text.count('.include "secure_nsc_abi_v3.s"') != 1:
+        errors.append("v4 map must include secure_nsc_abi_v3.s exactly once")
+    if parsed != NSC_ABI_V4_BY_NAME:
+        errors.append(
+            "v4 additions are " + repr(parsed) + ", expected " +
+            repr(NSC_ABI_V4_BY_NAME)
+        )
+    if errors:
+        raise AbiCheckError("ABI v4 source mismatch: " + "; ".join(errors))
 
 
 def parse_readelf_symbols(text: str) -> list[ElfSymbol]:
@@ -316,6 +336,17 @@ def validate_v3_additions(
     """Pin every append-only v3 veneer in both signed linker outputs."""
     _validate_additions(
         NSC_ABI_V3_ADDITIONS, import_symbols, elf_symbols, sections
+    )
+
+
+def validate_v4_additions(
+    import_symbols: Iterable[ElfSymbol],
+    elf_symbols: Iterable[ElfSymbol],
+    sections: Iterable[ElfSection],
+) -> None:
+    """Pin every append-only v4 veneer in both signed linker outputs."""
+    _validate_additions(
+        NSC_ABI_V4_ADDITIONS, import_symbols, elf_symbols, sections
     )
 
 
@@ -518,6 +549,7 @@ def _default_readelf() -> str:
 
 def check_files(
     abi_source: Path, abi_v2_source: Path, abi_v3_source: Path,
+    abi_v4_source: Path,
     import_library: Path, secure_elf: Path, readelf: str,
     nonsecure_elf: Path | None = None,
 ) -> None:
@@ -525,6 +557,7 @@ def check_files(
         ("ABI source", abi_source),
         ("ABI v2 source", abi_v2_source),
         ("ABI v3 source", abi_v3_source),
+        ("ABI v4 source", abi_v4_source),
         ("import library", import_library),
         ("Secure ELF", secure_elf),
     ):
@@ -550,6 +583,13 @@ def check_files(
             f"cannot read ABI v3 source {abi_v3_source}: {exc}"
         ) from exc
     validate_abi_v3_source(v3_source_text)
+    try:
+        v4_source_text = abi_v4_source.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        raise AbiCheckError(
+            f"cannot read ABI v4 source {abi_v4_source}: {exc}"
+        ) from exc
+    validate_abi_v4_source(v4_source_text)
 
     import_symbols = parse_readelf_symbols(
         _run_readelf(readelf, "-sW", import_library)
@@ -563,6 +603,7 @@ def check_files(
     validate_secure_elf(elf_symbols, elf_sections)
     validate_v2_additions(import_symbols, elf_symbols, elf_sections)
     validate_v3_additions(import_symbols, elf_symbols, elf_sections)
+    validate_v4_additions(import_symbols, elf_symbols, elf_sections)
     validate_output_pair(import_symbols, elf_symbols, elf_sections)
     if nonsecure_elf is not None:
         if not nonsecure_elf.is_file():
@@ -596,6 +637,11 @@ def build_argument_parser() -> argparse.ArgumentParser:
         default=PROJECT_ROOT / "Secure_nsclib" / "secure_nsc_abi_v3.s",
     )
     parser.add_argument(
+        "--abi-v4-source",
+        type=Path,
+        default=PROJECT_ROOT / "Secure_nsclib" / "secure_nsc_abi_v4.s",
+    )
+    parser.add_argument(
         "--import-library",
         type=Path,
         help=(
@@ -621,6 +667,7 @@ def main(argv: list[str] | None = None) -> int:
             args.abi_source,
             args.abi_v2_source,
             args.abi_v3_source,
+            args.abi_v4_source,
             import_library,
             args.secure_elf,
             args.readelf,
@@ -631,7 +678,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     print(
         "NSC ABI check passed: 21 firmware 1.0.12 v1 veneers and the "
-        "actuator-v3 steering and read-only J1939 veneers are stable in source, import library, "
+        "actuator-v3 steering, read-only J1939, and network E-stop veneers are stable in source, import library, "
         "Secure ELF, and paired NonSecure ELF when supplied."
     )
     return 0

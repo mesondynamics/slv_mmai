@@ -97,6 +97,24 @@ class NscAbiSourceTest(unittest.TestCase):
         ):
             ABI.validate_abi_v3_source(altered)
 
+    def test_append_only_v4_map_pins_network_estop_transaction(self):
+        source = (
+            PROJECT_ROOT / "Secure_nsclib" / "secure_nsc_abi_v4.s"
+        ).read_text(encoding="utf-8")
+        ABI.validate_abi_v4_source(source)
+        self.assertEqual(
+            ABI.parse_abi_source(source), ABI.NSC_ABI_V4_BY_NAME
+        )
+        altered = source.replace(
+            "SECURE_SafetyResetNetworkEStop,         0x0c05dcc1",
+            "SECURE_SafetyResetNetworkEStop,         0x0c05dcc9",
+            1,
+        )
+        with self.assertRaisesRegex(
+            ABI.AbiCheckError, "ABI v4 source mismatch"
+        ):
+            ABI.validate_abi_v4_source(altered)
+
 
 class NscAbiBinaryTest(unittest.TestCase):
     def setUp(self):
@@ -168,6 +186,25 @@ class NscAbiBinaryTest(unittest.TestCase):
             ABI.AbiCheckError, "expected 0x0c05dcb1"
         ):
             ABI.validate_v3_additions(
+                imports, definitions, [self.sg_section]
+            )
+
+    def test_v4_network_estop_veneers_are_fixed_and_adjacent(self):
+        imports = self.import_symbols + [
+            symbol(name, address) for name, address in ABI.NSC_ABI_V4_ADDITIONS
+        ]
+        definitions = self.elf_symbols + [
+            symbol(name, address, section="11")
+            for name, address in ABI.NSC_ABI_V4_ADDITIONS
+        ]
+        ABI.validate_v4_additions(imports, definitions, [self.sg_section])
+        definitions[-1] = symbol(
+            "SECURE_SafetyResetNetworkEStop", 0x0C05DCC9, section="11"
+        )
+        with self.assertRaisesRegex(
+            ABI.AbiCheckError, "expected 0x0c05dcc1"
+        ):
+            ABI.validate_v4_additions(
                 imports, definitions, [self.sg_section]
             )
 

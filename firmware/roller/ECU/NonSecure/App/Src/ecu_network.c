@@ -49,6 +49,7 @@
 #define ECU_CAP_VALVE_TUNING      (1UL << 8)
 #define ECU_CAP_SIGNED_ETHERNET_OTA (1UL << 9)
 #define ECU_CAP_LEGACY_V1_SAFE_CONTROL (1UL << 10)
+#define ECU_CAP_LATCHED_ESTOP_RESET (1UL << 11)
 
 typedef struct
 {
@@ -318,6 +319,103 @@ static ControlSlot *Network_FindActiveSlot(uint8_t sender_id)
   return NULL;
 }
 
+static void Network_RequireRearmForAllNormalSenders(void)
+{
+  uint32_t index;
+
+  for (index = 0U; index < CONTROL_MAX_SENDERS; ++index)
+  {
+    ControlSlot *slot = &slots[index];
+    if (slot->active && (slot->priority != CONTROL_PRIORITY_EMERGENCY))
+    {
+      ControlAuthorityPolicy_RequireRearm(&authority_policy,
+                                           slot->sender_id);
+      slot->rearm_candidate = false;
+    }
+  }
+}
+
+static bool Network_OtherEmergencyIsLive(const ControlSlot *owner)
+{
+  uint32_t index;
+
+  for (index = 0U; index < CONTROL_MAX_SENDERS; ++index)
+  {
+    if (slots[index].active &&
+        (slots[index].priority == CONTROL_PRIORITY_EMERGENCY) &&
+        (&slots[index] != owner))
+    {
+      return true;
+    }
+  }
+  return false;
+}
+
+static bool Network_ResetNetworkEStop(ECU_ControlDatagramV2 *datagram,
+                                      uint16_t flags, uint32_t sequence,
+                                      const ip_addr_t *address, uint32_t now)
+{
+  ControlSlot *reset_session;
+  int32_t result;
+
+  Network_ExpireSlots(now);
+  if ((flags != ECU_CONTROL_FLAG_ESTOP_RESET) ||
+      (datagram->priority == CONTROL_PRIORITY_EMERGENCY) ||
+      !Network_ControlHostAuthorized(address) ||
+      !ECU_DataModelControlIsNeutral(&datagram->control))
+  {
+    ++counters.rejected_control_frames;
+    return false;
+  }
+
+  reset_session = Network_FindActiveSlot(datagram->sender_id);
+  if ((reset_session == NULL) ||
+      !ip_addr_cmp(address, &reset_session->source_address) ||
+      !reset_session->sequence_valid ||
+      !Network_SequenceIsNewer(sequence, reset_session->last_sequence))
+  {
+    /* A reset is never allowed to create a session.  A controller resetting
+       somebody else's expired/orphaned latch must first send a normal,
+       neutral-disabled frame.  This binds the reset to a live sender/IP
+       session and a strictly newer sequence, so a captured reset datagram
+       cannot clear a later E-stop latch. */
+    ++counters.rejected_control_frames;
+    return false;
+  }
+  if (Network_OtherEmergencyIsLive(
+          (reset_session->priority == CONTROL_PRIORITY_EMERGENCY) ?
+          reset_session : NULL))
+  {
+    ++counters.rejected_control_frames;
+    return false;
+  }
+
+  result = SECURE_SafetyResetNetworkEStop(
+      SAFETY_NETWORK_ESTOP_RESET_TOKEN);
+  if (result != SAFETY_RESULT_OK)
+  {
+    ++counters.rejected_control_frames;
+    return false;
+  }
+  /* RESET consumes and destroys its source binding.  Keeping the neutral
+     session alive would let Network_ApplyAuthority() arm the ordinary
+     takeover-relay baseline for up to 250 ms, whereas an E-stop reset is
+     required to restore K12 only and must never grant control authority. */
+  Network_RequireRearmForAllNormalSenders();
+  ControlAuthorityPolicy_RequireRearm(&authority_policy,
+                                       reset_session->sender_id);
+  reset_session->active = false;
+  reset_session->sequence_valid = false;
+  reset_session->rearm_candidate = false;
+  ControlAuthorityPolicy_RequireSafeRound(&authority_policy);
+  active_slot = NULL;
+  active_session_generation = 0U;
+  outputs_armed = 0U;
+  ECU_DataModelControlLost();
+  ++counters.valid_control_frames;
+  return true;
+}
+
 static bool Network_AcceptControl(ECU_ControlDatagramV2 *datagram,
                                   uint16_t flags, uint32_t sequence,
                                   const ip_addr_t *address, uint32_t now)
@@ -331,11 +429,20 @@ static bool Network_AcceptControl(ECU_ControlDatagramV2 *datagram,
   emergency_requested = (datagram->control.emergency_stop_request != 0U) ||
                         (datagram->priority == CONTROL_PRIORITY_EMERGENCY);
   Network_ExpireSlots(now);
+  if (!emergency_requested &&
+      (flags == ECU_CONTROL_FLAG_ESTOP_RESET) &&
+      ECU_DataModelControlIsNeutral(&datagram->control))
+  {
+    return Network_ResetNetworkEStop(datagram, flags, sequence, address, now);
+  }
   if (emergency_requested)
   {
     /* A structurally valid stop request is fail-safe dominant: stale
        sequence numbers, unrelated out-of-range actuator fields, and unknown
        optional flags must never turn an emergency request into motion. */
+    (void)SECURE_SafetyAssertNetworkEStop();
+    outputs_armed = 0U;
+    Network_RequireRearmForAllNormalSenders();
     slot = Network_FindActiveSlot(datagram->sender_id);
     if (slot == NULL)
     {
@@ -359,6 +466,13 @@ static bool Network_AcceptControl(ECU_ControlDatagramV2 *datagram,
     memset(&slot->control, 0, sizeof(slot->control));
     ++counters.valid_control_frames;
     return true;
+  }
+  if ((flags & ECU_CONTROL_FLAG_ESTOP_RESET) != 0U)
+  {
+    /* ESTOP_RESET is a standalone neutral transaction. Any flag combination
+       or non-emergency payload is rejected without creating authority. */
+    ++counters.rejected_control_frames;
+    return false;
   }
   /* Normal motion is confined to the serial-derived domain controller plus
      the fleet-wide service and remote-controller addresses. This is defense
@@ -800,7 +914,7 @@ static void Network_SendDiagnostic(void)
       ECU_CAP_CAN1_J1939 | ECU_CAP_CAN2_STEERING_RATE | ECU_CAP_SW_I2C_PCB_R1 |
       ECU_CAP_ATECC608_PROBE | ECU_CAP_RELAY_OUTPUTS | ECU_CAP_VALVE_CURRENT_PI |
       ECU_CAP_VALVE_TUNING | ECU_CAP_SIGNED_ETHERNET_OTA |
-      ECU_CAP_LEGACY_V1_SAFE_CONTROL;
+      ECU_CAP_LEGACY_V1_SAFE_CONTROL | ECU_CAP_LATCHED_ESTOP_RESET;
   diagnostic.safety_status = actuator->status;
   diagnostic.requested_relay_mask = actuator->requested_relay_mask;
   diagnostic.applied_relay_mask = actuator->applied_relay_mask;

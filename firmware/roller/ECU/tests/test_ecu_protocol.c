@@ -34,6 +34,7 @@ int main(void)
   assert(offsetof(SAFETY_ActuatorCommand,
                   steering_velocity_tdeg_per_s) == 34U);
   assert(ECU_CONTROL_FLAG_STEERING_RATE == (1U << 2));
+  assert(ECU_CONTROL_FLAG_ESTOP_RESET == (1U << 3));
   assert(ECU_MESSAGE_STEERING_STATUS == 0x06);
   assert(offsetof(ECU_ControlPayloadV2, steering_target_tdeg) == 20U);
   assert(offsetof(ECU_ControlPayloadV2, steering_speed_tdeg_per_s) == 22U);
@@ -283,6 +284,9 @@ int main(void)
         ECU_CONTROL_FLAG_STEERING_RATE, &control));
     control.steering_speed_tdeg_per_s = 0U;
     assert(!ECU_ProtocolControlValuesValid((1U << 15), &control));
+    memset(&control, 0, sizeof(control));
+    assert(ECU_ProtocolControlValuesValid(ECU_CONTROL_FLAG_ESTOP_RESET,
+                                          &control));
     control.steering_enable = 2U;
     assert(!ECU_ProtocolControlValuesValid(
         ECU_CONTROL_FLAG_STEERING_RATE, &control));

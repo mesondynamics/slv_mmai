@@ -1,6 +1,6 @@
 # ECU KiCad / STM32CubeMX 配置审查
 
-审查日期：2026-08-30；安全状态更新：2026-08-30
+审查日期：2026-08-30；安全状态更新：2026-09-01
 
 MCU：STM32H563ZIT6，LQFP144
 
@@ -37,7 +37,7 @@ ETH HAL、描述符和引脚初始化；LwIP、LAN8742 接口和 ECU UDP 应用�
 |---|---|---|
 | 时钟 | HSE 25 MHz，SYSCLK/HCLK 250 MHz，CSS 开启 | HSE 故障进入 NMI 并关断输出 |
 | TrustZone | ADC12、SPI4、FDCAN1、FDCAN2、TIM4、TIM6、TIM7、IWDG 为 Secure；两个 FDCAN 均为 `SEC|NPRIV`，对应 GPIO、IRQ、DMA 受保护 | NonSecure 不能直接访问继电器、阀 PWM、车辆 CAN1、CAN2 转向或安全采样 |
-| 急停 | PB2，Secure 双边沿 EXTI，标签 `ESTOP_DETECT` | 高电平立即锁存故障；恢复后仍需中性命令清故障 |
+| 急停 | PB2，Secure 双边沿 EXTI，标签 `ESTOP_DETECT` | 高电平立即硬关 K12/TPIC/PWM 并锁存故障；低电平连续健康 20 ms 后只恢复 K12，自动输出仍须清故障和中性 rearm |
 | 软件 I²C | PB8=软件 SDA、PB9=软件 SCL，GPIO Output、Open Drain、上电 High | 仅适用于当前接反的 PCB；无条件 9-clock host-reset 同步与 725 ms 上限属于 Secure 自维护代码，内部不上拉 |
 | TPIC6A595 | SPI4 Secure；PE2 SCK、PE6 MOSI；8 bit、TX only、3.90625 Mbit/s | PE3 OE_N 上电 High；PE5 CLR_N、PE7 BUF_EN、PE4 RCK 上电 Low |
 | 阀 PWM | TIM4 CH1=PB6、CH2=PB7；中心对齐 20 kHz；初值 0 | 正反向互锁；CH4=1 在中心对齐计数谷底、即 PWM 导通脉冲中心触发 ADC2 |
@@ -218,8 +218,10 @@ Debug Authentication 或 Hotplug 会进入 RSS，属于侵入式现场。认证�
 Secure NSC veneer 位于 `Secure/Core/Src/secure_nsc.c` 的 USER CODE 区，所有
 NonSecure 指针先做 CMSE 地址范围和访问属性检查，再复制到 Secure 栈上验证。
 NonSecure 不能传入裸 TPIC 位图，只能提交有范围约束的高层执行器结构。
-重新 ARM 时始终保持 TPIC `OE_N=High`：先连通 AHCT541，再释放
-`CLR_N`，经 SPI 移入并锁存 32 位全零，最后才打开 `OE_N`。禁止在
+启动、急停解除或普通控制退出时始终保持 TPIC `OE_N=High`，先连通 AHCT541、
+清空寄存器，再经 SPI 移入并锁存**仅 K12(bit22)** 的人工驾驶许可基线，最后才
+打开 `OE_N`。普通 ARM 在该基线上追加受控输出，不允许产生 32 位全零脉冲；
+关键故障、实体/网络急停和 OTA 则保持 `OE_N=High` 并把全部位硬清零。禁止在
 缓冲器断开时用无效 RCK 脉冲代替该流程。
 
 ## 5. 下一版 PCB 强制 ECO：恢复硬件 I²C
@@ -264,10 +266,14 @@ CLOSED 事务安装 ReleaseClosed。事务目录为
 UUID=
 `0f3537fe-c04d-4298-ba50-995773e07a6a`，最终 phase=
 `product_state_closed_verified`。随后在保持 `0x72 CLOSED` 期间通过 Ethernet 安装
-1.0.16/counter16/accepted-sequence16；JP1 保持断开。不可逆转换、Full Regression
+1.0.16/counter16/accepted-sequence16，随后又安装并完整验收
+1.0.17/counter17/accepted-sequence17；JP1 保持断开。不可逆转换、Full Regression
 恢复和 DA 售后边界见 `ECU_Security_and_OTA.md`。
 
-1.0.15 CLOSED 转换/恢复基线及当前 1.0.16 运行证据如下：
+1.0.15 CLOSED 转换/恢复基线及 1.0.16 历史运行证据如下；当前板仍运行已验收的
+1.0.17。未安装的 1.0.18 已撤销；1.0.19 因签名后离线审计发现 NonSecure
+initial/update 几何不一致而撤销。修正打包对齐后的 1.0.20 离线发布与实机 OTA
+状态见安全/验收文档：
 
 - ATECC 在持续上电条件下，以 option-byte reset、under-reset UID read、final reset
   的 hostile 顺序连续回归 20 次，20/20 均恢复配对认证、accepted15、零输出和
@@ -339,9 +345,11 @@ CubeMX 重新生成覆盖的
 ## 7. 明确保留项与工业化缺口
 
 - ATECC608C 启动验证、MCU 配对、锁区和 OEMiROT/OTA 已实现；当前样件为
-  `ReleaseClosed` + 已确认 1.0.16 配对镜像，生命周期为 `0x72 CLOSED`。
+  `ReleaseClosed` + 已确认 1.0.17 配对镜像，生命周期为 `0x72 CLOSED`。
   1.0.15 的不可变 CLOSED 转换/schema-v4 恢复和 DA 记录仍是转换基线；1.0.16
-  已独立完成精确 primary DA 回读、close-debug 和最终无探针冷启动。此前实际
+  和 1.0.17 均已独立完成精确 primary DA 回读、close-debug 和最终无探针冷启动。
+  1.0.18 和几何不一致的 1.0.19 均从未安装且已撤销；1.0.20 的软件门禁完成后
+  仍须 macOS OTA/实机验收。此前实际
   Full Regression→OPEN 和 1.0.14 的三次无探针冷启动继续作为历史证据；本轮
   没有执行 Full Regression。
 - 车辆 J1939 仍全部使用 CAN1，但 FDCAN1 因 ES0565 workaround 已迁入 Secure：

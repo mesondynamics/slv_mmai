@@ -69,9 +69,9 @@ file(WRITE "${ECU_LINKER_OUTPUT}" "${ECU_LINKER_TEXT}")
 file(RELATIVE_PATH STM32_LINKER_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}"
      "${ECU_LINKER_OUTPUT}")
 set(ECU_NSC_ABI_BASELINE_SOURCE
-    "${CMAKE_CURRENT_SOURCE_DIR}/../Secure_nsclib/secure_nsc_abi_v3.s")
+    "${CMAKE_CURRENT_SOURCE_DIR}/../Secure_nsclib/secure_nsc_abi_v4.s")
 set(ECU_NSC_ABI_BASELINE_OBJECT
-    "${CMAKE_CURRENT_BINARY_DIR}/secure_nsc_abi_v3.o")
+    "${CMAKE_CURRENT_BINARY_DIR}/secure_nsc_abi_v4.o")
 if(ECU_OEMIROT_LAYOUT)
     # Keep the release import library private to this build tree. Development
     # and CubeMX/CubeIDE builds use a different NSC address window and must
@@ -284,6 +284,7 @@ add_custom_command(
             --remove-section=.ARM.attributes
             "${ECU_NSC_ABI_BASELINE_OBJECT}"
     DEPENDS "${ECU_NSC_ABI_BASELINE_SOURCE}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/../Secure_nsclib/secure_nsc_abi_v3.s"
             "${CMAKE_CURRENT_SOURCE_DIR}/../Secure_nsclib/secure_nsc_abi_v2.s"
             "${CMAKE_CURRENT_SOURCE_DIR}/../Secure_nsclib/secure_nsc_abi_v1.s"
     VERBATIM)
@@ -310,6 +311,7 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user sources here
     ${CMAKE_CURRENT_SOURCE_DIR}/App/Src/atecc608.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/App/Src/run_permit_policy.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/Src/safety_service.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/Src/security_crypto.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/Src/security_identity.c

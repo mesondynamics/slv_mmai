@@ -35,6 +35,7 @@ MANIFEST_MAGIC = 0x31544F52
 MANIFEST_SCHEMA = 1
 OTA_FLAGS = 0x3
 BOOT_MAGIC = bytes.fromhex("77c295f360d2ef7f3552500f2cb67980")
+IMAGE_ENCRYPTION_ALIGNMENT = 16
 RELEASE_METADATA_TYPES = {
     "format": str,
     "version": str,
@@ -267,6 +268,17 @@ def decrypt_key(source: Path, destination: Path, password: bytes) -> None:
     destination.chmod(stat.S_IRUSR | stat.S_IWUSR)
 
 
+def align_raw_firmware_binary(path: Path) -> int:
+    """Pad one raw payload before both plaintext and encrypted signing."""
+    data = path.read_bytes()
+    if not data:
+        raise RuntimeError(f"refusing to sign an empty firmware payload: {path}")
+    padding = (-len(data)) % IMAGE_ENCRYPTION_ALIGNMENT
+    if padding:
+        path.write_bytes(data + b"\xff" * padding)
+    return padding
+
+
 def sign_image(imgtool_env: dict[str, str], key: Path, encryption_key: Path,
                raw: Path, output: Path, version: str, dependency: str,
                security_counter: int, slot_size: int, initial: bool) -> None:
@@ -373,6 +385,11 @@ def main(argv: list[str] | None = None) -> int:
         key_s, key_ns = temp / "auth-s.pem", temp / "auth-ns.pem"
         run([str(OBJCOPY), "-O", "binary", str(secure_elf), str(raw_s)])
         run([str(OBJCOPY), "-O", "binary", str(nonsecure_elf), str(raw_ns)])
+        # MCUboot ECIES encrypts complete AES blocks.  Align the shared raw
+        # input before either signing operation so initial and OTA records
+        # have identical signed payload geometry for every linker size.
+        align_raw_firmware_binary(raw_s)
+        align_raw_firmware_binary(raw_ns)
         decrypt_key(args.pki_dir / "oemirot-auth-s.pem", key_s, password)
         decrypt_key(args.pki_dir / "oemirot-auth-ns.pem", key_ns, password)
         imgtool_env = dict(os.environ)

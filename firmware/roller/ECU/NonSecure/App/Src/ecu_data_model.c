@@ -249,8 +249,8 @@ void ECU_DataModelUpdateStatus(void)
   status_payload.power_latch_on = 0U;
   status_payload.parking_brake_on = ECU_RelayIsOn(SAFETY_RELAY_PARK_BRAKE_OVERRIDE);
   status_payload.emergency_stop_on =
-      ((safety_status & SAFETY_STATUS_ESTOP_ACTIVE) != 0U) ||
-      (authority_mode == ECU_CONTROL_EMERGENCY) ? 1U : 0U;
+      ((safety_status & (SAFETY_STATUS_ESTOP_ACTIVE |
+                         SAFETY_STATUS_NETWORK_ESTOP_LATCHED)) != 0U) ? 1U : 0U;
   status_payload.main_power_relay_on = 0U;
   status_payload.turn_signal_right_on = ECU_RelayIsOn(SAFETY_RELAY_RIGHT_TURN);
   status_payload.turn_signal_left_on = ECU_RelayIsOn(SAFETY_RELAY_LEFT_TURN);
@@ -259,6 +259,12 @@ void ECU_DataModelUpdateStatus(void)
   {
     status_payload.control_mode = ECU_CONTROL_PHYSICAL_ESTOP;
     status_payload.active_sender_id = 0xFFU;
+  }
+  else if ((safety_status & SAFETY_STATUS_NETWORK_ESTOP_LATCHED) != 0U)
+  {
+    status_payload.control_mode = ECU_CONTROL_EMERGENCY;
+    status_payload.active_sender_id =
+        (authority_mode == ECU_CONTROL_EMERGENCY) ? authority_sender : 0xFFU;
   }
   else
   {

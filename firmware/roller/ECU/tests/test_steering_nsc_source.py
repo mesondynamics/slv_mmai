@@ -94,7 +94,7 @@ class SteeringNscSourceTest(unittest.TestCase):
         ).read_text(encoding="utf-8")
         body = function_body(safety_service, "Safety_OneMillisecondTick")
         start = body.index("if (steering_active_fault)")
-        end = body.index("if (HAL_GPIO_ReadPin", start)
+        end = body.index("if (Safety_PhysicalEStopActive", start)
         steering_branch = body[start:end]
         self.assertIn(
             "safety_status |= SAFETY_STATUS_STEERING_CAN_FAULT",

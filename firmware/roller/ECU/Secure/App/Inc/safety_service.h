@@ -31,6 +31,8 @@ int32_t Safety_ReadValveTelemetry(SAFETY_ValveTelemetryBatch *batch);
 int32_t Safety_ClearFault(uint32_t request_token);
 int32_t Safety_ArmOutputs(uint32_t request_token);
 int32_t Safety_DisarmOutputs(void);
+int32_t Safety_AssertNetworkEStop(void);
+int32_t Safety_ResetNetworkEStop(uint32_t request_token);
 int32_t Safety_SubmitActuatorCommand(const SAFETY_ActuatorCommand *command);
 int32_t Safety_KickWatchdog(uint32_t heartbeat);
 void Safety_FaultFromException(void);

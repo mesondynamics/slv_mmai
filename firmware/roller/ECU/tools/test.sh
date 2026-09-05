@@ -58,6 +58,13 @@ if command -v "${task_host_cc}" >/dev/null 2>&1; then
   "${task_test_dir}/control_authority_policy_test"
   "${task_host_cc}" "${task_host_cc_flags[@]}" -std=c11 -Wall -Wextra -Werror \
     -I"${task_project_dir}/Secure/App/Inc" \
+    -I"${task_project_dir}/Secure_nsclib" \
+    "${task_project_dir}/Secure/App/Src/run_permit_policy.c" \
+    "${task_project_dir}/tests/test_run_permit_policy.c" \
+    -o "${task_test_dir}/run_permit_policy_test"
+  "${task_test_dir}/run_permit_policy_test"
+  "${task_host_cc}" "${task_host_cc_flags[@]}" -std=c11 -Wall -Wextra -Werror \
+    -I"${task_project_dir}/Secure/App/Inc" \
     "${task_project_dir}/Secure/App/Src/security_sha256.c" \
     "${task_project_dir}/tests/test_security_sha256.c" \
     -o "${task_test_dir}/security_sha256_test"
@@ -152,6 +159,16 @@ else
     -I"${task_project_dir}/NonSecure/App/Network" -c \
     "${task_project_dir}/tests/test_control_authority_policy.c" \
     -o "${task_test_dir}/test_control_authority_policy.o"
+  "${task_arm_cc}" -std=c11 -Wall -Wextra -Werror -mcpu=cortex-m33 \
+    -I"${task_project_dir}/Secure/App/Inc" \
+    -I"${task_project_dir}/Secure_nsclib" -c \
+    "${task_project_dir}/Secure/App/Src/run_permit_policy.c" \
+    -o "${task_test_dir}/run_permit_policy.o"
+  "${task_arm_cc}" -std=c11 -Wall -Wextra -Werror -mcpu=cortex-m33 \
+    -I"${task_project_dir}/Secure/App/Inc" \
+    -I"${task_project_dir}/Secure_nsclib" -c \
+    "${task_project_dir}/tests/test_run_permit_policy.c" \
+    -o "${task_test_dir}/test_run_permit_policy.o"
   "${task_arm_cc}" -std=c11 -Wall -Wextra -Werror -mcpu=cortex-m33 \
     -I"${task_project_dir}/Secure/App/Inc" -c \
     "${task_project_dir}/Secure/App/Src/security_sha256.c" \
