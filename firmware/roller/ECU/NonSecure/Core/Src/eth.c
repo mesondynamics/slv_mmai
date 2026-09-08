@@ -30,6 +30,8 @@ ETH_TxPacketConfigTypeDef TxConfig;
 
 /* USER CODE BEGIN 0 */
 
+#include "../../../Shared/ecu_device_profile.h"
+
 /* LAN8742A DS00001989A requires nRST to remain asserted until at least 25 ms
    after all supplies are operational.  The PCB R70/C65 network is only about
    1 ms, so PB14 provides the deterministic reset.  Releasing it immediately
@@ -72,6 +74,15 @@ void MX_ETH_Init(void)
   heth.Init.RxBuffLen = 1524;
 
   /* USER CODE BEGIN MACADDRESS */
+
+  /* Per-device manufacturing MAC: override generated defaults before HAL init.
+     Shared/ecu_device_selection.h survives CubeMX regeneration. */
+  MACAddr[0] = 0x8AU;
+  MACAddr[1] = 0xEAU;
+  MACAddr[2] = 0xB5U;
+  MACAddr[3] = 0x00U;
+  MACAddr[4] = 0x00U;
+  MACAddr[5] = ECU_DEVICE_MAC_OCTET5;
 
   /* USER CODE END MACADDRESS */
 

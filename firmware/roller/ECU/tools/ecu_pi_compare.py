@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compare one volatile PI candidate on SN-EJAHGJI; always reload saved config.
+"""Compare one volatile PI candidate on an explicit ECU; reload saved config.
 
 No firmware, PWM frequency, slew, calibration, duty ceiling, or Flash writes.
 Only Kp/Ki are changed in RAM. This is an unloaded 100/200/500 mA bench test.
@@ -16,6 +16,7 @@ import statistics
 import time
 
 import ecu_debug_ui as u
+import ecu_bench_targets as targets
 from ecu_valve_guarded_test import GuardFailure, require
 
 
@@ -55,6 +56,7 @@ def metrics(wave, target):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
+    targets.add_target_arguments(p)
     p.add_argument("--kp", type=int, required=True)
     p.add_argument("--ki", type=int, required=True)
     p.add_argument("--output-dir", type=Path, required=True)
@@ -66,15 +68,22 @@ def main():
         p.error("--accept-unloaded-actuation required")
     if not (0 <= args.kp <= 1000 and 0 <= args.ki <= 12000):
         p.error("candidate exceeds this experiment's bounded gain range")
+    try:
+        device = targets.resolve_target(args.device_serial, args.ecu_ip)
+    except ValueError as error:
+        p.error(str(error))
+    preflight = targets.passive_preflight(device)
     os.umask(0o077)
     args.output_dir.mkdir(mode=0o700, exist_ok=False)
     def interrupted(*_):
         raise KeyboardInterrupt()
     signal.signal(signal.SIGTERM, interrupted)
-    b = u.BenchBridge("172.16.0.11")
+    b = u.BenchBridge(device.ecu_ip)
     b.start()
     token = f"pi-compare-{time.time_ns()}"
     result = {"kp": args.kp, "ki": args.ki, "passed": False,
+              "device_serial": device.serial, "ecu_ip": device.ecu_ip,
+              "passive_preflight": preflight,
               "flash_written": False, "cases": []}
     all_samples = []
     last_ui = 0
@@ -97,9 +106,7 @@ def main():
             require(age is not None and age < 300, f"stale {name}")
         require(not s["physical_estop_active"] and not s["network_estop_latched"] and
                 not s["critical_inhibit"], "safety inhibit")
-        require(s["security"]["mcu_uid"] == "003800613434511232383537" and
-                s["security"]["serial"] == "0123d47eb2ee0e9bee" and
-                s["security"]["auth_result"] == 0, "identity mismatch")
+        require(targets.security_matches(s["security"], device), "identity mismatch")
         require(not s["diagnostic"]["valve_fault_flags"], "ECU valve fault")
         require(not s["steering_status"]["command_enable"] and
                 not s["steering_status"]["speed_command_permille"], "steering active")
@@ -158,8 +165,9 @@ def main():
                 and max(s["status"]["forward_current_ma"], s["status"]["reverse_current_ma"]) < 50,
                 "entry current not zero")
         before = b.config_request(u.MSG_CONFIG_GET)
-        require(before["result"] == 0 and before["persisted_valid"] and not before["dirty"],
-                "clean persisted config required")
+        require(before["result"] == 0 and
+                (before["persisted_valid"] or before["using_defaults"]) and not before["dirty"],
+                "clean persisted config or clean defaults required")
         save_json("before.json", before)  # Durable backup before RAM mutation.
         candidate = copy.deepcopy(before["config"])
         for channel in ("forward", "reverse"):

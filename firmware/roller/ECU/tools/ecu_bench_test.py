@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
+import os
 import pathlib
 import select
 import socket
@@ -20,6 +21,7 @@ SPEC = importlib.util.spec_from_file_location("ecu_debug_ui", SCRIPT_DIR / "ecu_
 UI = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = UI
 SPEC.loader.exec_module(UI)
+import ecu_bench_targets as targets
 
 # Every live normal authority takes over the persistent selectable OEM inputs
 # and closes K12. K3 (bit 16) is deliberately absent: it is active only while
@@ -222,7 +224,8 @@ def require(condition: bool, message: str) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--ecu-ip", default="172.16.0.11")
+    targets.add_target_arguments(parser)
+    parser.add_argument("--output", type=pathlib.Path)
     parser.add_argument("--accept-unloaded-actuation", action="store_true",
                         help="confirm that relay/valve actuation is safe on this bench")
     parser.add_argument(
@@ -233,6 +236,14 @@ def main() -> int:
     args = parser.parse_args()
     if not args.accept_unloaded_actuation:
         parser.error("--accept-unloaded-actuation is required")
+    try:
+        device = targets.resolve_target(args.device_serial, args.ecu_ip)
+    except ValueError as error:
+        parser.error(str(error))
+    args.ecu_ip = device.ecu_ip
+    preflight = targets.passive_preflight(device)
+    if args.output is not None and args.output.exists():
+        parser.error("--output already exists; evidence is never overwritten")
 
     bench = Bench(args.ecu_ip)
     bench.guard_loaded_valves = not args.accept_disconnected_valves
@@ -442,8 +453,17 @@ def main() -> int:
         passed += 1
     except BenchFailure as error:
         print(f"FAIL  {error}", file=sys.stderr)
-        print(json.dumps({"status": bench.status, "diagnostic": bench.diagnostic},
-                         ensure_ascii=False), file=sys.stderr)
+        failure = {"result": "FAIL", "error": str(error), "device_serial": device.serial,
+                   "ecu_ip": device.ecu_ip, "passed": passed, "preflight": preflight,
+                   "status": bench.status, "diagnostic": bench.diagnostic}
+        print(json.dumps(failure, ensure_ascii=False), file=sys.stderr)
+        if args.output is not None:
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            with args.output.open("x") as stream:
+                json.dump(failure, stream, ensure_ascii=False, indent=2)
+                stream.write("\n")
+                stream.flush()
+                os.fsync(stream.fileno())
         return 1
     finally:
         # Stop transmitting; the ECU's independent timeout is the final safe
@@ -454,6 +474,17 @@ def main() -> int:
     if args.accept_disconnected_valves:
         print("WARNING: valve current tracking was skipped because both coils were declared disconnected.")
     print("Note: diagnostic masks verify ECU logic; inspect relay contacts electrically before loading.")
+    if args.output is not None:
+        result = {"result": "PASS", "device_serial": device.serial, "ecu_ip": device.ecu_ip,
+                  "passed": passed, "preflight": preflight,
+                  "final_status": bench.status, "final_diagnostic": bench.diagnostic,
+                  "valve_current_tracking_skipped": args.accept_disconnected_valves}
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        with args.output.open("x") as stream:
+            json.dump(result, stream, ensure_ascii=False, indent=2)
+            stream.write("\n")
+            stream.flush()
+            os.fsync(stream.fileno())
     return 0
 
 

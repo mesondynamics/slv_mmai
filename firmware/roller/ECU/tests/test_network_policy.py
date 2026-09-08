@@ -22,11 +22,11 @@ class NetworkPolicySourceTests(unittest.TestCase):
         expected_hosts = {
             "REMOTE": (172, 16, 0, 9),
             "SERVICE": (172, 16, 0, 10),
-            "DOMAIN": (172, 16, 0, 12),
+            "DOMAIN": (172, 16, 0),
         }
         self.assertRegex(
             self.header,
-            r'#define ECU_PRODUCT_SERIAL\s+"SN-EJAHGJI"',
+            r'#define ECU_PRODUCT_SERIAL\s+ECU_DEVICE_PRODUCT_SERIAL',
         )
         for role, address in expected_hosts.items():
             for octet, value in enumerate(address):
@@ -34,6 +34,10 @@ class NetworkPolicySourceTests(unittest.TestCase):
                     self.header,
                     rf"#define ECU_{role}_HOST_ADDRESS_{octet}\s+{value}U",
                 )
+        self.assertRegex(self.header,
+                         r'#define ECU_DOMAIN_HOST_ADDRESS_3\s+ECU_DEVICE_DOMAIN_OCTET3')
+        self.assertRegex(self.header,
+                         r'#define ECU_IP_ADDRESS_3\s+ECU_DEVICE_IP_OCTET3')
 
         control_policy = self.source[
             self.source.index("static bool Network_ControlHostAuthorized"):

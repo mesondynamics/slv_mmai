@@ -3,15 +3,15 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include "../../../Shared/ecu_device_profile.h"
 
 #define ECU_IP_ADDRESS_0       172U
 #define ECU_IP_ADDRESS_1        16U
 #define ECU_IP_ADDRESS_2         0U
-#define ECU_IP_ADDRESS_3        11U
-/* Product SN-EJAHGJI decodes as roller device 1: ECU/controller .11 and
-   domain IPC .12.  The service workstation and remote-controller addresses
-   are fleet-wide reservations and are not derived from the device ID. */
-#define ECU_PRODUCT_SERIAL              "SN-EJAHGJI"
+#define ECU_IP_ADDRESS_3        ECU_DEVICE_IP_OCTET3
+/* Per-device address selection survives CubeMX regeneration in Shared/.
+   Service workstation and remote addresses remain fleet-wide reservations. */
+#define ECU_PRODUCT_SERIAL              ECU_DEVICE_PRODUCT_SERIAL
 #define ECU_REMOTE_HOST_ADDRESS_0       172U
 #define ECU_REMOTE_HOST_ADDRESS_1        16U
 #define ECU_REMOTE_HOST_ADDRESS_2         0U
@@ -23,7 +23,7 @@
 #define ECU_DOMAIN_HOST_ADDRESS_0       172U
 #define ECU_DOMAIN_HOST_ADDRESS_1        16U
 #define ECU_DOMAIN_HOST_ADDRESS_2         0U
-#define ECU_DOMAIN_HOST_ADDRESS_3        12U
+#define ECU_DOMAIN_HOST_ADDRESS_3        ECU_DEVICE_DOMAIN_OCTET3
 #define ECU_STATUS_PORT       50001U
 #define ECU_CONTROL_PORT      50002U
 #define ECU_DIAGNOSTIC_PORT   50003U

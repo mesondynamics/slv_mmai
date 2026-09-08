@@ -8,6 +8,7 @@ import hashlib
 import json
 import struct
 from pathlib import Path
+from typing import NamedTuple
 
 
 SECTOR_SIZE = 0x2000
@@ -29,6 +30,27 @@ EXPECTED_PUBLIC_KEY = bytes.fromhex(
 )
 
 
+class PairingIdentity(NamedTuple):
+    mcu_uid: tuple[int, int, int]
+    config_crc32c: int
+    serial: bytes
+    public_key: bytes
+
+
+# Default remains the immutable, reviewed SN-EJAHGJI recovery identity. New
+# manufacturing callers must explicitly choose a separately recorded target.
+LEGACY_IDENTITY = PairingIdentity(EXPECTED_MCU_UID, EXPECTED_CONFIG_CRC32C,
+                                  EXPECTED_SERIAL, EXPECTED_PUBLIC_KEY)
+REVIEWED_IDENTITIES = {
+    "SN-EJAHGJI": LEGACY_IDENTITY,
+    "SN-EJAHGJQ": PairingIdentity(
+        (0x00390044, 0x34345112, 0x32383537), 0x6165A970,
+        bytes.fromhex("01236acf4e275ef9ee"), bytes.fromhex(
+            "05450eaf35719228a98c12ccb048ccb93e31841af988369e2758819f454a48e7b"
+            "7ab1f4927ebeab4ef5abc5cf335629d90ac6010ad8515c22c30ad55cb3f0a0e")),
+}
+
+
 class VerificationError(RuntimeError):
     pass
 
@@ -47,7 +69,8 @@ def _require(condition: bool, message: str) -> None:
         raise VerificationError(message)
 
 
-def verify_sector(sector: bytes, label: str) -> dict[str, object]:
+def verify_sector(sector: bytes, label: str, *,
+                  identity: PairingIdentity = LEGACY_IDENTITY) -> dict[str, object]:
     _require(len(sector) == SECTOR_SIZE,
              f"{label}: sector size is not 0x{SECTOR_SIZE:X}")
     record = sector[:RECORD_SIZE]
@@ -71,10 +94,10 @@ def verify_sector(sector: bytes, label: str) -> dict[str, object]:
     _require(generation == EXPECTED_GENERATION,
              f"{label}: pairing generation mismatch")
     _require(layout == LAYOUT_VERSION, f"{label}: Flash layout mismatch")
-    _require(uid == EXPECTED_MCU_UID, f"{label}: MCU UID mismatch")
-    _require(config_crc == EXPECTED_CONFIG_CRC32C,
+    _require(uid == identity.mcu_uid, f"{label}: MCU UID mismatch")
+    _require(config_crc == identity.config_crc32c,
              f"{label}: ATECC config CRC32C mismatch")
-    _require(serial == EXPECTED_SERIAL, f"{label}: ATECC serial mismatch")
+    _require(serial == identity.serial, f"{label}: ATECC serial mismatch")
     _require(revision == EXPECTED_REVISION,
              f"{label}: ATECC revision mismatch")
     _require(i2c_address == EXPECTED_I2C_ADDRESS,
@@ -82,7 +105,7 @@ def verify_sector(sector: bytes, label: str) -> dict[str, object]:
     _require(private_slot == EXPECTED_PRIVATE_KEY_SLOT,
              f"{label}: ATECC private-key slot mismatch")
     _require(identity_padding == 0, f"{label}: identity padding mismatch")
-    _require(public_key == EXPECTED_PUBLIC_KEY,
+    _require(public_key == identity.public_key,
              f"{label}: paired public key mismatch")
     _require(encoded_size == RECORD_SIZE,
              f"{label}: pairing record size mismatch")
@@ -107,13 +130,14 @@ def verify_sector(sector: bytes, label: str) -> dict[str, object]:
     }
 
 
-def verify_dual_store(store: bytes) -> dict[str, object]:
+def verify_dual_store(store: bytes, *,
+                      identity: PairingIdentity = LEGACY_IDENTITY) -> dict[str, object]:
     _require(len(store) == 2 * SECTOR_SIZE,
              f"pairing store size is not 0x{2 * SECTOR_SIZE:X}")
     sector_a = store[:SECTOR_SIZE]
     sector_b = store[SECTOR_SIZE:]
-    result_a = verify_sector(sector_a, "A")
-    result_b = verify_sector(sector_b, "B")
+    result_a = verify_sector(sector_a, "A", identity=identity)
+    result_b = verify_sector(sector_b, "B", identity=identity)
     _require(sector_a == sector_b,
              "A/B pairing sectors are valid but not byte-identical")
     return {
@@ -130,11 +154,15 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("mode", choices=("sector", "dual"))
     parser.add_argument("image", type=Path)
+    parser.add_argument("--device-serial", choices=tuple(REVIEWED_IDENTITIES),
+                        default="SN-EJAHGJI")
     args = parser.parse_args()
     data = args.image.read_bytes()
     try:
-        result = (verify_sector(data, "sector") if args.mode == "sector"
-                  else verify_dual_store(data))
+        identity = REVIEWED_IDENTITIES[args.device_serial]
+        result = (verify_sector(data, "sector", identity=identity)
+                  if args.mode == "sector"
+                  else verify_dual_store(data, identity=identity))
     except VerificationError as error:
         raise SystemExit(f"Pairing-store verification failed: {error}")
     print(json.dumps(result, indent=2, sort_keys=True))

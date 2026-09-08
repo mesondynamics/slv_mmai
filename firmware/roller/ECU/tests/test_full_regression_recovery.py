@@ -18,12 +18,14 @@ TOOLS = PROJECT / "tools"
 CREATE = TOOLS / "create_full_regression_recovery.sh"
 CONSUMER = TOOLS / "provision_oemirot_open.sh"
 RELEASE_OPEN = (
-    PROJECT / "Bootloader" / "OEMiROT" / "build" / "ReleaseOpen" /
-    "ECU_OEMiROT.bin"
+    PROJECT / "artifacts/device-backups" /
+    "stm32h563-066BFF565456857187210935-20260830T050808Z-open-loader-replacement" /
+    "ReleaseOpen-ECU_OEMiROT.bin"
 )
 RELEASE_CLOSED = (
-    PROJECT / "Bootloader" / "OEMiROT" / "build" / "ReleaseClosed" /
-    "ECU_OEMiROT.bin"
+    PROJECT / "artifacts/device-backups" /
+    "stm32h563-066BFF565456857187210935-20260830T063129Z-closed-transition" /
+    "ReleaseClosed-ECU_OEMiROT.bin"
 )
 FIRMWARE = PROJECT / "artifacts" / "firmware" / "1.0.15"
 SECURE_INITIAL = FIRMWARE / "secure-initial.bin"
@@ -223,7 +225,9 @@ def create_closed_transaction(root):
 def run_create(source, output_root):
     environment = os.environ.copy()
     environment.update({"ECU_BACKUP_DIR": str(output_root),
-                        "STLINK_SERIAL": PROBE})
+                        "STLINK_SERIAL": PROBE,
+                        "ECU_LEGACY_RELEASE_OPEN_IMAGE": str(RELEASE_OPEN),
+                        "ECU_LEGACY_RELEASE_CLOSED_IMAGE": str(RELEASE_CLOSED)})
     return subprocess.run(
         [str(CREATE), str(source), "host-test"],
         cwd=PROJECT, env=environment, text=True,
@@ -236,6 +240,8 @@ def run_consumer(package, version="1.0.15"):
         "ECU_RECOVERY_BACKUP_DIR": str(package),
         "ECU_INITIAL_VERSION": version,
         "STLINK_SERIAL": PROBE,
+        "ECU_LEGACY_RELEASE_OPEN_IMAGE": str(RELEASE_OPEN),
+        "ECU_LEGACY_RELEASE_CLOSED_IMAGE": str(RELEASE_CLOSED),
     })
     return subprocess.run(
         [str(CONSUMER), "validate-full-regression-package"],

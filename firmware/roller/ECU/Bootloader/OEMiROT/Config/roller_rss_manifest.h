@@ -15,7 +15,7 @@
   *   Descriptor 3 magic         "DSCTR484"
   *   JumpHDPLvl3                0x0FF95079
   *   JumpHDPLvl3NS              0x0FF951C9
-  *   Device UID                 00380061-34345112-32383537
+  *   Device UID                 selected in Shared/ecu_device_profile.h
   *
   * A later STM32H56x revision may use different entries.  It must receive a
   * separately reviewed manifest; it must never fall through to this one.
@@ -23,6 +23,8 @@
 
 #ifndef ROLLER_RSS_MANIFEST_H
 #define ROLLER_RSS_MANIFEST_H
+
+#include "../../../Shared/ecu_device_profile.h"
 
 #define ROLLER_RSS_DEVICE_ID                 0x484UL
 #define ROLLER_RSS_REVISION_ID               0x1007UL
@@ -39,8 +41,8 @@
  * and non-transferability come from the device-internal HUK-wrapped OEMiROT
  * OBKs, the WRP/HDP-protected pairing record, and the ATECC private key that
  * cannot be exported. */
-#define ROLLER_DEVICE_UID0                    0x00380061UL
-#define ROLLER_DEVICE_UID1                    0x34345112UL
-#define ROLLER_DEVICE_UID2                    0x32383537UL
+#define ROLLER_DEVICE_UID0                    ECU_DEVICE_UID0
+#define ROLLER_DEVICE_UID1                    ECU_DEVICE_UID1
+#define ROLLER_DEVICE_UID2                    ECU_DEVICE_UID2
 
 #endif /* ROLLER_RSS_MANIFEST_H */

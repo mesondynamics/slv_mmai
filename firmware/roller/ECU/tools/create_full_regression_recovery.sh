@@ -15,8 +15,11 @@ task_probe="${STLINK_SERIAL:-066BFF565456857187210935}"
 task_purpose="${ECU_RECOVERY_PURPOSE:-Recover the reviewed ECU through authenticated Full Regression}"
 task_version="1.0.15"
 task_firmware_dir="${task_project_dir}/artifacts/firmware/${task_version}"
-task_release_open="${task_project_dir}/Bootloader/OEMiROT/build/ReleaseOpen/ECU_OEMiROT.bin"
-task_release_closed="${task_project_dir}/Bootloader/OEMiROT/build/ReleaseClosed/ECU_OEMiROT.bin"
+# Allow an explicitly selected immutable legacy archive when the working
+# build directory belongs to another board. All original size/SHA/UID gates
+# below remain mandatory; these variables do not select a new recovery target.
+task_release_open="${ECU_LEGACY_RELEASE_OPEN_IMAGE:-${task_project_dir}/Bootloader/OEMiROT/build/ReleaseOpen/ECU_OEMiROT.bin}"
+task_release_closed="${ECU_LEGACY_RELEASE_CLOSED_IMAGE:-${task_project_dir}/Bootloader/OEMiROT/build/ReleaseClosed/ECU_OEMiROT.bin}"
 task_secure_image="${task_firmware_dir}/secure-initial.bin"
 task_nonsecure_image="${task_firmware_dir}/nonsecure-initial.bin"
 task_ota_package="${task_firmware_dir}/roller-ecu-${task_version}.recu"

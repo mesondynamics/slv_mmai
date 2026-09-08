@@ -1,5 +1,33 @@
 # Roller ECU 固件
 
+当前制造对象为 **SN-EJAHGJQ（ECU 172.16.0.21、域控 172.16.0.22）**，
+`Shared/ecu_device_selection.h` 持久选择 ID 2；旧板 SN-EJAHGJI 为 ID 1。
+新板已完成 ATECC 配对、三个 OBKey 配置包写入、正式启动，以及 OPEN 状态下
+1.0.21 → 1.0.22 Ethernet OTA、异常包/中断/重放测试和实际镜像回读。
+1.0.22 已通过无 ST-Link 冷启动和连续运行检查；当前为 **CLOSED (`0x72`)**，
+操作者已确认恢复 ESTOP_NC 后 K12 上电闭合、断开后释放；
+普通 ST-Link 读出已实测拒绝，持有 DA 私钥的 HDPL3 Secure/NonSecure 临时
+调试、精确主槽回读、重锁及重锁后再次拒绝均已通过。正式固件下的 30 项功能
+控制、22 项多来源网络策略及前/后阀小电流闭环已经实物验收；两路 PI 选定
+`Kp=400、Ki=8000`，保存为 generation 1，并通过真实断电冷启动恢复及再次接阀
+验证。详见
+[新板制造记录](docs/ECU_SN-EJAHGJQ_Manufacturing.md)。下文历史
+1.0.20 安全验收属于旧板，不能直接继承为新板 PASS；旧制造/恢复脚本仍严格绑定旧板。
+9 月 5 日约 21:42 的单次重启原因未确认（操作者不记得当时是否断电），未归因于
+硬件或固件；9 月 6 日两次各 3 分钟只读观察未见非预期重启。ST-Link 接回后已
+重新核对直接 UID、OPEN/保护设置及完整 2 MiB Flash，均与本板恢复基线一致；
+独立 NRST 硬件脉冲与重启后身份验证通过，平均 RTT 0.104 ms。
+新板 CLOSED 转换、DA 临时调试以及 permission `a` Full Regression 整片擦除/
+完整恢复演练均已通过。演练从 CLOSED 返回 blank OPEN，重建本板 1.0.22 和配对区、
+重新提交三个 OBKey，再返回 CLOSED；最终普通读取拒绝、permission `c` 精确回读、
+重锁、冷启动和网络延迟均通过。完整过程已在工程目录和 `ECU_PKI` 双备份，绝不
+使用仍绑定旧板的恢复脚本。
+
+序列号与 ECU 地址固定绑定：`SN-EJAHGJI → 172.16.0.11`，
+`SN-EJAHGJQ → 172.16.0.21`；对应域控分别为 `.12`、`.22`。
+网络仲裁/受保护接阀/PI 对比台架工具通过 `--device-serial` 显式选择板子，
+可选 `--ecu-ip` 只用于核对，不能改地址；不匹配时在控制客户端启动前拒绝。
+
 本工程面向自定义 STM32H563ZIT6 ECU，使用 STM32CubeMX 6.18、
 STM32CubeH5 1.7、CMake 和 TrustZone。Secure 域独占急停、TPIC6A595
 继电器链、20 kHz 行驶阀电流 PI、ADC、参数 Flash 日志、软件 I²C 与 IWDG；
@@ -11,7 +39,8 @@ CAN2 独占控制节点 1 转向电机，把两条总线的故障分别隔离。
 角速度。旧 A5 帧可继续控制有等价硬件的继电器功能；旧百分比行驶请求、旧转角
 闭环请求和本板不存在的输出会拒绝整帧，不能被静默换算为阀电流或电机转速。
 非紧急控制接受固定遥控器 `172.16.0.9`、调试机 `172.16.0.10` 和本设备序列号
-解算出的域控 `172.16.0.12`；调参和 OTA 仍只接受 `.10`。该 IP 约束不是密码学
+解算出的域控（ID 1 为 `172.16.0.12`，ID 2 为 `172.16.0.22`）；调参和 OTA
+仍只接受 `.10`。该 IP 约束不是密码学
 身份认证，车辆网络必须保持隔离。结构正确的急停不受普通控制权和来源过滤阻挡。
 启动身份和成对镜像确认通过、实体急停输入连续健康 20 ms 后，Secure 域独立闭合
 K12 人工驾驶许可，不等待 Ethernet。普通断链/控制超时只把自动输出归零并保留
@@ -43,7 +72,8 @@ python3 ./tools/ethernet_ota.py --status
 ```sh
 sudo ./tools/configure_ecu_network.sh
 ./tools/check_ecu_latency.sh
-./tools/ecu_debug_ui.py --ecu-ip 172.16.0.11
+./tools/ecu_debug_ui.py --ecu-ip 172.16.0.21
+# 旧板 SN-EJAHGJI 使用 --ecu-ip 172.16.0.11；工厂程序不应启用控制
 ```
 
 浏览器打开 <http://127.0.0.1:8088>。脚本只给 `enp2s0` 创建独立的
@@ -61,7 +91,7 @@ RTT≤1 ms、最大 RTT≤5 ms 设置硬门槛，应在空闲和遥测开启时�
   `Bootloader/OEMiROT/build/ReleaseOpen` 和 `ReleaseClosed`
 - 已签名、加密的以太网升级包位于 `artifacts/firmware/<version>/*.recu`
 
-当前样件保持 STM32 **CLOSED (`0x72`)** 产品状态。1.0.17 阶段已通过 OTA、
+已交付旧板 SN-EJAHGJI 保持 STM32 **CLOSED (`0x72`)** 产品状态。1.0.17 阶段已通过 OTA、
 DA 双主槽精确回读、调试重锁、无探针冷启动、运行时安全和网络延迟验收。
 2026-09-05 已通过 Ethernet 从 1.0.17 升级到唯一签名的
 **1.0.20/counter20/update-sequence20**，双镜像确认及仅 ECU 冷启动通过；

@@ -3,6 +3,7 @@
 #include <stddef.h>
 
 #include "ecu_boot_handoff.h"
+#include "ecu_device_profile.h"
 #include "stm32h5xx_hal.h"
 
 enum
@@ -66,6 +67,16 @@ static bool SecurityMcuIdentity_LoadHandoff(void)
         handoff->mcu_uid[2]) == 0U) ||
       ((handoff->mcu_uid[0] & handoff->mcu_uid[1] &
         handoff->mcu_uid[2]) == UINT32_MAX))
+  {
+    return false;
+  }
+  /* Shared fleet signing keys do not authorize a release for another ECU.
+   * A mismatched device-specific OTA must fail authentication/confirmation,
+   * allowing the existing paired TEST-swap rollback instead of changing IP.
+   */
+  if ((handoff->mcu_uid[0] != ECU_DEVICE_UID0) ||
+      (handoff->mcu_uid[1] != ECU_DEVICE_UID1) ||
+      (handoff->mcu_uid[2] != ECU_DEVICE_UID2))
   {
     return false;
   }

@@ -102,7 +102,7 @@ def exchange(sock: socket.socket, ecu_ip: str, message_type: int,
                 response, peer = sock.recvfrom(1024)
             except TimeoutError:
                 break
-            if peer[0] != ecu_ip:
+            if peer != (ecu_ip, ECU_TUNING_PORT):
                 continue
             try:
                 return decode_frame(response, sequence)
@@ -185,6 +185,30 @@ def inspect(sock: socket.socket, args: argparse.Namespace, sequence: int) -> dic
     return status
 
 
+def validate_target(status: dict[str, object], uid: str, serial: str,
+                    initial_crc: int) -> None:
+    """Pin irreversible requests to an independently recorded board identity.
+
+    On a journaled retry the live CRC has changed with the lock bytes. Keep
+    sending the ORIGINAL CRC: the Secure factory service checks its journal.
+    Never derive the expected target from the same network response being
+    authorized, and never silently replace the original CRC on retries.
+    """
+    if (len(uid) != 24 or len(serial) != 18 or
+            any(c not in "0123456789abcdef" for c in uid + serial) or
+            not 0 <= initial_crc <= 0xFFFFFFFF):
+        raise RuntimeError("invalid independently recorded factory identity")
+    if (status["result"] != 0 or status["mcu_uid_hex"] != uid or
+            status["atecc_serial"] != serial or
+            status["atecc_revision"] != "00006005" or
+            status["private_key_slot"] != PRIVATE_SLOT):
+        raise RuntimeError("refusing provisioning: reviewed target identity mismatch")
+    if not (int(status["phase_flags"]) & (1 << 1)):
+        if (status["config_locked"] or status["data_locked"] or
+                status["config_crc32c"] != initial_crc):
+            raise RuntimeError("refusing provisioning: initial configuration mismatch")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=("inspect", "provision"), nargs="?",
@@ -193,10 +217,21 @@ def main() -> int:
     parser.add_argument("--host-ip", default="172.16.0.10")
     parser.add_argument("--confirm-lock", action="store_true",
                         help="acknowledge irreversible ATECC zone/slot locks")
+    parser.add_argument("--expected-mcu-uid",
+                        help="24 lowercase hex digits independently read via ST-Link")
+    parser.add_argument("--expected-atecc-serial",
+                        help="18 lowercase hex digits from the archived initial inspection")
+    parser.add_argument("--expected-initial-config-crc", type=lambda value: int(value, 0),
+                        help="original configuration CRC32C, including on journaled retries")
     parser.add_argument(
         "--backup-dir", type=Path,
         default=Path(__file__).resolve().parent.parent / "artifacts/device-backups")
     args = parser.parse_args()
+    if args.action == "provision" and (
+            not args.confirm_lock or not args.expected_mcu_uid or
+            not args.expected_atecc_serial or
+            args.expected_initial_config_crc is None):
+        parser.error("provision requires --confirm-lock and all three --expected-* pins")
 
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
         sock.bind((args.host_ip, 0))
@@ -206,10 +241,8 @@ def main() -> int:
         print(f"read-only backup: {backup}-*")
         if args.action == "inspect":
             return 0 if status["result"] == 0 else 1
-        if not args.confirm_lock:
-            parser.error("provision requires --confirm-lock (ATECC locks are irreversible)")
-        if status["result"] != 0:
-            raise RuntimeError("refusing provisioning after failed inspection")
+        validate_target(status, args.expected_mcu_uid, args.expected_atecc_serial,
+                        args.expected_initial_config_crc)
         if status["config_locked"] or status["data_locked"]:
             if not (int(status["phase_flags"]) & (1 << 1)):
                 raise RuntimeError("locked ATECC has no matching ECU factory journal")
@@ -217,7 +250,7 @@ def main() -> int:
         uid = [int(value) for value in status["mcu_uid_words"]]
         serial = bytes.fromhex(str(status["atecc_serial"]))
         provision_request = REQUEST.pack(
-            FACTORY_TOKEN, int(status["config_crc32c"]), *uid, serial)
+            FACTORY_TOKEN, args.expected_initial_config_crc, *uid, serial)
         sequence = (sequence + 1) & 0xFFFFFFFF
         result = parse_status(exchange(
             sock, args.ecu_ip, ECU_FACTORY_PROVISION, sequence,
@@ -226,6 +259,8 @@ def main() -> int:
             raise RuntimeError("provision response sequence mismatch")
         print_status(result)
         save_backup(result, args.backup_dir)
+        validate_target(result, args.expected_mcu_uid, args.expected_atecc_serial,
+                        args.expected_initial_config_crc)
         slot_is_locked = not (
             int(result["slot_locked_mask"]) & (1 << PRIVATE_SLOT))
         if (result["result"] != 0 or result["phase_flags"] != ALL_PHASES or
@@ -237,7 +272,12 @@ def main() -> int:
 
         sequence = (sequence + 1) & 0xFFFFFFFF
         verified = inspect(sock, args, sequence)
-        if verified["phase_flags"] != ALL_PHASES:
+        validate_target(verified, args.expected_mcu_uid, args.expected_atecc_serial,
+                        args.expected_initial_config_crc)
+        save_backup(verified, args.backup_dir / "verified")
+        if (verified["phase_flags"] != ALL_PHASES or
+                verified["public_key_hex"] != result["public_key_hex"] or
+                verified["config_crc32c"] != result["config_crc32c"]):
             raise RuntimeError("post-provision read-back verification failed")
         print("ATECC608C provisioning and board-pairing authentication: PASS")
     return 0

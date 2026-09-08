@@ -1,5 +1,16 @@
 # ECU 烧录与台架验收
 
+当前新板 SN-EJAHGJQ 制造进度及未验收项目以
+[独立制造记录](ECU_SN-EJAHGJQ_Manufacturing.md) 为准；本文件历史实测属于
+SN-EJAHGJI，不能自动作为新板验收结果。
+
+固定地址为 SN-EJAHGJI：ECU `.11` / 域控 `.12`，SN-EJAHGJQ：ECU `.21` /
+域控 `.22`（均为 `172.16.0.x`）。`ecu_network_acceptance.py`、
+`ecu_valve_guarded_test.py`、`ecu_pi_compare.py` 用 `--device-serial` 显式选板；
+新板必须指定 `--device-serial SN-EJAHGJQ`，可选 `--ecu-ip` 只能核对固定地址。
+默认仍是旧板。错误映射拒绝启动，且所有主动客户端之前先做只读身份与
+IDLE/K12-only/零输出门禁。新板的域控测试临时主机地址必须是 `.22`，不是 `.12`。
+
 ## 1. 安全前置条件
 
 每次主动测试前逐项确认：
@@ -525,3 +536,26 @@ ECU 仍为原签名 1.0.20，未因临时线束问题更改固件保护。完整
 - 接入真实转向电机后的 CAN2 enable/速度/停止/超时/DTC/bus-off/急停测试；
 - 电源瞬态、IWDG/CSS、PHY 故障、EMC、环境、热和耐久型式试验；
 - 第 8.2 节 OTA-P02..P17 专用可恢复样件发布/型式鉴定。
+
+## 12. SN-EJAHGJQ 正式台架结果（2026-09-06）
+
+本节只适用于 SN-EJAHGJQ（ECU `.21`、域控 `.22`、firmware 1.0.22、accepted
+sequence 22），不能用来覆盖上一节 SN-EJAHGJI 的 generation/CRC 或历史结论。
+
+| 项目 | 实测结果 | 结论 |
+|---|---|---|
+| 身份与安全前置 | UID `003900443434511232383537`、ATECC `01236acf4e275ef9ee`、auth result 0、CLOSED、普通读出拒绝，DA/Full Regression 已单独通过 | PASS |
+| 功能控制 | 30/30；继电器命令、发动机高低速脉冲、启动限时、龟兔档、阀互锁/安全换向、超时归零、急停锁存/复位 | PASS（软件状态/mask；非全部触点电测） |
+| 多来源网络 | 22/22；`.22/.10/.9` 仲裁和并行急停正确，`.13` 普通控制拒绝，OTA 仅 `.10` | PASS |
+| PI 候选 | `400/4000` 平均稳定约 526.3 ms；`400/8000` 约 313 ms；`400/10000` 约 277.5 ms；`600/8000` 约 338.7 ms | 选择 `400/8000` |
+| Flash 参数 | 前/后 Kp=400、Ki=8000，generation=1，CRC32C=`2378242392`，valid=1、dirty=0、defaults=0 | PASS |
+| 真实掉电保持 | 断电至少 10 s 后上述 generation/CRC/参数不变，冷启动为 IDLE/仅 K12/双阀零输出 | PASS |
+| 冷启动后接阀 | 前/后 100 mA 均值 99.28/99.53 mA；200 mA 均值 199.13/198.71 mA；结束零输出、无 fault | PASS |
+| 波形网络性能 | 1 kHz 会话内三工况 RTT 平均约 0.107–0.117 ms、最大 0.403 ms、零丢包；会话外停止高速回传 | PASS |
+| 最终空闲网络 | 100/100、0% 丢包，RTT min/avg/max=`0.068/0.110/0.148 ms` | PASS |
+
+原始 JSON/CSV 位于
+`artifacts/hardware-regression/20260906T133532Z-sn-ejahgjq-valve-pi/`。此结果只覆盖
+未接车辆的 100/200 mA 小电流台架范围；0–2 A、热态液压负载、外部电流标定、
+阀故障注入、真实 CAN2 转向电机、CAN1/传感器/速度、继电器触点和整车型式项目
+仍按第 11 节末尾清单处理。

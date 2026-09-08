@@ -31,6 +31,21 @@ def valid_sector() -> bytes:
 
 
 class PairingStoreTests(unittest.TestCase):
+    def test_new_board_requires_explicit_identity(self):
+        identity = MODULE.REVIEWED_IDENTITIES["SN-EJAHGJQ"]
+        sector = bytearray(valid_sector())
+        struct.pack_into("<3I", sector, 16, *identity.mcu_uid)
+        struct.pack_into("<I", sector, 28, identity.config_crc32c)
+        sector[32:41] = identity.serial
+        sector[48:112] = identity.public_key
+        struct.pack_into("<I", sector, 116, MODULE.crc32c(sector[:116]))
+        self.assertEqual(MODULE.verify_dual_store(
+            bytes(sector + sector), identity=identity)["result"], "PASS")
+        with self.assertRaisesRegex(MODULE.VerificationError, "MCU UID"):
+            MODULE.verify_dual_store(bytes(sector + sector))
+        with self.assertRaisesRegex(MODULE.VerificationError, "MCU UID"):
+            MODULE.verify_dual_store(valid_sector() * 2, identity=identity)
+
     def test_exact_dual_copy_passes(self):
         sector = valid_sector()
         result = MODULE.verify_dual_store(sector + sector)

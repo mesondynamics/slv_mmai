@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unloaded 1.0.20 bench: real .9/.10/.12 arbitration and .13 rejection.
+"""Unloaded bench: real remote/service/serial-domain arbitration and .13 rejection.
 
 Requires these temporary addresses on the isolated bench NIC. Sends no valve
 current or steering request. Headlamp relay commands identify source binding.
@@ -7,12 +7,15 @@ current or steering request. Headlamp relay commands identify source binding.
 
 import argparse
 import json
+import os
+from pathlib import Path
 import socket
 import struct
 import time
 
 import ecu_bench_test as bench_module
 import ethernet_ota as ota
+import ecu_bench_targets as targets
 
 u = bench_module.UI
 K12 = u.SAFETY_RELAY_K12_RUN_PERMIT
@@ -45,15 +48,24 @@ class Host:
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--ecu-ip", default="172.16.0.11")
+    targets.add_target_arguments(parser)
+    parser.add_argument("--output", type=Path)
     parser.add_argument("--accept-isolated-unloaded-bench", action="store_true")
     args = parser.parse_args()
     if not args.accept_isolated_unloaded_bench:
         parser.error("--accept-isolated-unloaded-bench is required")
+    try:
+        target = targets.resolve_target(args.device_serial, args.ecu_ip)
+    except ValueError as error:
+        parser.error(str(error))
+    args.ecu_ip = target.ecu_ip
+    if args.output is not None and args.output.exists():
+        parser.error("--output already exists; evidence is never overwritten")
+    preflight = targets.passive_preflight(target)
     # Bind all source addresses before any control mutation.
     remote = Host(9, 1, 20)
     service = Host(10, 2, 2)
-    domain = Host(12, 3, 10)
+    domain = Host(int(target.domain_ip.rsplit(".", 1)[1]), 3, 10)
     stranger = Host(13, 2, 200)
     duplicate = Host(9, 3, 200)
     hosts = (remote, service, domain, stranger, duplicate)
@@ -152,7 +164,8 @@ def main():
                 except TimeoutError:
                     check(not allowed, f"{host.ip} allowed OTA status timed out")
                 else:
-                    check(allowed and reply["accepted_sequence"] == 20,
+                    check(allowed and reply["accepted_sequence"] ==
+                          targets.ACCEPTED_SEQUENCES[target.serial],
                           f"{host.ip} unauthorized OTA reply")
             finally:
                 client.close()
@@ -168,10 +181,10 @@ def main():
         cycle([(service, {})])
         record(".10 neutral authority", lambda: b.status["active_sender_id"] == 2)
         cycle([(service, {}), (domain, {})])
-        record(".12 priority 10 preempts .10 priority 2",
+        record(f"{target.domain_ip} priority 10 preempts .10 priority 2",
                lambda: b.status["active_sender_id"] == 3)
         cycle([(service, {}), (domain, {}), (remote, {})])
-        record(".9 priority 20 preempts .12 priority 10",
+        record(f".9 priority 20 preempts {target.domain_ip} priority 10",
                lambda: b.status["active_sender_id"] == 1)
         remote.priority = service.priority = domain.priority = 10
         cycle([(service, {}), (domain, {}), (remote, {})])
@@ -199,7 +212,7 @@ def main():
         release_all()
         domain.priority, remote.priority = 30, 5
         cycle([(domain, {}), (remote, {})])
-        record("autonomous .12 owns ordinary control",
+        record(f"autonomous {target.domain_ip} owns ordinary control",
                lambda: b.status["active_sender_id"] == 3)
         cycle([(domain, {}), (remote, {"emergency": True})])
         record("lower ordinary-priority remote E-stop overrides autonomous", latched)
@@ -229,14 +242,32 @@ def main():
             service_access(host, allowed)
             record(f"{host.ip} service IP gate allowed={allowed}", baseline)
         record("final IDLE/K12-only, zero valves, zero steering", baseline)
-        print(json.dumps({"passed": len(passed), "cases": passed,
-                          "final_status": b.status, "final_diagnostic": b.diagnostic},
-                         ensure_ascii=False, indent=2), flush=True)
+        report = {"result": "PASS", "passed": len(passed), "cases": passed,
+                  "device_serial": target.serial, "ecu_ip": target.ecu_ip,
+                  "domain_ip": target.domain_ip, "passive_preflight": preflight,
+                  "final_status": b.status, "final_diagnostic": b.diagnostic}
+        print(json.dumps(report, ensure_ascii=False, indent=2), flush=True)
+        if args.output is not None:
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            with args.output.open("x") as stream:
+                json.dump(report, stream, ensure_ascii=False, indent=2)
+                stream.write("\n")
+                stream.flush()
+                os.fsync(stream.fileno())
         return 0
     except (bench_module.BenchFailure, OSError) as error:
-        print(json.dumps({"error": str(error), "passed": passed,
-                          "status": b.status, "diagnostic": b.diagnostic},
-                         ensure_ascii=False, indent=2), flush=True)
+        report = {"result": "FAIL", "error": str(error), "passed": passed,
+                  "device_serial": target.serial, "ecu_ip": target.ecu_ip,
+                  "domain_ip": target.domain_ip, "passive_preflight": preflight,
+                  "status": b.status, "diagnostic": b.diagnostic}
+        print(json.dumps(report, ensure_ascii=False, indent=2), flush=True)
+        if args.output is not None:
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            with args.output.open("x") as stream:
+                json.dump(report, stream, ensure_ascii=False, indent=2)
+                stream.write("\n")
+                stream.flush()
+                os.fsync(stream.fileno())
         return 1
     finally:
         # Never reset a latch automatically after failure.

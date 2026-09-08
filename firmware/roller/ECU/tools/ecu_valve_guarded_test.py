@@ -19,6 +19,7 @@ import time
 
 import ecu_debug_ui as ui
 import ethernet_ota as ota
+import ecu_bench_targets as targets
 
 
 class GuardFailure(RuntimeError):
@@ -59,9 +60,12 @@ def sample_guard(sample: dict, target: int, elapsed: float) -> None:
 
 
 def run(args: argparse.Namespace) -> int:
+    device = targets.resolve_target(args.device_serial, args.ecu_ip)
+    preflight = targets.passive_preflight(device)
     # Create a new evidence directory; never overwrite a previous run.
     args.output_dir.mkdir(mode=0o700, parents=False, exist_ok=False)
     report: dict = {"ecu_ip": args.ecu_ip, "direction": args.direction,
+                    "device_serial": device.serial, "passive_preflight": preflight,
                     "passed": False, "cases": [], "parameters_written": False}
     samples: list[dict] = []
     bridge = ui.BenchBridge(args.ecu_ip)
@@ -80,7 +84,7 @@ def run(args: argparse.Namespace) -> int:
         require(not snap["physical_estop_active"], "physical E-stop active")
         require(not snap["network_estop_latched"], "network E-stop latched")
         require(not snap["critical_inhibit"], "critical safety inhibit")
-        require(snap["security"]["auth_result"] == 0, "identity authentication failed")
+        require(targets.security_matches(snap["security"], device), "bench target identity changed")
         require(not snap["diagnostic"]["valve_fault_flags"], "latched valve fault")
         steering = snap["steering_status"]
         require(not steering["command_enable"] and not steering["speed_command_permille"],
@@ -130,9 +134,6 @@ def run(args: argparse.Namespace) -> int:
         time.sleep(0.6)
         entry = status_guard(require_armed=False)
         report["entry"] = entry
-        require(entry["security"]["mcu_uid"] == "003800613434511232383537" and
-                entry["security"]["serial"] == "0123d47eb2ee0e9bee",
-                "this bench procedure is bound to SN-EJAHGJI")
         require(entry["status"]["control_mode"] == 0, "another controller is active")
         require(entry["diagnostic"]["applied_relay_mask"] == ui.SAFETY_RELAY_K12_RUN_PERMIT,
                 "entry is not K12-only")
@@ -148,12 +149,14 @@ def run(args: argparse.Namespace) -> int:
             report["ota"] = client.status()
         finally:
             client.close()
-        require(report["ota"]["accepted_sequence"] == 20 and
+        require(report["ota"]["accepted_sequence"] ==
+                targets.ACCEPTED_SEQUENCES[device.serial] and
                 report["ota"]["state"] == 0 and report["ota"]["ota_result"] == 0,
-                "confirmed release 1.0.20 is required")
+                "reviewed confirmed release is required")
         before = bridge.config_request(ui.MSG_CONFIG_GET)
-        require(before["result"] == 0 and before["persisted_valid"] and not before["dirty"],
-                "PI configuration is not a clean persisted configuration")
+        require(before["result"] == 0 and
+                (before["persisted_valid"] or before["using_defaults"]) and not before["dirty"],
+                "PI configuration is neither clean persisted data nor clean defaults")
         report["config_before"] = before
         bridge.configure({"sender_id": 2, "priority": 2, "enabled": False})
         bridge.set_tuning_session(token, True)
@@ -201,6 +204,7 @@ def run(args: argparse.Namespace) -> int:
                 with subprocess.Popen(
                     [str(Path(__file__).with_name("check_ecu_latency.sh"))],
                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                    env=dict(os.environ, ECU_IP=args.ecu_ip),
                 ) as process:
                     wave = observe(name, target, 2.5)
                     output = process.communicate(timeout=2.0)[0]
@@ -282,7 +286,7 @@ def run(args: argparse.Namespace) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--ecu-ip", default="172.16.0.11")
+    targets.add_target_arguments(parser)
     parser.add_argument("--direction", choices=("both", "forward", "reverse"), default="both")
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--check-latency", action="store_true",
@@ -291,6 +295,10 @@ def main() -> int:
     args = parser.parse_args()
     if not args.accept_unloaded_actuation:
         parser.error("--accept-unloaded-actuation is required")
+    try:
+        args.ecu_ip = targets.resolve_target(args.device_serial, args.ecu_ip).ecu_ip
+    except ValueError as error:
+        parser.error(str(error))
     os.umask(0o077)
     signal.signal(signal.SIGTERM, lambda *_: (_ for _ in ()).throw(KeyboardInterrupt()))
     return run(args)

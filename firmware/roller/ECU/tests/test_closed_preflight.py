@@ -12,8 +12,9 @@ from pathlib import Path
 PROJECT = Path(__file__).resolve().parents[1]
 MODULE_PATH = PROJECT / "tools" / "verify_closed_preflight.py"
 RELEASE_CLOSED = (
-    PROJECT / "Bootloader" / "OEMiROT" / "build" / "ReleaseClosed" /
-    "ECU_OEMiROT.bin"
+    PROJECT / "artifacts/device-backups" /
+    "stm32h563-066BFF565456857187210935-20260830T063129Z-closed-transition" /
+    "ReleaseClosed-ECU_OEMiROT.bin"
 )
 INSTALLED_PRIMARY_AUDIT = (
     PROJECT / "artifacts" / "device-backups" /
