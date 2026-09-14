@@ -126,7 +126,7 @@
 							(type none)
 						)
 					)
-					(pin passive line
+					(pin no_connect line
 						(at -7.62 5.08 180)
 						(length 5.08)
 						(hide yes)
@@ -3693,7 +3693,7 @@
 							)
 						)
 					)
-					(pin passive line
+					(pin no_connect line
 						(at 0 0 90)
 						(length 2.54)
 						(hide yes)
@@ -10907,7 +10907,7 @@
 							(type background)
 						)
 					)
-					(pin passive line
+					(pin no_connect line
 						(at -17.78 3.81 0)
 						(length 5.08)
 						(name "NC1"
@@ -10925,7 +10925,7 @@
 							)
 						)
 					)
-					(pin passive line
+					(pin no_connect line
 						(at -17.78 1.27 0)
 						(length 5.08)
 						(name "NC2"
@@ -10943,7 +10943,7 @@
 							)
 						)
 					)
-					(pin passive line
+					(pin no_connect line
 						(at -17.78 -1.27 0)
 						(length 5.08)
 						(name "NC3"
@@ -11015,7 +11015,7 @@
 							)
 						)
 					)
-					(pin passive line
+					(pin no_connect line
 						(at 17.78 -1.27 180)
 						(length 5.08)
 						(name "NC7"
@@ -11488,7 +11488,7 @@
 							)
 						)
 					)
-					(pin passive line
+					(pin no_connect line
 						(at -16.51 -13.97 0)
 						(length 2.54)
 						(hide yes)
@@ -11616,7 +11616,7 @@
 							)
 						)
 					)
-					(pin passive line
+					(pin no_connect line
 						(at -16.51 -16.51 0)
 						(length 2.54)
 						(hide yes)

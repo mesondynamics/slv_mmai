@@ -1245,8 +1245,7 @@
 		)
 		(uuid "ffa08619-50ac-4bb5-909c-2cd0b945f6d0")
 	)
-	(global_label "NET133"
-		(shape bidirectional)
+	(label "NET133"
 		(at 273.05 223.52 0)
 		(effects
 			(font
@@ -1256,8 +1255,7 @@
 		)
 		(uuid "76a6f559-7a0c-435d-add7-b6a5137f14cb")
 	)
-	(global_label "NET133"
-		(shape bidirectional)
+	(label "NET133"
 		(at 273.05 162.56 0)
 		(effects
 			(font

@@ -5975,8 +5975,7 @@
 		)
 		(uuid "ffbf38cc-d12e-4118-be3c-631718216b11")
 	)
-	(global_label "NET49"
-		(shape bidirectional)
+	(label "NET49"
 		(at 196.85 83.82 0)
 		(effects
 			(font
@@ -5986,8 +5985,7 @@
 		)
 		(uuid "340bf03a-e299-463e-a823-ee0144cc13a3")
 	)
-	(global_label "NET47"
-		(shape bidirectional)
+	(label "NET47"
 		(at 237.49 78.74 0)
 		(effects
 			(font
@@ -5997,8 +5995,7 @@
 		)
 		(uuid "4be514ed-8153-493e-bd38-95cf816562bd")
 	)
-	(global_label "NET48"
-		(shape bidirectional)
+	(label "NET48"
 		(at 237.49 83.82 0)
 		(effects
 			(font
@@ -6008,8 +6005,7 @@
 		)
 		(uuid "656f26d5-4325-4ee4-9002-40ce3b2779cd")
 	)
-	(global_label "NET45"
-		(shape bidirectional)
+	(label "NET45"
 		(at 196.85 91.44 0)
 		(effects
 			(font
@@ -6019,8 +6015,7 @@
 		)
 		(uuid "7eeed5b0-5588-436f-9e0d-fab7eda49315")
 	)
-	(global_label "NET52"
-		(shape bidirectional)
+	(label "NET52"
 		(at 237.49 91.44 0)
 		(effects
 			(font
@@ -6030,8 +6025,7 @@
 		)
 		(uuid "86ccec29-f953-4c77-b8c8-596df9d0c453")
 	)
-	(global_label "NET46"
-		(shape bidirectional)
+	(label "NET46"
 		(at 196.85 86.36 0)
 		(effects
 			(font
@@ -6041,8 +6035,7 @@
 		)
 		(uuid "9fed6a57-2165-4d60-9a0a-fd0e1ee4bb5e")
 	)
-	(global_label "NET50"
-		(shape bidirectional)
+	(label "NET50"
 		(at 196.85 78.74 0)
 		(effects
 			(font
@@ -6052,8 +6045,7 @@
 		)
 		(uuid "f1e5bda4-3747-4567-9fc0-b29cf96d8723")
 	)
-	(global_label "NET51"
-		(shape bidirectional)
+	(label "NET51"
 		(at 237.49 86.36 0)
 		(effects
 			(font
@@ -6172,326 +6164,6 @@
 			(justify right)
 		)
 		(uuid "cda3c39b-bc7a-42c4-b67a-aa23bbe80c3b")
-	)
-	(global_label "NET18"
-		(shape bidirectional)
-		(at 52.07 91.44 180)
-		(fields_autoplaced yes)
-		(effects
-			(font (size 1.27 1.27))
-			(justify right)
-		)
-		(uuid "cc98d769-1197-4018-81d9-0b6dbe1ca41b")
-	)
-	(global_label "NET20"
-		(shape bidirectional)
-		(at 88.9 69.85 270)
-		(fields_autoplaced yes)
-		(effects
-			(font (size 1.27 1.27))
-			(justify left)
-		)
-		(uuid "d0d91e90-6c39-43b9-868a-1ad9badb6177")
-	)
-	(global_label "NET21"
-		(shape bidirectional)
-		(at 33.02 129.54 90)
-		(fields_autoplaced yes)
-		(effects
-			(font (size 1.27 1.27))
-			(justify right)
-		)
-		(uuid "14be854e-a3e6-4c82-925d-1b2e0c36f3e9")
-	)
-	(global_label "NET22"
-		(shape bidirectional)
-		(at 52.07 104.14 180)
-		(fields_autoplaced yes)
-		(effects
-			(font (size 1.27 1.27))
-			(justify right)
-		)
-		(uuid "ff9cd86f-cf92-4d6e-9f5c-067f58a56b30")
-	)
-	(global_label "NET23"
-		(shape bidirectional)
-		(at 52.07 83.82 180)
-		(fields_autoplaced yes)
-		(effects
-			(font (size 1.27 1.27))
-			(justify right)
-		)
-		(uuid "3c0844fa-5f9c-4d76-92bb-7b799f195528")
-	)
-	(global_label "NET24"
-		(shape bidirectional)
-		(at 52.07 86.36 180)
-		(fields_autoplaced yes)
-		(effects
-			(font (size 1.27 1.27))
-			(justify right)
-		)
-		(uuid "5747d175-9250-4054-9f0d-803f4f4197b8")
-	)
-	(global_label "NET25"
-		(shape bidirectional)
-		(at 52.07 76.2 180)
-		(fields_autoplaced yes)
-		(effects
-			(font (size 1.27 1.27))
-			(justify right)
-		)
-		(uuid "699c6257-816f-4e48-85a9-9339cc031829")
-	)
-	(global_label "NET26"
-		(shape bidirectional)
-		(at 52.07 78.74 180)
-		(fields_autoplaced yes)
-		(effects
-			(font (size 1.27 1.27))
-			(justify right)
-		)
-		(uuid "e8043fe7-d494-4199-8954-6c57d788edce")
-	)
-	(global_label "NET27"
-		(shape bidirectional)
-		(at 52.07 81.28 180)
-		(fields_autoplaced yes)
-		(effects
-			(font (size 1.27 1.27))
-			(justify right)
-		)
-		(uuid "72cd108d-de87-42be-ae64-5fc69cbae64b")
-	)
-	(global_label "NET139"
-		(shape bidirectional)
-		(at 67.31 139.7 0)
-		(fields_autoplaced yes)
-		(effects
-			(font (size 1.27 1.27))
-			(justify left)
-		)
-		(uuid "be0f8056-f9ef-4e46-a45a-8d460535c742")
-	)
-	(global_label "NET140"
-		(shape bidirectional)
-		(at 273.05 106.68 90)
-		(fields_autoplaced yes)
-		(effects
-			(font (size 1.27 1.27))
-			(justify right)
-		)
-		(uuid "2facf650-d0c3-4406-a2d7-438c27b32b00")
-	)
-	(global_label "NET154"
-		(shape bidirectional)
-		(at 180.34 127 90)
-		(fields_autoplaced yes)
-		(effects
-			(font (size 1.27 1.27))
-			(justify right)
-		)
-		(uuid "72fc89c3-93be-43fe-9e41-2b7032889f05")
-	)
-	(global_label "NET155"
-		(shape bidirectional)
-		(at 180.34 134.62 270)
-		(fields_autoplaced yes)
-		(effects
-			(font (size 1.27 1.27))
-			(justify left)
-		)
-		(uuid "1b25fc97-a001-4ed4-94e5-ee18aafa25df")
-	)
-	(global_label "NET156"
-		(shape bidirectional)
-		(at 162.56 127 90)
-		(fields_autoplaced yes)
-		(effects
-			(font (size 1.27 1.27))
-			(justify right)
-		)
-		(uuid "cc04d11f-bfc9-49f1-8089-7417aadaa63e")
-	)
-	(global_label "NET157"
-		(shape bidirectional)
-		(at 162.56 134.62 270)
-		(fields_autoplaced yes)
-		(effects
-			(font (size 1.27 1.27))
-			(justify left)
-		)
-		(uuid "813d8ae2-21e0-48b5-a232-f7d3d6370232")
-	)
-	(global_label "NET183"
-		(shape bidirectional)
-		(at 273.05 93.98 90)
-		(fields_autoplaced yes)
-		(effects
-			(font (size 1.27 1.27))
-			(justify right)
-		)
-		(uuid "149a779a-1834-4eb8-9481-7668a3506a10")
-	)
-	(global_label "NET184"
-		(shape bidirectional)
-		(at 264.16 93.98 90)
-		(fields_autoplaced yes)
-		(effects
-			(font (size 1.27 1.27))
-			(justify right)
-		)
-		(uuid "56263bc4-1589-4f9f-bd79-3a989d12c05b")
-	)
-	(global_label "NET190"
-		(shape bidirectional)
-		(at 59.69 91.44 0)
-		(fields_autoplaced yes)
-		(effects
-			(font (size 1.27 1.27))
-			(justify left)
-		)
-		(uuid "d5d2b1b2-6336-43dd-8b86-17358c29141f")
-	)
-	(global_label "NET191"
-		(shape bidirectional)
-		(at 152.4 93.98 180)
-		(fields_autoplaced yes)
-		(effects
-			(font (size 1.27 1.27))
-			(justify right)
-		)
-		(uuid "3531a626-ad1b-4e63-9665-8947cdeb407d")
-	)
-	(global_label "NET192"
-		(shape bidirectional)
-		(at 59.69 83.82 0)
-		(fields_autoplaced yes)
-		(effects
-			(font (size 1.27 1.27))
-			(justify left)
-		)
-		(uuid "50660967-95f5-4541-892a-6358c03e3e4e")
-	)
-	(global_label "NET193"
-		(shape bidirectional)
-		(at 59.69 86.36 0)
-		(fields_autoplaced yes)
-		(effects
-			(font (size 1.27 1.27))
-			(justify left)
-		)
-		(uuid "6166a909-72f1-4f99-a7d4-4c055459b255")
-	)
-	(global_label "NET194"
-		(shape bidirectional)
-		(at 59.69 88.9 0)
-		(fields_autoplaced yes)
-		(effects
-			(font (size 1.27 1.27))
-			(justify left)
-		)
-		(uuid "074e22e3-415a-4d22-968e-2f5803aacb47")
-	)
-	(global_label "NET195"
-		(shape bidirectional)
-		(at 59.69 76.2 0)
-		(fields_autoplaced yes)
-		(effects
-			(font (size 1.27 1.27))
-			(justify left)
-		)
-		(uuid "08ae928b-ec37-45b6-a0c2-8fddfb529285")
-	)
-	(global_label "NET196"
-		(shape bidirectional)
-		(at 59.69 78.74 0)
-		(fields_autoplaced yes)
-		(effects
-			(font (size 1.27 1.27))
-			(justify left)
-		)
-		(uuid "50819aa4-a134-4fbc-a525-63d6f12647aa")
-	)
-	(global_label "NET197"
-		(shape bidirectional)
-		(at 59.69 81.28 0)
-		(fields_autoplaced yes)
-		(effects
-			(font (size 1.27 1.27))
-			(justify left)
-		)
-		(uuid "dbdc5b7a-d000-44f7-91e4-6c7906d30509")
-	)
-	(global_label "NET198"
-		(shape bidirectional)
-		(at 67.31 118.11 0)
-		(fields_autoplaced yes)
-		(effects
-			(font (size 1.27 1.27))
-			(justify left)
-		)
-		(uuid "50daf55b-b75d-48e1-b8f5-fc5d382c8cc3")
-	)
-	(global_label "NET199"
-		(shape bidirectional)
-		(at 95.25 139.7 0)
-		(fields_autoplaced yes)
-		(effects
-			(font (size 1.27 1.27))
-			(justify left)
-		)
-		(uuid "9cb483b3-b657-43b8-a2e6-e81a90245a06")
-	)
-	(global_label "NET200"
-		(shape bidirectional)
-		(at 59.69 104.14 0)
-		(fields_autoplaced yes)
-		(effects
-			(font (size 1.27 1.27))
-			(justify left)
-		)
-		(uuid "99993014-512d-47b5-8327-1dab749caf44")
-	)
-	(global_label "NET225"
-		(shape bidirectional)
-		(at 231.14 124.46 0)
-		(fields_autoplaced yes)
-		(effects
-			(font (size 1.27 1.27))
-			(justify left)
-		)
-		(uuid "4b30104f-9bf7-40d9-95a8-dee59172b079")
-	)
-	(global_label "NET226"
-		(shape bidirectional)
-		(at 231.14 127 0)
-		(fields_autoplaced yes)
-		(effects
-			(font (size 1.27 1.27))
-			(justify left)
-		)
-		(uuid "5a1733a8-d6c1-4d9c-92a8-4a1b29da05fb")
-	)
-	(global_label "NET227"
-		(shape bidirectional)
-		(at 231.14 129.54 0)
-		(fields_autoplaced yes)
-		(effects
-			(font (size 1.27 1.27))
-			(justify left)
-		)
-		(uuid "a9953c15-39d7-427d-b336-ac5daa2fd103")
-	)
-	(global_label "NET228"
-		(shape bidirectional)
-		(at 231.14 132.08 270)
-		(fields_autoplaced yes)
-		(effects
-			(font (size 1.27 1.27))
-			(justify left)
-		)
-		(uuid "6c153cfe-eab9-49eb-b938-f2a5c28b414a")
 	)
 	(symbol
 		(lib_id "LIB1:+3.3V")
