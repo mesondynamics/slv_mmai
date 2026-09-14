@@ -4303,29 +4303,19 @@
 		)
 		(uuid "f62b7e56-7a2f-4860-8bbd-f26ed351ba55")
 	)
-	(global_label "NET5"
-		(shape bidirectional)
-		(at 71.12 129.54 0)
-		(fields_autoplaced yes)
-		(effects
-			(font (size 1.27 1.27))
-			(justify left)
-		)
-		(uuid "879df021-8dc5-4d94-b279-8cf1fde84dc1")
-	)
 	(global_label "NET97"
 		(shape bidirectional)
-		(at 82.55 60.96 0)
+		(at 82.55 60.96 90)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
-			(justify left)
+			(justify right)
 		)
 		(uuid "1e764c92-6743-446c-9018-e119fde6c586")
 	)
 	(global_label "NET98"
 		(shape bidirectional)
-		(at 82.55 93.98 0)
+		(at 82.55 93.98 270)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -4335,17 +4325,17 @@
 	)
 	(global_label "NET99"
 		(shape bidirectional)
-		(at 82.55 53.34 0)
+		(at 82.55 53.34 90)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
-			(justify left)
+			(justify right)
 		)
 		(uuid "39469d8b-675d-4212-9ed9-10c387c42738")
 	)
 	(global_label "NET100"
 		(shape bidirectional)
-		(at 82.55 91.44 0)
+		(at 82.55 91.44 270)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -4355,7 +4345,7 @@
 	)
 	(global_label "NET101"
 		(shape bidirectional)
-		(at 102.87 87.63 0)
+		(at 102.87 87.63 270)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -4365,47 +4355,47 @@
 	)
 	(global_label "NET102"
 		(shape bidirectional)
-		(at 82.55 76.2 0)
+		(at 82.55 76.2 180)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
-			(justify left)
+			(justify right)
 		)
 		(uuid "84836057-f286-4d0e-9238-3ecb59c131cd")
 	)
 	(global_label "NET103"
 		(shape bidirectional)
-		(at 82.55 58.42 0)
+		(at 82.55 58.42 90)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
-			(justify left)
+			(justify right)
 		)
 		(uuid "706f7038-b726-434f-9451-5dde5579db0a")
 	)
 	(global_label "NET104"
 		(shape bidirectional)
-		(at 82.55 78.74 0)
+		(at 82.55 78.74 180)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
-			(justify left)
+			(justify right)
 		)
 		(uuid "36733cc0-6d3c-4215-bb90-406d4d8fa3ed")
 	)
 	(global_label "NET105"
 		(shape bidirectional)
-		(at 82.55 63.5 0)
+		(at 82.55 63.5 90)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
-			(justify left)
+			(justify right)
 		)
 		(uuid "c68b0014-766c-402a-96db-ee9e73ded151")
 	)
 	(global_label "NET106"
 		(shape bidirectional)
-		(at 82.55 96.52 0)
+		(at 82.55 96.52 270)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -4415,27 +4405,27 @@
 	)
 	(global_label "NET107"
 		(shape bidirectional)
-		(at 82.55 66.04 0)
+		(at 82.55 66.04 180)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
-			(justify left)
+			(justify right)
 		)
 		(uuid "480334de-995f-4837-88e5-0762e17846d4")
 	)
 	(global_label "NET108"
 		(shape bidirectional)
-		(at 102.87 59.69 0)
+		(at 102.87 59.69 90)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
-			(justify left)
+			(justify right)
 		)
 		(uuid "62d0376f-ce46-427f-8ac8-1bd9630a9642")
 	)
 	(global_label "NET109"
 		(shape bidirectional)
-		(at 82.55 86.36 0)
+		(at 82.55 86.36 270)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -4445,37 +4435,37 @@
 	)
 	(global_label "NET110"
 		(shape bidirectional)
-		(at 102.87 57.15 0)
+		(at 102.87 57.15 90)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
-			(justify left)
+			(justify right)
 		)
 		(uuid "5507fc98-0648-44c9-8124-2eb8bec416dd")
 	)
 	(global_label "NET111"
 		(shape bidirectional)
-		(at 82.55 71.12 0)
+		(at 82.55 71.12 180)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
-			(justify left)
+			(justify right)
 		)
 		(uuid "96f50795-5575-43aa-accb-f59b769087ff")
 	)
 	(global_label "NET112"
 		(shape bidirectional)
-		(at 82.55 68.58 0)
+		(at 82.55 68.58 180)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
-			(justify left)
+			(justify right)
 		)
 		(uuid "358137ae-435c-4e22-8af6-cdacbc3f030c")
 	)
 	(global_label "NET113"
 		(shape bidirectional)
-		(at 82.55 88.9 0)
+		(at 82.55 88.9 270)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -4485,47 +4475,47 @@
 	)
 	(global_label "NET114"
 		(shape bidirectional)
-		(at 82.55 83.82 0)
+		(at 82.55 83.82 180)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
-			(justify left)
+			(justify right)
 		)
 		(uuid "730cd35e-47af-433f-b594-25f9ad212d32")
 	)
 	(global_label "NET115"
 		(shape bidirectional)
-		(at 82.55 55.88 0)
+		(at 82.55 55.88 90)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
-			(justify left)
+			(justify right)
 		)
 		(uuid "82abc156-22ed-4efc-9db6-70e495ffd681")
 	)
 	(global_label "NET116"
 		(shape bidirectional)
-		(at 82.55 81.28 0)
+		(at 82.55 81.28 180)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
-			(justify left)
+			(justify right)
 		)
 		(uuid "098bca44-3a4c-42ad-95a2-e0f969088640")
 	)
 	(global_label "NET117"
 		(shape bidirectional)
-		(at 102.87 62.23 0)
+		(at 102.87 62.23 90)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
-			(justify left)
+			(justify right)
 		)
 		(uuid "83927975-3d2d-43a5-8d2d-acbf6b7c3f33")
 	)
 	(global_label "NET118"
 		(shape bidirectional)
-		(at 102.87 95.25 0)
+		(at 102.87 95.25 270)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -4555,7 +4545,7 @@
 	)
 	(global_label "NET121"
 		(shape bidirectional)
-		(at 102.87 92.71 0)
+		(at 102.87 92.71 270)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -4575,7 +4565,7 @@
 	)
 	(global_label "NET123"
 		(shape bidirectional)
-		(at 102.87 90.17 0)
+		(at 102.87 90.17 270)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -4585,21 +4575,21 @@
 	)
 	(global_label "NET124"
 		(shape bidirectional)
-		(at 102.87 54.61 0)
+		(at 102.87 54.61 90)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
-			(justify left)
+			(justify right)
 		)
 		(uuid "b0f67271-4a13-4400-bba5-4ac85a1d5ce8")
 	)
 	(global_label "NET125"
 		(shape bidirectional)
-		(at 82.55 73.66 0)
+		(at 82.55 73.66 180)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
-			(justify left)
+			(justify right)
 		)
 		(uuid "820d719f-3aaf-49d0-8a59-8d69ac05f4eb")
 	)
@@ -4623,29 +4613,19 @@
 		)
 		(uuid "6a4d6129-5a63-4989-9122-0fee81808bce")
 	)
-	(global_label "NET133"
-		(shape bidirectional)
-		(at 173.99 69.85 0)
-		(fields_autoplaced yes)
-		(effects
-			(font (size 1.27 1.27))
-			(justify left)
-		)
-		(uuid "522cf27a-22aa-4e68-b270-2e3c57dda699")
-	)
 	(global_label "NET173"
 		(shape bidirectional)
-		(at 100.33 151.13 0)
+		(at 100.33 151.13 180)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
-			(justify left)
+			(justify right)
 		)
 		(uuid "f2e9bf3a-b044-4fb2-845f-370729ac6390")
 	)
 	(global_label "NET189"
 		(shape bidirectional)
-		(at 71.12 137.16 0)
+		(at 71.12 137.16 270)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -4655,7 +4635,7 @@
 	)
 	(global_label "NET221"
 		(shape bidirectional)
-		(at 182.88 127 0)
+		(at 182.88 127 270)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -4665,7 +4645,7 @@
 	)
 	(global_label "NET222"
 		(shape bidirectional)
-		(at 210.82 127 0)
+		(at 210.82 127 270)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -4675,7 +4655,7 @@
 	)
 	(global_label "NET223"
 		(shape bidirectional)
-		(at 182.88 139.7 0)
+		(at 182.88 139.7 270)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -4685,7 +4665,7 @@
 	)
 	(global_label "NET224"
 		(shape bidirectional)
-		(at 210.82 139.7 0)
+		(at 210.82 139.7 270)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -4715,21 +4695,21 @@
 	)
 	(global_label "NET231"
 		(shape bidirectional)
-		(at 173.99 62.23 0)
+		(at 173.99 62.23 180)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
-			(justify left)
+			(justify right)
 		)
 		(uuid "f242a628-1346-4e05-b927-88b5967046b0")
 	)
 	(global_label "NET232"
 		(shape bidirectional)
-		(at 173.99 64.77 0)
+		(at 173.99 64.77 180)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
-			(justify left)
+			(justify right)
 		)
 		(uuid "7c5820ae-6fe9-44c9-936a-61bb1fe08cf4")
 	)
