@@ -1,4 +1,4 @@
 (fp_lib_table
   (version 7)
-  (lib (name "Starlight")(type "KiCad")(uri "${KIPRJMOD}/libraries/starlight_lib/starlight.pretty")(options "")(descr "Project-local Starlight footprints, ECU R1"))
+  (lib (name "LIB1")(type "KiCad")(uri "${KIPRJMOD}/libraries/LIB1/LIB1.pretty")(options "")(descr "Project-local footprints"))
 )
