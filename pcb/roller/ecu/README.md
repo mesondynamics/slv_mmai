@@ -46,7 +46,9 @@ CN0415 的示例采用低边开关与高边分流采样；本项目沿用其 PWM
 
 参考电路
 
-![alt text](https://www.analog.com/en/_/media/analog/en/reference-circuits/images/cn0415_03_1024.gif?h=270&thn=1&hash=1C84D1714B9E642C3A51A9F8265A1E39729FF050&rev=3092fce3c685471f98210d2a5f198aa2&sc_lang=en)
+![CN0415 高边电流采样与低边开关](docs/images/cn0415-figure-04-high-side-current-sense.png)
+
+*图示来源：[Analog Devices CN0415](https://www.analog.com/en/resources/reference-designs/circuits-from-the-lab/cn0415.html#rd-description)，对应原文 Figure 4。*
 
 MCU 输出 PWM，栅极驱动器控制 N-MOSFET，INA240 测量线圈电流并提供闭环反馈。比例阀的控制量以线圈电流为核心，并预留死区补偿、峰值/保持和 dither 参数。OpenHumidistat、PneuSoRD 和 AgOpenGPS 分别提供低边恒流驱动、比例阀 PWM 功率级以及双 PWM 液压比例阀控制的开源实现参考，来源见 [S47](#s47)、[S48](#s48)、[S53](#s53) 和 [S54](#s54)。
 
