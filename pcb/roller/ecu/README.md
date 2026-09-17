@@ -36,17 +36,19 @@
 
 <a id="sol-os-01"></a>
 
-本项目的比例阀通道采用以下统一结构：
+#### CN0415 参考设计摘要
 
-```text
-+V → 比例阀线圈 → 50 mΩ 分流器 → 低边 N-MOSFET → GND
-                         ↑
-                  INA240 电流反馈
-```
+本项目采用 [ADI CN0415：Robust, Closed-Loop Control and Monitoring System for Solenoid Actuators](https://www.analog.com/en/resources/reference-designs/circuits-from-the-lab/cn0415.html#rd-description) 作为比例电磁阀驱动的主要公开电路参考，来源条目为 [S38](#s38)。CN0415 页面中的 `Circuit Function & Benefits`、`Circuit Description` 和 `Digital PID Control` 章节，完整说明了比例电磁阀的驱动、采样和保护链路。
 
-MCU 输出 PWM，栅极驱动器控制 N-MOSFET，INA240 测量线圈电流并提供闭环反馈。比例阀的控制量以线圈电流为核心，并预留死区补偿、峰值/保持和 dither 参数。
+CN0415 的示例采用低边开关与高边分流采样；本项目沿用其 PWM、闭环、dither、栅极驱动和过流保护的功能链路，并按 PAGE7 的器件和低边分流器布局实现。相关电流采样与汽车比例阀资料还包括 [S21](#s21)、[S39](#s39)、[S40](#s40)、[S41](#s41) 和 [S42](#s42)。
 
-这一实现组合了三类公开资料：OpenHumidistat 提供带 CERN-OHL-S 硬件文件的低边 VCCS 恒流驱动；PneuSoRD 提供比例阀 PWM、降压功率级和过流保护的开源实现；AgOpenGPS 提供双 PWM 液压比例阀和反馈控制的开源系统参考。对应来源见 [S47](#s47)、[S48](#s48)、[S53](#s53) 和 [S54](#s54)，电流采样与汽车比例阀验证资料见 [S21](#s21)、[S38](#s38)、[S40](#s40)、[S41](#s41)、[S42](#s42)。
+#### 比例阀驱动拓扑
+
+参考电路
+
+![alt text](https://www.analog.com/en/_/media/analog/en/reference-circuits/images/cn0415_03_1024.gif?h=270&thn=1&hash=1C84D1714B9E642C3A51A9F8265A1E39729FF050&rev=3092fce3c685471f98210d2a5f198aa2&sc_lang=en)
+
+MCU 输出 PWM，栅极驱动器控制 N-MOSFET，INA240 测量线圈电流并提供闭环反馈。比例阀的控制量以线圈电流为核心，并预留死区补偿、峰值/保持和 dither 参数。OpenHumidistat、PneuSoRD 和 AgOpenGPS 分别提供低边恒流驱动、比例阀 PWM 功率级以及双 PWM 液压比例阀控制的开源实现参考，来源见 [S47](#s47)、[S48](#s48)、[S53](#s53) 和 [S54](#s54)。
 
 ### 改装车辆信号切换
 
@@ -116,8 +118,8 @@ OpenPodcar 提供车辆点火线切断、COM/NO 继电器和 Deadman 安全链�
 
 | ID | 电路与覆盖范围 | 公开依据（文档定位） | 等级 | 本项目实现说明 |
 | --- | --- | --- | --- | --- |
-| P7-01 | 两个比例电磁阀低边驱动通道：`U10,U11,Q2,Q3,D2,D3,R79-R82,C72-C75` | [比例阀低边恒流驱动](#sol-os-01)；[S18](#s18)，Typical Application；[S19](#s19)；[S20](#s20) | B | 本项目采用 UCC27517A-Q1 控制 N-MOSFET，STPS5L60SY 提供续流路径，并以闭环电流建立比例阀控制量。 |
-| P7-02 | 两路 50 mΩ 分流电阻与 INA240 电流检测：`R1,R2,U6,U12,R83,R84,C76,C77` | [比例阀低边恒流驱动](#sol-os-01)；[S21](#s21)，§9.2.2、§9.3.2；[S22](#s22) | B | 本项目采用 INA240 的 PWM 抑制和 Kelvin 采样方法；分流器为 50 mΩ、3 W，采样增益、量程、功耗和滤波按实际阀线圈验证。 |
+| P7-01 | 两个比例电磁阀低边驱动通道：`U10,U11,Q2,Q3,D2,D3,R79-R82,C72-C75` | [比例阀低边恒流驱动](#sol-os-01)；[S38](#s38)；[S18](#s18)，Typical Application；[S19](#s19)；[S20](#s20) | B | 本项目采用 UCC27517A-Q1 控制 N-MOSFET，STPS5L60SY 提供续流路径，并以闭环电流建立比例阀控制量；CN0415 提供 PWM、dither、栅极驱动和过流保护的系统级参考。 |
+| P7-02 | 两路 50 mΩ 分流电阻与 INA240 电流检测：`R1,R2,U6,U12,R83,R84,C76,C77` | [比例阀低边恒流驱动](#sol-os-01)；[S38](#s38)；[S21](#s21)，§9.2.2、§9.3.2；[S22](#s22) | B | 本项目采用 INA240 的 PWM 抑制和 Kelvin 采样方法；分流器为 50 mΩ、3 W，采样增益、量程、功耗和滤波按实际阀线圈验证，功能链路对应 CN0415 的电流监测和闭环控制。 |
 
 ### PAGE8 — 模拟量、温度、隔离量与脉冲输入
 
@@ -266,8 +268,8 @@ https://www.te.com/en/product-776087-1.html
 <a id="s37"></a>**S37 — Texas Instruments, SN74AHCT541-Q1 product page**, automotive octal buffer/line driver；用于确认 `SN74AHCT541QPWRQ1` 的三态缓冲和使能功能。<br>
 https://www.ti.com/product/SN74AHCT541-Q1
 
-<a id="s38"></a>**S38 — Analog Devices, CN0415: Robust, Closed-Loop Control and Monitoring System for Solenoid Actuators**, Circuit Note，Rev. 0；比例阀 PWM、电流闭环、dither、保护和低边开关架构。<br>
-https://www.analog.com/en/resources/reference-designs/circuits-from-the-lab/cn0415.html
+<a id="s38"></a>**S38 — Analog Devices, CN0415: Robust, Closed-Loop Control and Monitoring System for Solenoid Actuators**, Circuit Note，Rev. 0；`Circuit Function & Benefits` 和 `Circuit Description` 章节给出比例/两态电磁阀的 PWM/PID、dither、电流采样、栅极驱动和过流保护；其功率级采用低边开关，分流器位于低边开关上侧的高边采样位置。<br>
+https://www.analog.com/en/resources/reference-designs/circuits-from-the-lab/cn0415.html#rd-description
 
 <a id="s39"></a>**S39 — Analog Devices, CN0415 Circuit Note PDF**, Figures 1、4、12；比例/两态电磁阀驱动、电流采样和闭环测试。<br>
 https://www.analog.com/media/en/reference-design-documentation/reference-designs/cn0415.pdf
