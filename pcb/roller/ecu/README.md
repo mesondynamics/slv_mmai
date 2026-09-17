@@ -4,11 +4,30 @@
 
 ## 证据等级
 
-| 等级 | 含义 | 使用边界 |
-| --- | --- | --- |
-| A | 同型号器件的官方典型应用、参考原理图或评估板与本页拓扑近似 | 可以作为直接复核依据；元件值仍应按实际工况重新核算 |
-| B | 同型号官方数据手册/应用笔记给出的连接规则、接口电路或设计方法 | 支持局部结构或设计规则，不表示整块电路完全相同 |
-| C | 公开的通用原理、相邻型号资料或器件能力说明 | 只证明方案合理性；不能据此认定历史来源或完成参数验证 |
+| 等级 | 含义 |
+| --- | --- |
+| A | 同型号器件的官方典型应用、参考原理图或评估板与本页拓扑近似 | 
+| B | 同型号官方数据手册/应用笔记给出的连接规则、接口电路或设计方法 |
+| C | 公开的通用原理、相邻型号资料或器件能力说明 |
+
+## 系统级方案
+
+### 开源比例阀实现参考
+
+<a id="sol-os-01"></a>
+
+| 控制方法 | 公开依据 | 等级 | 与当前工程的适配边界 |
+| --- | --- | --- | --- |
+| `+V → 比例阀线圈 → N-MOSFET 低边恒流吸收 → GND`；低功率 PWM 作为控制输入，恒流 VCCS 使线圈电流而不是线圈电阻漂移决定阀控量；同时参考比例阀死区/流量映射和双 PWM 系统 | [S53](#s53) OpenHumidistat 硬件；[S54](#s54) OpenHumidistat 论文；[S47](#s47) PneuSoRD；[S48](#s48) AgOpenGPS 硬件 | B | OpenHumidistat 是当前找到的最直接开源低边恒流比例阀参考，硬件以 CERN-OHL-S 发布，公开 KiCad 原理图/PCB/BOM；PneuSoRD 的比例通道是半桥同步降压，AgOpenGPS 证明双 PWM 液压比例阀控制是公开可复用的系统模式。 |
+
+### 改装车辆信号：断开、替代切换和直接电源/地控制
+
+<a id="rly-sys-01"></a>
+
+| 控制方法 | 公开依据 | 等级 | 与当前工程的适配边界 |
+| --- | --- | --- | --- |
+| 对需要改装的原车信号执行 **break-before-make**：先断开原路径，再接通替代路径；同一信号组互斥；继电器级联扩展通道。对无需切断的信号，直接提供受控电源或低边接地。掉电、复位和故障状态进入断开/安全态。 | [S43](#s43) OpenPodcar 的车辆点火线继电器切换和 Deadman 安全链；[S44](#s44) OpenPodcar 硬件图；[S45](#s45) Subaru BRZ VCU 的低边继电器、受控电源/地和信号复用；[S46](#s46) relay_matrix_edsp 的交叉点矩阵、级联驱动、互斥命令和状态查询；[S13](#s13) TPIC6A595 级联低边驱动 | B | 三个公开项目共同支撑“切断原信号→切换替代信号→直接接入电源/地”的系统架构。 |
+
 
 ## 电路划分与来源映射
 
@@ -17,7 +36,7 @@
 | ID | 电路与覆盖范围 | 公开依据（文档定位） | 等级 | 对应关系与差异 |
 | --- | --- | --- | --- | --- |
 | P1-01 | 高电流同步降压：`U8`、`L2` 及其输入、输出、反馈、频率设定和去耦网络 | [S01](#s01)，Figure 10，p.69 | A | 同为 MPQ4371-1000 的 5 V、2.2 MHz 典型应用；反馈、频率设定、输入/输出电容结构高度一致。工程中的器件额定值、并联数量及使能/模式配置需以原理图和负载验证为准。 |
-| P1-02 | 小功率同步降压：`U9`、`L1` 及 `C7,C10-C12,C14-C18,C23,C25,C26,R23-R30,R32,R33,R50,R60,R61,R64` | [S02](#s02)，Application Information 与 Typical Application Circuits，pp.21–25 | A | 拓扑、软启动、反馈、输入/输出去耦与 MPQ2178 典型应用一致；输出电压和可选/未装参数属于工程定制。 |
+| P1-02 | 小功率同步降压：`U9`、`L1` 及 `C7,C10-C12,C14-C18,C23,C25,C26,R23-R30,R32,R33,R50,R60,R61,R64` | [S02](#s02)，Application Information 与 Typical Application Circuits，pp.21–25 | A | 拓扑、软启动、反馈、输入/输出去耦与 MPQ2178 典型应用一致。 |
 | P1-03 | 两组电源良好/状态指示与开漏缓冲：`Q1,Q9,D7,D14,R34,R35,R63,R65,R66` | [S01](#s01)，Power Good；[S02](#s02)，Power Good；[S15](#s15)，MOSFET switching application | B | 数据手册支持开漏状态输出和外部上拉；LED 与小信号 MOSFET组合属于实现层设计，并非数据手册中的完整复制电路。 |
 
 ### PAGE2 — MCU、时钟、复位、调试与安全器件
@@ -50,28 +69,27 @@
 | P4-01 | 两个同构 CAN 收发与可配置 120 Ω 端接通道：`U13,U14,C40,C85,R42,R43,R107,R108` | [S11](#s11)，Figures 38–39，p.27 | A | 官方图给出 CAN 总线与 120 Ω 端接原则；0 Ω 配置电阻使端接是否接入由装配方案决定。 |
 | P4-02 | 两路 CAN 线对浪涌/ESD 保护：`D21,D22` | [S12](#s12)，High-Speed/Fault-Tolerant CAN Surge Protection application figure | A | NUP2105L 官方应用图即为 CANH/CANL 双线保护；最终抗扰度仍需结合接地回路和 PCB 布局验证。 |
 
-### PAGE5 — 逻辑缓冲与串行低边驱动
+### PAGE5 — 继电器驱动逻辑与串行低边驱动
 
 | ID | 电路与覆盖范围 | 公开依据（文档定位） | 等级 | 对应关系与差异 |
 | --- | --- | --- | --- | --- |
-| P5-01 | 八路逻辑缓冲/三态控制：`U300,C68,R75,R76,R78` | [S14](#s14)，Function Table、Typical Application 与 power-supply recommendations | B | 器件功能与使能脚连接有直接依据；各通道所驱动的工程信号不在公开来源中。 |
-| P5-02 | 四片级联串入并出低边驱动：`U301-U304,C5,C21,C66,C67,R71-R74` | [S13](#s13)，§7.3.3 与 §7.3.4 Cascaded Application，p.13 | A | SER OUT 到下一片 SER IN 的级联方式、低边开漏 DMOS 和感性负载钳位均由官方资料明确给出；负载数量与映射为工程定制。 |
+| P5-01 | 继电器驱动前端与四片低边驱动器组合链：`U300,U301-U304,Q6,C5,C21,C66-C68,R71-R78` | [S14](#s14)，Function Table、三态输出与电源建议；[S37](#s37)，SN74AHCT541-Q1 产品资料；[S13](#s13)，§7.3.3、§7.3.4，p.13 | B | `SN74AHCT541QPWRQ1` 提供受使能控制的并行逻辑，`TPIC6A595DWR` 提供串入并出、开漏低边输出、感性负载钳位及级联；公开资料分别支持两级器件，未发现该工程组合的同图官方参考设计，因此组合整体定为 B 级。 |
+| P5-02 | TPIC 输出级及四片级联：`U301-U304,C5,C21,C66,C67,R71-R74` | [S13](#s13)，§7.3.3 与 §7.3.4 Cascaded Application，p.13 | A | SER OUT 到下一片 SER IN、低边开漏 DMOS 和感性负载钳位均由官方资料明确给出；负载数量与映射为工程定制。 |
 | P5-03 | 小信号 MOSFET 控制/电平处理：`Q6,R77` | [S15](#s15)，Description and Applications | C | 器件适合开关和电源管理；仅凭公开数据手册无法确定该局部逻辑的唯一参考电路。 |
 
-### PAGE6 — 继电器触点阵列与电源储能
+### PAGE6 — 继电器触点矩阵（本次忽略）与电源储能
 
 | ID | 电路与覆盖范围 | 公开依据（文档定位） | 等级 | 对应关系与差异 |
 | --- | --- | --- | --- | --- |
-| P6-01 | 18 个常开继电器单元：`K4,K6,K8,K10,K12,K14-K23,K25-K27` | [S16](#s16)，HFV6 Contact Form 1 Form A 与 ratings | B | 库封装和触点形式对应 HFV6 系列 1 Form A；整个触点矩阵的组合关系是项目专用，未找到公开的同拓扑参考设计。 |
-| P6-02 | 9 个转换继电器单元：`K1,K2,K3,K5,K7,K9,K11,K13,K24` | [S16](#s16)，HFV6 Contact Form 1 Form C 与 ratings | B | 器件级触点形式可追溯至厂商资料；联锁/切换组合仅能按本页连线复核，不能声称来自某一公开示例。 |
-| P6-03 | 继电器电源母线储能：`C22,C69-C71` | [S17](#s17)，Input and Output Capacitor Selection，bulk-capacitance discussion | C | 并联大容量电容符合负载阶跃储能的一般原则；容量、ESR、纹波电流、浪涌及故障能量必须按实际继电器同时动作数验证。 |
+| P6-01 | 继电器触点矩阵：`K1-K27` | [RLY-SYS-01](#rly-sys-01) | — | 按用户要求，不展开每个触点组合的来源追溯；车辆信号断开、替代切换、直接电源/地接入和安全时序见 RLY-SYS-01。 |
+| P6-02 | 继电器电源母线储能：`C22,C69-C71` | [S17](#s17)，Input and Output Capacitor Selection，bulk-capacitance discussion | C | 并联大容量电容符合负载阶跃储能的一般原则；容量、ESR、纹波电流、浪涌及故障能量必须按实际继电器同时动作数验证。 |
 
 ### PAGE7 — 两路功率低边驱动与电流检测
 
 | ID | 电路与覆盖范围 | 公开依据（文档定位） | 等级 | 对应关系与差异 |
 | --- | --- | --- | --- | --- |
-| P7-01 | 两个同构的栅极驱动、N-MOSFET 低边开关和续流二极管通道：`U10,U11,Q2,Q3,D2,D3,R79-R82,C72-C75` | [S18](#s18)，Typical Application；[S19](#s19)；[S20](#s20) | B | UCC27517A-Q1 支持低边 MOSFET 栅极驱动，MOSFET 与 60 V/5 A Schottky 的额定能力由各自数据手册支持；完整功率级及门极电阻值是工程实现。 |
-| P7-02 | 两路 50 mΩ 分流电阻与 INA240 电流检测：`R1,R2,U6,U12,R83,R84,C76,C77` | [S21](#s21)，§9.2.2 Solenoid Drive Current-Sense Application，Figure 9-5；[S22](#s22) | A | INA240 官方应用与 PWM/感性负载电流检测直接对应；分流器为 50 mΩ、3 W。量程、功耗、Kelvin 引线和滤波仍须按峰值电流验证。 |
+| P7-01 | 两个比例电磁阀低边驱动通道：`U10,U11,Q2,Q3,D2,D3,R79-R82,C72-C75` | [SOL-SYS-01](#sol-sys-01)；[SOL-OS-01](#sol-os-01)；[S18](#s18)，Typical Application；[S19](#s19)；[S20](#s20) | B | 现有功率级锁定为比例阀的低边 PWM 驱动：UCC27517A-Q1 控制 N-MOSFET，STPS5L60SY 提供续流路径。比例关系由闭环电流而非占空比单独决定。 |
+| P7-02 | 两路 50 mΩ 分流电阻与 INA240 电流检测：`R1,R2,U6,U12,R83,R84,C76,C77` | [SOL-SYS-01](#sol-sys-01)；[S21](#s21)，§9.2.2、§9.3.2；[S22](#s22) | B | INA240 的水阀电流采样实例、PWM 抑制和 Kelvin 连接要求与本方案一致；分流器为 50 mΩ、3 W，采样增益、量程、功耗和滤波仍须按实际阀线圈验证。 |
 
 ### PAGE8 — 模拟量、温度、隔离量与脉冲输入
 
@@ -92,16 +110,9 @@
 | P9-03 | 两个密封板端连接器：`J6,J7` | [S35](#s35)；[S36](#s36) | A | 厂商页面/图纸分别确认 35 位和 23 位 AMPSEAL 直角板端连接器。针位的电气分配属于工程定义。 |
 | P9-04 | 带焊盘安装孔：`H1-H4` | 本工程机械/接地实现，无唯一外部参考电路 | C | 位号覆盖完整；是否连接机壳、保护地或信号参考必须结合 PCB、结构和 EMC 方案判断。 |
 
-## 尚不能由公开资料证明的内容
-
-- PAGE6 的继电器矩阵、PAGE8 的完整脉冲整形链路以及各页的网络分配属于项目级组合。本文只证明其器件用法或通用原理有公开依据，不把它们描述成某份公开参考设计的复制品。
-- `ESD5V0D5` 在当前匿名库中的数据手册字段指向另一相邻系列，且型号本身有多个供应商版本；在 BOM/采购料号未明确前，只能使用同型号公开资料作 C 级参考。
-- 公开典型应用不能替代设计验证。汽车电源瞬态、EMC、热、降额、晶体负阻、ADC 故障注入、继电器触点寿命和功能安全均需单独计算与试验。
-- 文档链接可能随厂商网站更新；下列条目记录了文档号、章节或图号，以便链接迁移后继续检索。
-
 ## 公开来源
 
-访问日期均为 **2026-09-15**。
+访问日期均为 **2026-09-17**。
 
 <a id="s01"></a>**S01 — Monolithic Power Systems, MPQ4371-AEC1 Datasheet**, Rev. 1.0，2024-03-21，Figure 10 “Typical Application Circuit for MPQ4371-1000”，p.69。  
 https://www.monolithicpower.com/en/documentview/productdocument/index/version/2/document_type/Datasheet/lang/en/sku/MPQ4371GVE-AEC1/
@@ -148,7 +159,7 @@ https://www.ti.com/lit/ds/symlink/sn74ahct541.pdf
 <a id="s15"></a>**S15 — Diodes Incorporated, 2N7002KQ Datasheet**, DS43528，Description and Applications。  
 https://www.diodes.com/datasheet/download/2N7002KQ.pdf
 
-<a id="s16"></a>**S16 — Hongfa, HFV6 Automotive Relay product page/data sheet**, 1 Form A、1 Form C 与额定参数。  
+<a id="s16"></a>**S16 — Hongfa, HFV6 Automotive Relay product page/data sheet**, 1 Form A、1 Form C 与额定参数；仅用于库中继电器型号识别，不作为 PAGE6 触点矩阵的拓扑来源。<br>
 https://www.hongfa.com/Product/automotive-relay/HFV6
 
 <a id="s17"></a>**S17 — Texas Instruments, SLTA055: Input and Output Capacitor Selection**, bulk-capacitance 与 ESR 讨论。  
@@ -210,6 +221,66 @@ https://www.te.com/commerce/DocumentDelivery/DDEController?Action=selcritrslt&is
 
 <a id="s36"></a>**S36 — TE Connectivity, 776087-1 product page**, 23-position AMPSEAL header；drawing 776087、specification 114-16016。  
 https://www.te.com/en/product-776087-1.html
+
+<a id="s37"></a>**S37 — Texas Instruments, SN74AHCT541-Q1 product page**, automotive octal buffer/line driver；用于确认 `SN74AHCT541QPWRQ1` 的三态缓冲和使能功能。<br>
+https://www.ti.com/product/SN74AHCT541-Q1
+
+<a id="s38"></a>**S38 — Analog Devices, CN0415: Robust, Closed-Loop Control and Monitoring System for Solenoid Actuators**, Circuit Note，Rev. 0；比例阀 PWM、电流闭环、dither、保护和低边开关架构。<br>
+https://www.analog.com/en/resources/reference-designs/circuits-from-the-lab/cn0415.html
+
+<a id="s39"></a>**S39 — Analog Devices, CN0415 Circuit Note PDF**, Figures 1、4、12；比例/两态电磁阀驱动、电流采样和闭环测试。<br>
+https://www.analog.com/media/en/reference-design-documentation/reference-designs/cn0415.pdf
+
+<a id="s40"></a>**S40 — Analog Devices, AN-105: Current Sense Circuit Collection**, Figure 122 “Monitor Solenoid Current on the Low Side”。<br>
+https://www.analog.com/en/resources/app-notes/an-105fa.html
+
+<a id="s41"></a>**S41 — Texas Instruments, TIDA-020023: Automotive proportional solenoid drive with highly accurate current sensor reference design**, 设计页面；1 kHz PWM、汽车比例电磁阀和验证文件。<br>
+https://www.ti.com/tool/TIDA-020023
+
+<a id="s42"></a>**S42 — Texas Instruments, TIDUEO6A: Automotive Proportional Solenoid Drive With Highly-Accurate Current Sensor**, Rev. A，§§2.3.3、2.4.3、2.4.4、3.2，Figures 4、6、11–15。<br>
+https://www.ti.com/lit/ug/tidueo6a/tidueo6a.pdf
+
+<a id="s43"></a>**S43 — OpenPodcar/OpenPodcar**, public open-source vehicle project；README 的 “DeadMan Handle (DMH) and Relay” 小节记录车辆点火线切断、COM/NO 继电器切换和失效保护；仓库注明软件 GPL-2.0、硬件 CERN-OHL-W。<br>
+https://github.com/OpenPodcar/OpenPodcar
+
+<a id="s44"></a>**S44 — OpenPodcar vehicle circuit diagram**, public hardware diagram；用于复核车辆继电器接入和安全链路。<br>
+https://github.com/OpenPodcar/OpenPodcar/blob/master/docs/hardware/OpenPodcar_Components_Circuit_Diagram_colored.pdf
+
+<a id="s45"></a>**S45 — outlandnish/subaru-brz-vcu**, public vehicle-control design notes；README 的 “Low side relay control”“repurposed signals”“Notes about power” sections。当前仓库未发现明确许可证，本条仅作公开架构引用，不复制代码或硬件文件。<br>
+https://github.com/outlandnish/subaru-brz-vcu/blob/main/Readme.md
+
+<a id="s46"></a>**S46 — darderik/relay_matrix_edsp**, MIT-licensed open-source relay matrix controller；README 的 4×4 crosspoint、TPL9201 drivers、exclusive switching commands 和 status query sections。<br>
+https://github.com/darderik/relay_matrix_edsp
+
+<a id="s47"></a>**S47 — PrecisionMechatronicsLab/PneuSoRD**, MIT-licensed open-source pneumatic soft-robotics driver；README 的 Proportional 2x2 control、PWM/buck converter 和 Motor/Proportional Drive hardware sections。仓库包含 `PCB_PneuSoRD` 原理图/PCB/BOM；比例通道使用 DRV8870 半桥同步降压并带 Rsen 过流限制，属于开源比例阀功率级参考，但不等同于本工程的外置 INA240 电流闭环。<br>
+https://github.com/PrecisionMechatronicsLab/PneuSoRD
+
+<a id="s48"></a>**S48 — GormR/HW_for_AgOpenGPS**, open-source agricultural steering hardware；README 明确以 CERN-OHL-S-2.0 发布硬件，Level 2 说明液压系统直接驱动可使用专用比例阀和两路 PWM。该项目不是压路机方案，但提供了可复核的“双 PWM + 液压比例阀 + 反馈”公开系统参考。<br>
+https://github.com/GormR/HW_for_AgOpenGPS/blob/main/README.md
+
+<a id="s49"></a>**S49 — CN204998342U, Electrical system of road roller**, Google Patents 公开号；公开压路机挡位选择、前进/后退传感器、控制器、方向电磁阀及中位/换向行为。该条是 PUB（公开专利），不是开源许可证来源。<br>
+https://patents.google.com/patent/CN204998342U/en
+
+<a id="s50"></a>**S50 — CN202213498U, An electrical displacement control device for road roller travel**, Google Patents 公开号；公开电比例手柄、前进/中位/后退三档、比例电磁阀和泵排量控制（14±5 mA 至 85±18 mA 的比例范围描述）。该条是 PUB（公开专利），不是开源许可证来源。<br>
+https://patents.google.com/patent/CN202213498U/en
+
+<a id="s51"></a>**S51 — CN103669178B, The electric proportional control system of road roller open type vibration**, Google Patents 公开号；公开压路机控制器、行走速度/振动频率/发动机转速传感器、高低幅比例电磁阀及闭环控制。该条是 PUB（公开专利），不是开源许可证来源。<br>
+https://patents.google.com/patent/CN103669178B/en
+
+<a id="s52"></a>**S52 — US4310261A, Control mechanism for vibratory roller**, Google Patents 公开号；公开振动压路机前进/后退开关、方向继电器、方向执行电磁装置、自保持及回中位切断/安全启动逻辑。该条是 PUB（公开专利），不是开源许可证来源。<br>
+https://patents.google.com/patent/US4310261A/en
+
+<a id="s53"></a>**S53 — OpenHumidistat/hardware**, CERN Open Hardware Licence Version 2 — Strongly Reciprocal（CERN-OHL-S-2.0）；公开 `solenoid_driver` KiCad 原理图、PCB 和工程文件。原理图标题为 “Voltage-controlled current sink solenoid valve driver (x2)”，两路比例阀线圈由低边 MOSFET 恒流吸收级驱动。<br>
+https://github.com/OpenHumidistat/hardware
+https://github.com/OpenHumidistat/hardware/blob/main/solenoid_driver/compact.kicad_sch
+
+<a id="s54"></a>**S54 — Veldscholte & de Beer, “OpenHumidistat: Humidity-controlled experiments for everyone”**, HardwareX 11 (2022) e00288；公开说明 solenoid driver 接收 MCU 低功率 PWM，并实现两路 VCCS（Voltage-Controlled Current Sink）恒流驱动，提供原理图/PCB 设计文件和 CERN-OHL-S 许可信息。<br>
+https://pmc.ncbi.nlm.nih.gov/articles/PMC9058855/
+https://doi.org/10.1016/j.ohx.2022.e00288
+
+<a id="s55"></a>**S55 — CN208632915U / CN108330782A, 一种液压驱动压路机用安全操控装置**, Google Patents 公开号；公开驻车/手柄中位/座椅开关、速度/转速检测、控制器以及前进比例阀、后退比例阀和制动阀；权利要求明确这些阀接地，公开文本还描述控制器按安全条件向前进或后退比例阀输出电流。该条是 PUB（公开专利），不是开源许可证来源。<br>
+https://patents.google.com/patent/CN208632915U/zh
+https://patents.google.com/patent/CN108330782A/en
 
 ## 维护规则
 
