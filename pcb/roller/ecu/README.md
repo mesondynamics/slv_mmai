@@ -50,7 +50,7 @@ CN0415 的示例采用低边开关与高边分流采样；本项目沿用其 PWM
 
 *图示来源：[Analog Devices CN0415](https://www.analog.com/en/resources/reference-designs/circuits-from-the-lab/cn0415.html#rd-description)，对应原文 Figure 4。*
 
-MCU 输出 PWM，栅极驱动器控制 N-MOSFET，INA240 测量线圈电流并提供闭环反馈。比例阀的控制量以线圈电流为核心，并预留死区补偿、峰值/保持和 dither 参数。OpenHumidistat、PneuSoRD 和 AgOpenGPS 分别提供低边恒流驱动、比例阀 PWM 功率级以及双 PWM 液压比例阀控制的开源实现参考，来源见 [S47](#s47)、[S48](#s48)、[S53](#s53) 和 [S54](#s54)。
+MCU 输出 PWM，栅极驱动器控制 N-MOSFET，INA240 测量线圈电流并提供闭环反馈。比例阀的控制量以线圈电流为核心，并预留死区补偿、峰值/保持和 dither 参数。OpenHumidistat、PneuSoRD 和 AgOpenGPS 分别提供低边恒流驱动、比例阀 PWM 功率级以及双 PWM 液压比例阀控制的开源实现参考，来源见 [S47](#s47)、[S48](#s48)、[S49](#s49) 和 [S50](#s50)。
 
 ### 改装车辆信号切换
 
@@ -113,7 +113,7 @@ OpenPodcar 提供车辆点火线切断、COM/NO 继电器和 Deadman 安全链�
 
 | ID | 电路与覆盖范围 | 公开依据（文档定位） | 等级 | 本项目实现说明 |
 | --- | --- | --- | --- | --- |
-| P6-01 | 继电器触点矩阵：`K1-K27` | [RLY-SYS-01](#rly-sys-01) | — | 本项目重点记录矩阵的驱动、切换行为和安全时序；逐触点组合由工程连接表维护，车辆信号断开、替代切换、直接电源/地接入见 RLY-SYS-01。 |
+| P6-01 | 继电器触点矩阵：`K1-K27` | [RLY-SYS-01](#rly-sys-01)；[S16](#s16) | — | 本项目重点记录矩阵的驱动、切换行为和安全时序；逐触点组合由工程连接表维护，车辆信号断开、替代切换、直接电源/地接入见 RLY-SYS-01。 |
 | P6-02 | 继电器电源母线储能：`C22,C69-C71` | [S17](#s17)，Input and Output Capacitor Selection，bulk-capacitance discussion | C | 并联大容量电容符合负载阶跃储能的一般原则；容量、ESR、纹波电流、浪涌及故障能量必须按实际继电器同时动作数验证。 |
 
 ### PAGE7 — 两路功率低边驱动与电流检测
@@ -154,159 +154,161 @@ OpenPodcar 提供车辆点火线切断、COM/NO 继电器和 Deadman 安全链�
 | [S46](#s46) relay_matrix_edsp | MIT | 交叉点矩阵、级联驱动、互斥命令和状态查询 |
 | [S47](#s47) PneuSoRD | MIT | 比例阀 PWM、降压功率级、过流保护和多通道驱动 |
 | [S48](#s48) HW_for_AgOpenGPS | CERN-OHL-S-2.0（硬件） | 双 PWM 液压比例阀、反馈控制和开源农机执行器接口 |
-| [S53](#s53) OpenHumidistat/hardware | CERN-OHL-S-2.0 | 两路低边 VCCS 恒流比例阀驱动、KiCad 原理图/PCB/BOM |
-| [S54](#s54) OpenHumidistat 论文 | 公开论文与配套开源设计 | PWM 输入、恒流控制、温升补偿和比例阀闭环方法 |
+| [S49](#s49) OpenHumidistat/hardware | CERN-OHL-S-2.0 | 两路低边 VCCS 恒流比例阀驱动、KiCad 原理图/PCB/BOM |
+| [S50](#s50) OpenHumidistat 论文 | 公开论文与配套开源设计 | PWM 输入、恒流控制、温升补偿和比例阀闭环方法 |
 
 ### 详细来源条目
 
-<a id="s01"></a>**S01 — Monolithic Power Systems, MPQ4371-AEC1 Datasheet**, Rev. 1.0，2024-03-21，Figure 10 “Typical Application Circuit for MPQ4371-1000”，p.69。  
+本节采用标准文献条目格式，仅列出机构/作者、文献题名、版本或出版信息、章节/图表定位和原始链接；电路与本项目的对应关系统一记录在上方的 PAGE 表格和系统级方案中。
+
+<a id="s01"></a>**S01 — Monolithic Power Systems, MPQ4371-AEC1 Datasheet**, Rev. 1.0 (2024-03-21), Figure 10 “Typical Application Circuit for MPQ4371-1000”, p. 69.<br>
 https://www.monolithicpower.com/en/documentview/productdocument/index/version/2/document_type/Datasheet/lang/en/sku/MPQ4371GVE-AEC1/
 
-<a id="s02"></a>**S02 — Monolithic Power Systems, MPQ2178-AEC1 Datasheet**, Rev. 1.1，2023-05-04，Application Information 与 Typical Application Circuits，pp.21–25。  
+<a id="s02"></a>**S02 — Monolithic Power Systems, MPQ2178-AEC1 Datasheet**, Rev. 1.1 (2023-05-04), Application Information; Typical Application Circuits, pp. 21–25.<br>
 https://www.monolithicpower.com/en/documentview/productdocument/index/version/2/document_type/Datasheet/lang/en/sku/MPQ2178GQHE-AEC1/
 
-<a id="s03"></a>**S03 — STMicroelectronics, AN5711: Getting started with STM32H5 MCU hardware development**, Rev. 3，Figures 2、9、12、15、19。  
+<a id="s03"></a>**S03 — STMicroelectronics, AN5711: Getting started with STM32H5 MCU hardware development**, Rev. 3, Figures 2, 9, 12, 15, 19.<br>
 https://www.st.com/resource/en/application_note/an5711-getting-started-with-stm32h5-mcu-hardware-development-stmicroelectronics.pdf
 
-<a id="s04"></a>**S04 — STMicroelectronics, AN2867: Oscillator design guide for STM8AF/AL/S, STM32 MCUs and MPUs**, Rev. 21，§§3–4。  
+<a id="s04"></a>**S04 — STMicroelectronics, AN2867: Oscillator design guide for STM8AF/AL/S, STM32 MCUs and MPUs**, Rev. 21, §§ 3–4.<br>
 https://www.st.com/resource/en/application_note/an2867-oscillator-design-guide-for-stm8afals-stm32-mcus-and-mpus-stmicroelectronics.pdf
 
-<a id="s05"></a>**S05 — Microchip, CryptoAuthentication ATECC608C Summary Data Sheet**, DS40002513，Figure 1 与 Table 1。  
+<a id="s05"></a>**S05 — Microchip, CryptoAuthentication ATECC608C Summary Data Sheet**, DS40002513, Figure 1; Table 1.<br>
 https://ww1.microchip.com/downloads/aemDocuments/documents/SCBU/ProductDocuments/DataSheets/ATECC608C-CryptoAuthentication-Summary-Data-Sheet-DS40002513.pdf
 
-<a id="s06"></a>**S06 — Microchip, DT100104 Schematic**, Rev. 5，2024-05-06，sheet 1。  
+<a id="s06"></a>**S06 — Microchip, DT100104 Schematic**, Rev. 5 (2024-05-06), sheet 1.<br>
 https://ww1.microchip.com/downloads/aemDocuments/documents/SCBU/ProductDocuments/BoardDesignFiles/DT100104-Schematic.PDF
 
-<a id="s07"></a>**S07 — Microchip, LAN8742A/LAN8742Ai Datasheet**, DS00001989A，§3.9，Figures 3-20、3-21、3-23。  
+<a id="s07"></a>**S07 — Microchip, LAN8742A/LAN8742Ai Datasheet**, DS00001989A, § 3.9, Figures 3-20, 3-21, 3-23.<br>
 https://www.microchip.com/content/dam/mchp/documents/OTH/ProductDocuments/DataSheets/DS_LAN8742_00001989A.pdf
 
-<a id="s08"></a>**S08 — Bourns, SM91071AL 10/100 Base-T Transformer Datasheet**。  
+<a id="s08"></a>**S08 — Bourns, SM91071AL 10/100 Base-T Transformer Datasheet**.<br>
 https://www.bourns.com/docs/product-datasheets/sm91071al.pdf
 
-<a id="s09"></a>**S09 — Cinch Connectivity Solutions, SS-12400-004 product page and drawings**。  
+<a id="s09"></a>**S09 — Cinch Connectivity Solutions, SS-12400-004 product page and drawings**.<br>
 https://www.cinch.com/products/ethernet-usb/connectors/m-series-connectors/ss-12400-004
 
-<a id="s10"></a>**S10 — STMicroelectronics, USBLC6-4 Datasheet**, application diagrams 与 layout recommendations。  
+<a id="s10"></a>**S10 — STMicroelectronics, USBLC6-4 Datasheet**, application diagrams; layout recommendations.<br>
 https://www.st.com/resource/en/datasheet/usblc6-4.pdf
 
-<a id="s11"></a>**S11 — Texas Instruments, SN65HVD230/SN65HVD231/SN65HVD232 Datasheet**, Rev. O，Figures 38–39，p.27。  
+<a id="s11"></a>**S11 — Texas Instruments, SN65HVD230/SN65HVD231/SN65HVD232 Datasheet**, Rev. O, Figures 38–39, p. 27.<br>
 https://www.ti.com/lit/ds/symlink/sn65hvd230.pdf
 
-<a id="s12"></a>**S12 — onsemi, NUP2105L Dual Line CAN Bus Protector Datasheet**, High-Speed/Fault-Tolerant CAN Surge Protection application figure。  
+<a id="s12"></a>**S12 — onsemi, NUP2105L Dual Line CAN Bus Protector Datasheet**, High-Speed/Fault-Tolerant CAN Surge Protection application figure.<br>
 https://www.onsemi.com/download/data-sheet/pdf/nup2105l-d.pdf
 
-<a id="s13"></a>**S13 — Texas Instruments, TPIC6A595 Power Logic 8-Bit Shift Register Datasheet**, Rev. C，§7.3.3、§7.3.4，p.13。  
+<a id="s13"></a>**S13 — Texas Instruments, TPIC6A595 Power Logic 8-Bit Shift Register Datasheet**, Rev. C, §§ 7.3.3–7.3.4, p. 13.<br>
 https://www.ti.com/lit/ds/symlink/tpic6a595.pdf
 
-<a id="s14"></a>**S14 — Texas Instruments, SN74AHCT541 Octal Buffer/Driver Datasheet**, function table 与 application information。  
+<a id="s14"></a>**S14 — Texas Instruments, SN74AHCT541 Octal Buffer/Driver Datasheet**, function table; application information.<br>
 https://www.ti.com/lit/ds/symlink/sn74ahct541.pdf
 
-<a id="s15"></a>**S15 — Diodes Incorporated, 2N7002KQ Datasheet**, DS43528，Description and Applications。  
+<a id="s15"></a>**S15 — Diodes Incorporated, 2N7002KQ Datasheet**, DS43528, Description and Applications.<br>
 https://www.diodes.com/datasheet/download/2N7002KQ.pdf
 
-<a id="s16"></a>**S16 — Hongfa, HFV6 Automotive Relay product page/data sheet**, 1 Form A、1 Form C 与额定参数；用于确认继电器封装、触点形式和额定参数，并支撑 PAGE6 矩阵的器件选型。<br>
+<a id="s16"></a>**S16 — Hongfa, HFV6 Automotive Relay product page/data sheet**, 1 Form A; 1 Form C; ratings.<br>
 https://www.hongfa.com/Product/automotive-relay/HFV6
 
-<a id="s17"></a>**S17 — Texas Instruments, SLTA055: Input and Output Capacitor Selection**, bulk-capacitance 与 ESR 讨论。  
+<a id="s17"></a>**S17 — Texas Instruments, SLTA055: Input and Output Capacitor Selection**, bulk-capacitance; ESR selection.<br>
 https://www.ti.com/lit/pdf/slta055
 
-<a id="s18"></a>**S18 — Texas Instruments, UCC27517A-Q1 Single-Channel Low-Side Gate Driver Datasheet**, Typical Application。  
+<a id="s18"></a>**S18 — Texas Instruments, UCC27517A-Q1 Single-Channel Low-Side Gate Driver Datasheet**, Typical Application.<br>
 https://www.ti.com/lit/ds/symlink/ucc27517a-q1.pdf
 
-<a id="s19"></a>**S19 — onsemi, NVD5C684NL 60 V N-Channel MOSFET Datasheet**, Rev. 2，2024-07。  
+<a id="s19"></a>**S19 — onsemi, NVD5C684NL 60 V N-Channel MOSFET Datasheet**, Rev. 2 (2024-07).<br>
 https://www.onsemi.com/download/data-sheet/pdf/nvd5c684nl-d.pdf
 
-<a id="s20"></a>**S20 — STMicroelectronics, STPS5L60-Y Automotive Power Schottky Rectifier Datasheet**, Doc ID 022951 Rev. 1。  
+<a id="s20"></a>**S20 — STMicroelectronics, STPS5L60-Y Automotive Power Schottky Rectifier Datasheet**, Doc ID 022951 Rev. 1.<br>
 https://www.st.com/resource/en/datasheet/stps5l60-y.pdf
 
-<a id="s21"></a>**S21 — Texas Instruments, INA240 Datasheet**, Rev. C，§9.2.2、Figure 9-5。  
+<a id="s21"></a>**S21 — Texas Instruments, INA240 Datasheet**, Rev. C, § 9.2.2, Figure 9-5.<br>
 https://www.ti.com/lit/ds/symlink/ina240.pdf
 
-<a id="s22"></a>**S22 — TE Connectivity, TLRP3A30DR050FTE product page**, 0.05 Ω、3 W、1% current-sense resistor；关联文档 ENG_DS_1773449-4_D3。  
+<a id="s22"></a>**S22 — TE Connectivity, TLRP3A30DR050FTE product page**, 0.05 Ω, 3 W, 1% current-sense resistor; document ENG_DS_1773449-4_D3.<br>
 https://www.te.com/en/product-6-2176422-7.html
 
-<a id="s23"></a>**S23 — STMicroelectronics, AN2834: How to optimize the ADC accuracy in the STM32 MCUs**, Rev. 10，2024-10，ADC source impedance、RC 与硬件建议。  
+<a id="s23"></a>**S23 — STMicroelectronics, AN2834: How to optimize the ADC accuracy in the STM32 MCUs**, Rev. 10 (2024-10), ADC source impedance; RC network design.<br>
 https://www.st.com/resource/en/application_note/an2834-how-to-optimize-the-adc-accuracy-in-the-stm32-mcus-stmicroelectronics.pdf
 
-<a id="s24"></a>**S24 — Diodes Incorporated, BAT54S Datasheet**, DS11005，dual Schottky series configuration。  
+<a id="s24"></a>**S24 — Diodes Incorporated, BAT54S Datasheet**, DS11005, dual Schottky series configuration.<br>
 https://www.diodes.com/assets/Datasheets/ds11005.pdf
 
-<a id="s25"></a>**S25 — Micro Commercial Components, ESD3V3D5/ESD5V0D5/ESD7V0D5/ESD12VD5 Datasheet**, Rev. 3，2019-01。该来源仅用于同型号公开参数参考。  
+<a id="s25"></a>**S25 — Micro Commercial Components, ESD3V3D5/ESD5V0D5/ESD7V0D5/ESD12VD5 Datasheet**, Rev. 3 (2019-01).<br>
 https://www.mouser.com/datasheet/2/258/ESD3V3D5_7eESD12VD5%28SOD-523%29-V1-1626101.pdf
 
-<a id="s26"></a>**S26 — Texas Instruments, SBAA338A: Monitoring NTC Thermistor Circuit With Single-Ended ADC**, Rev. A，2022-06。  
+<a id="s26"></a>**S26 — Texas Instruments, SBAA338A: Monitoring NTC Thermistor Circuit With Single-Ended ADC**, Rev. A (2022-06).<br>
 https://www.ti.com/lit/an/sbaa338a/sbaa338a.pdf
 
-<a id="s27"></a>**S27 — Broadcom, ACPL-214/ACPL-217 Datasheet**, AV02-0469EN，Figure 1 与 electrical characteristics。  
+<a id="s27"></a>**S27 — Broadcom, ACPL-214/ACPL-217 Datasheet**, AV02-0469EN, Figure 1; electrical characteristics.<br>
 https://docs.broadcom.com/doc/AV02-0469EN
 
-<a id="s28"></a>**S28 — Nexperia, PESD5V0S1BA-Q Datasheet**。  
+<a id="s28"></a>**S28 — Nexperia, PESD5V0S1BA-Q Datasheet**.<br>
 https://assets.nexperia.com/documents/data-sheet/PESD5V0S1BA-Q.pdf
 
-<a id="s29"></a>**S29 — Texas Instruments, SN74LVC1G14 Datasheet**, Rev. AA，§6.3.2 Schmitt-Trigger Inputs。  
+<a id="s29"></a>**S29 — Texas Instruments, SN74LVC1G14 Datasheet**, Rev. AA, § 6.3.2 “Schmitt-Trigger Inputs”.<br>
 https://www.ti.com/lit/ds/symlink/sn74lvc1g14.pdf
 
-<a id="s30"></a>**S30 — STMicroelectronics, SM6T Transil Series Datasheet**。该文档用于 SMB 封装输入 TVS 的通用选型/保护依据，不代表工程中 `D8` 的精确订货型号。  
+<a id="s30"></a>**S30 — STMicroelectronics, SM6T Transil Series Datasheet**.<br>
 https://www.st.com/resource/en/datasheet/sm6t.pdf
 
-<a id="s31"></a>**S31 — Texas Instruments, SLLA420C: How To Simplify Isolated 24-V PLC Digital Input Module Designs**，traditional optocoupler input comparison。  
+<a id="s31"></a>**S31 — Texas Instruments, SLLA420C: How To Simplify Isolated 24-V PLC Digital Input Module Designs**, traditional optocoupler input comparison.<br>
 https://www.ti.com/document-viewer/lit/html/SLLA420C
 
-<a id="s32"></a>**S32 — Bourns, SMCJ-Q Transient Voltage Suppressor Diode Series Datasheet**，SMCJ24CA-Q electrical characteristics。  
+<a id="s32"></a>**S32 — Bourns, SMCJ-Q Transient Voltage Suppressor Diode Series Datasheet**, SMCJ24CA-Q electrical characteristics.<br>
 https://www.bourns.com/docs/product-datasheets/smcj-q.pdf
 
-<a id="s33"></a>**S33 — Texas Instruments, LM74700-Q1 Datasheet**, Rev. G，Typical Application Schematic、Figure 3。  
+<a id="s33"></a>**S33 — Texas Instruments, LM74700-Q1 Datasheet**, Rev. G, Typical Application Schematic; Figure 3.<br>
 https://www.ti.com/lit/ds/symlink/lm74700-q1.pdf
 
-<a id="s34"></a>**S34 — Infineon, BSC065N06LS5 Datasheet**, Rev. 2.1，2019-10-31。  
+<a id="s34"></a>**S34 — Infineon, BSC065N06LS5 Datasheet**, Rev. 2.1 (2019-10-31).<br>
 https://www.infineon.com/assets/row/public/documents/24/49/infineon-bsc065n06ls5-datasheet-en.pdf
 
-<a id="s35"></a>**S35 — TE Connectivity, 1-776163-1 documents and drawings**, 35-position AMPSEAL header；drawing 776163、specification 114-16016。  
+<a id="s35"></a>**S35 — TE Connectivity, 1-776163-1 documents and drawings**, 35-position AMPSEAL header; drawing 776163; specification 114-16016.<br>
 https://www.te.com/commerce/DocumentDelivery/DDEController?Action=selcritrslt&iso=usa&searchby=part&searchfor=1-776163-1
 
-<a id="s36"></a>**S36 — TE Connectivity, 776087-1 product page**, 23-position AMPSEAL header；drawing 776087、specification 114-16016。  
+<a id="s36"></a>**S36 — TE Connectivity, 776087-1 product page**, 23-position AMPSEAL header; drawing 776087; specification 114-16016.<br>
 https://www.te.com/en/product-776087-1.html
 
-<a id="s37"></a>**S37 — Texas Instruments, SN74AHCT541-Q1 product page**, automotive octal buffer/line driver；用于确认 `SN74AHCT541QPWRQ1` 的三态缓冲和使能功能。<br>
+<a id="s37"></a>**S37 — Texas Instruments, SN74AHCT541-Q1 product page**, automotive octal buffer/line driver.<br>
 https://www.ti.com/product/SN74AHCT541-Q1
 
-<a id="s38"></a>**S38 — Analog Devices, CN0415: Robust, Closed-Loop Control and Monitoring System for Solenoid Actuators**, Circuit Note，Rev. 0；`Circuit Function & Benefits` 和 `Circuit Description` 章节给出比例/两态电磁阀的 PWM/PID、dither、电流采样、栅极驱动和过流保护；其功率级采用低边开关，分流器位于低边开关上侧的高边采样位置。<br>
+<a id="s38"></a>**S38 — Analog Devices, CN0415: Robust, Closed-Loop Control and Monitoring System for Solenoid Actuators**, Circuit Note, Rev. 0, sections “Circuit Function & Benefits”, “Circuit Description” and “Digital PID Control”.<br>
 https://www.analog.com/en/resources/reference-designs/circuits-from-the-lab/cn0415.html#rd-description
 
-<a id="s39"></a>**S39 — Analog Devices, CN0415 Circuit Note PDF**, Figures 1、4、12；比例/两态电磁阀驱动、电流采样和闭环测试。<br>
+<a id="s39"></a>**S39 — Analog Devices, CN0415 Circuit Note PDF**, Figures 1, 4, 12.<br>
 https://www.analog.com/media/en/reference-design-documentation/reference-designs/cn0415.pdf
 
-<a id="s40"></a>**S40 — Analog Devices, AN-105: Current Sense Circuit Collection**, Figure 122 “Monitor Solenoid Current on the Low Side”。<br>
+<a id="s40"></a>**S40 — Analog Devices, AN-105: Current Sense Circuit Collection**, Figure 122 “Monitor Solenoid Current on the Low Side”.<br>
 https://www.analog.com/en/resources/app-notes/an-105fa.html
 
-<a id="s41"></a>**S41 — Texas Instruments, TIDA-020023: Automotive proportional solenoid drive with highly accurate current sensor reference design**, 设计页面；1 kHz PWM、汽车比例电磁阀和验证文件。<br>
+<a id="s41"></a>**S41 — Texas Instruments, TIDA-020023: Automotive proportional solenoid drive with highly accurate current sensor reference design**, reference design page, 1 kHz PWM.<br>
 https://www.ti.com/tool/TIDA-020023
 
-<a id="s42"></a>**S42 — Texas Instruments, TIDUEO6A: Automotive Proportional Solenoid Drive With Highly-Accurate Current Sensor**, Rev. A，§§2.3.3、2.4.3、2.4.4、3.2，Figures 4、6、11–15。<br>
+<a id="s42"></a>**S42 — Texas Instruments, TIDUEO6A: Automotive Proportional Solenoid Drive With Highly-Accurate Current Sensor**, Rev. A, §§ 2.3.3, 2.4.3, 2.4.4, 3.2, Figures 4, 6, 11–15.<br>
 https://www.ti.com/lit/ug/tidueo6a/tidueo6a.pdf
 
-<a id="s43"></a>**S43 — OpenPodcar/OpenPodcar**, public open-source vehicle project；README 的 “DeadMan Handle (DMH) and Relay” 小节记录车辆点火线切断、COM/NO 继电器切换和失效保护；仓库注明软件 GPL-2.0、硬件 CERN-OHL-W。<br>
+<a id="s43"></a>**S43 — OpenPodcar/OpenPodcar**, public open-source vehicle project; README section “DeadMan Handle (DMH) and Relay”; software GPL-2.0, hardware CERN-OHL-W.<br>
 https://github.com/OpenPodcar/OpenPodcar
 
-<a id="s44"></a>**S44 — OpenPodcar vehicle circuit diagram**, public hardware diagram；用于复核车辆继电器接入和安全链路。<br>
+<a id="s44"></a>**S44 — OpenPodcar vehicle circuit diagram**, public hardware circuit diagram.<br>
 https://github.com/OpenPodcar/OpenPodcar/blob/master/docs/hardware/OpenPodcar_Components_Circuit_Diagram_colored.pdf
 
-<a id="s45"></a>**S45 — outlandnish/subaru-brz-vcu**, public vehicle-control design notes；README 的 “Low side relay control”“repurposed signals”“Notes about power” sections，为低边继电器、受控电源/地和信号复用提供车辆控制架构参考。<br>
+<a id="s45"></a>**S45 — outlandnish/subaru-brz-vcu**, public vehicle-control design notes; README sections “Low side relay control”, “repurposed signals” and “Notes about power”.<br>
 https://github.com/outlandnish/subaru-brz-vcu/blob/main/Readme.md
 
-<a id="s46"></a>**S46 — darderik/relay_matrix_edsp**, MIT-licensed open-source relay matrix controller；README 的 4×4 crosspoint、TPL9201 drivers、exclusive switching commands 和 status query sections。<br>
+<a id="s46"></a>**S46 — darderik/relay_matrix_edsp**, MIT-licensed open-source relay matrix controller; README sections “4×4 crosspoint”, “TPL9201 drivers”, “exclusive switching commands” and “status query”.<br>
 https://github.com/darderik/relay_matrix_edsp
 
-<a id="s47"></a>**S47 — PrecisionMechatronicsLab/PneuSoRD**, MIT-licensed open-source pneumatic soft-robotics driver；README 的 Proportional 2x2 control、PWM/buck converter 和 Motor/Proportional Drive hardware sections。仓库包含 `PCB_PneuSoRD` 原理图/PCB/BOM；比例通道采用 DRV8870 半桥同步降压和 Rsen 过流限制，为本项目比例阀 PWM 功率级、保护和参数整定提供开源实现参考。<br>
+<a id="s47"></a>**S47 — PrecisionMechatronicsLab/PneuSoRD**, MIT-licensed open-source pneumatic soft-robotics driver; README sections “Proportional 2x2 control”, “PWM/buck converter” and “Motor/Proportional Drive”; `PCB_PneuSoRD` hardware design files.<br>
 https://github.com/PrecisionMechatronicsLab/PneuSoRD
 
-<a id="s48"></a>**S48 — GormR/HW_for_AgOpenGPS**, open-source agricultural steering hardware；README 明确以 CERN-OHL-S-2.0 发布硬件，Level 2 说明液压系统直接驱动可使用专用比例阀和两路 PWM，为本项目双 PWM、液压比例阀和反馈控制提供开源系统参考。<br>
+<a id="s48"></a>**S48 — GormR/HW_for_AgOpenGPS**, open-source agricultural steering hardware; CERN-OHL-S-2.0; README, Level 2 hydraulic steering section.<br>
 https://github.com/GormR/HW_for_AgOpenGPS/blob/main/README.md
 
-<a id="s53"></a>**S53 — OpenHumidistat/hardware**, CERN Open Hardware Licence Version 2 — Strongly Reciprocal（CERN-OHL-S-2.0）；公开 `solenoid_driver` KiCad 原理图、PCB 和工程文件。原理图标题为 “Voltage-controlled current sink solenoid valve driver (x2)”，两路比例阀线圈由低边 MOSFET 恒流吸收级驱动。<br>
+<a id="s49"></a>**S49 — OpenHumidistat/hardware**, CERN Open Hardware Licence Version 2 — Strongly Reciprocal (CERN-OHL-S-2.0), `solenoid_driver` KiCad design files.<br>
 https://github.com/OpenHumidistat/hardware
 https://github.com/OpenHumidistat/hardware/blob/main/solenoid_driver/compact.kicad_sch
 
-<a id="s54"></a>**S54 — Veldscholte & de Beer, “OpenHumidistat: Humidity-controlled experiments for everyone”**, HardwareX 11 (2022) e00288；公开说明 solenoid driver 接收 MCU 低功率 PWM，并实现两路 VCCS（Voltage-Controlled Current Sink）恒流驱动，提供原理图/PCB 设计文件和 CERN-OHL-S 许可信息。<br>
+<a id="s50"></a>**S50 — Veldscholte & de Beer, “OpenHumidistat: Humidity-controlled experiments for everyone”**, HardwareX 11 (2022), e00288.<br>
 https://pmc.ncbi.nlm.nih.gov/articles/PMC9058855/
 https://doi.org/10.1016/j.ohx.2022.e00288
