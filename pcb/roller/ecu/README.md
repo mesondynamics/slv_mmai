@@ -34,10 +34,16 @@ Keya 转向电机的[演示视频](https://www.youtube.com/watch?v=uilSU-zbLFg)�
 
 | 原车机构 | 可参考的改装路径 | 公开来源 |
 | --- | --- | --- |
-| 静液压行驶或由比例液压阀调节的动力机构 | 控制原有比例阀的线圈电流；前进/后退及速度与阀的对应关系由原车液压系统决定 | [AgOpenGPS 液压硬件](#s48)、[OpenHumidistat 恒流驱动](#s49)、[ADI CN0415](#s38) |
+| 静液压行驶或由比例液压阀调节的动力机构 | 控制原有比例阀的线圈电流；前进/后退及速度与阀的对应关系由原车液压系统决定 | [2003 年 CASE CX160 遥控改装](#s60)、[AgOpenGPS 液压硬件](#s48)、[OpenHumidistat 恒流驱动](#s49)、[ADI CN0415](#s38) |
 | 机械油门或速度操纵杆 | 用执行器推动原控制件，行程与位置反馈按原车机构适配 | [ROS 2 Autonomous Tractor](#s59) 展示直线执行器控制加速 |
 | 原车速度电位器 | 对可接入的速度设定信号，参考模拟速度指令接入方式 | [OpenPodcar](#s43) 展示原车速度电位器的电控接入 |
 | 电子节气门或电驱控制器 | 在车型和控制器支持的条件下，使用其可验证的电子控制接口；电子节气门涉及踏板、节气门位置反馈，电驱接口依具体控制器而定 | [rusEFI](#s54) 展示电子节气门链路；[OVCS](#s55) 展示电驱车辆多部件 CAN 集成 |
+
+2003 年弗吉尼亚理工大学公开的 [CASE CX160 挖掘机遥控改装报告](#s60) 是液压车辆的实车案例：团队在原车低压先导油路增加电液比例阀，通过先导压力控制主阀，进而遥控左右履带和工作装置。报告还记录了液压改装、电气控制及实车调试。该案例说明比例阀路线早已用于工程车辆遥控改装；是否适用其他车辆，取决于其液压系统是否提供合适的先导控制接入点。
+
+<img src="docs/images/case-cx160-pilot-proportional-valve-manifold.png" alt="CASE CX160 挖掘机先导油路比例阀集成块实物" width="640">
+
+*图：CASE CX160 改装中的比例阀集成块实物；项目维护者提供的截图，参见 [2003 年改装报告](#s60) Figure 5-6。*
 
 速度反馈与速度命令是不同的接口：车辆若提供可解析的原车 CAN 车速可直接读取；否则可采集车速脉冲或增加独立速度传感器。[RetroPilot Ocelot](#s56) 同时展示了原始 VSS 输入与已有 CAN 信息的转换。具体车速来源及前进/后退信号需逐车型确认。
 
@@ -59,7 +65,7 @@ Keya 转向电机的[演示视频](https://www.youtube.com/watch?v=uilSU-zbLFg)�
 
 <a id="sol-os-01"></a>
 
-对于采用比例液压阀的车辆，PAGE7 提供两路低边开关及电流采样硬件。阀的实际用途、前进/后退映射和电流范围由目标车辆的液压系统决定。
+对于采用比例液压阀的车辆，本 ECU 在 PAGE7 设计了两路低边电磁阀驱动及线圈电流采样硬件，以接入相应的比例阀控制路径。它与 [2003 年 CASE CX160 案例](#s60) 同属电控比例阀作用于液压机构的方案，但该案例使用 12 个阀及独立阀控制器；本 ECU 的两路硬件并非整套挖掘机液压控制系统。阀的实际用途、前进/后退映射和电流范围由目标车辆的液压系统决定。
 
 [ADI CN0415](#s38) 是比例电磁阀驱动的主要公开参考：其说明了 PWM、线圈电流监测、闭环控制和 dither。CN0415 采用低边开关与高边分流采样；本项目借鉴功能链路，在 PAGE7 使用低边分流采样，不能将两者视为完全相同的原理图。[S21](#s21)、[S39](#s39)、[S40](#s40)、[S41](#s41) 和 [S42](#s42) 补充电流检测与汽车比例阀资料。
 
@@ -170,7 +176,7 @@ PAGE5 的串行低边驱动链连接 PAGE6 的继电器触点。继电器可用�
 
 ## 公开来源
 
-S01–S50 的访问日期为 **2026-09-17**；S51–S59 的访问日期为 **2026-09-24**。
+S01–S50 的访问日期为 **2026-09-17**；S51–S60 的访问日期为 **2026-09-24**。
 
 ### 开源实现来源
 
@@ -196,6 +202,12 @@ S01–S50 的访问日期为 **2026-09-17**；S51–S59 的访问日期为 **202
 | [S51](#s51) Keya | 工程车辆方向盘直驱电机 | 转向轴直驱、内置控制器和 CAN 接口参考 |
 | [S52](#s52) SunNav AG500Pro | 农机电机方向盘 | 方向盘替换结构和外形、扭矩规格参考 |
 | [S53](#s53) Smajayu JY305 | 农机自动转向套件 | 电机方向盘、控制器和角度传感器组合参考 |
+
+### 公开学术改装案例
+
+| 来源 | 实车案例 | 在整车方案中的用途 |
+| --- | --- | --- |
+| [S60](#s60) CASE CX160（2003） | 低压先导油路加装比例阀的挖掘机遥控改装 | 液压工程车辆的比例阀接入和实车应用参考 |
 
 ### 详细来源条目
 
@@ -381,3 +393,7 @@ https://github.com/astuff/pacmod3
 
 <a id="s59"></a>**S59 — Mississippi State University ABE 6990 Autonomous Tractor course project, ROS 2 Autonomous Tractor**, project README, Overview and Actuator Control sections.<br>
 https://github.com/sushant097/Ros2-Autonomous-Tractor
+
+<a id="s60"></a>**S60 — Christopher Rome Terwelp, Remote Control of Hydraulic Equipment for Unexploded Ordnance Remediation**, Virginia Polytechnic Institute and State University, M.S. thesis, 2003-05-28; §5.1 Hydraulic System Conversion, §5.2 Electronic Modifications, Figures 5-3–5-6.<br>
+https://vtechworks.lib.vt.edu/items/b871d558-08b3-47e1-bf6e-5911fc8d04db<br>
+https://vtechworks.lib.vt.edu/bitstream/handle/10919/32306/Teleoperated_Excavator.pdf
