@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="850" viewBox="0 0 1400 850">
+<defs>
+  <style>
+    text{font-family:'Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif;fill:#172033}
+    .title{font-size:36px;font-weight:700}
+    .head{font-size:25px;font-weight:700}
+    .body{font-size:22px}
+    .small{font-size:19px;fill:#4d6076}
+    .box{fill:#fff;stroke:#7f94aa;stroke-width:2.5;rx:18}
+    .source{fill:#eef5ff;stroke:#3b73bf}
+    .ecu{fill:#e8f6f4;stroke:#188577;stroke-width:3}
+    .feedback{fill:#f4f1ff;stroke:#7962b6}
+    .arrow{stroke:#406b97;stroke-width:3.5;fill:none;marker-end:url(#arrow)}
+    .return{stroke:#7962b6;stroke-width:3.5;fill:none;marker-end:url(#arrowPurple)}
+  </style>
+  <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="#406b97"/></marker>
+  <marker id="arrowPurple" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="#7962b6"/></marker>
+</defs>
+<rect width="1400" height="850" fill="#fafcff"/>
+<text x="700" y="72" text-anchor="middle" class="title">车辆线控系统架构</text>
+<rect x="440" y="112" width="520" height="88" class="box source"/>
+<text x="700" y="166" text-anchor="middle" class="head">遥控端 / 上层自主控制系统</text>
+<path d="M700 200 V268" class="arrow"/><text x="725" y="247" class="small">控制命令</text>
+<rect x="440" y="278" width="520" height="100" class="box ecu"/>
+<text x="700" y="339" text-anchor="middle" class="head">ECU：车辆连接中枢</text>
+<path d="M700 378 V432 M225 432 H1175" stroke="#406b97" stroke-width="3.5" fill="none"/>
+<path d="M225 432 V472 M700 432 V472 M1175 432 V472" class="arrow"/>
+<rect x="70" y="482" width="310" height="84" class="box"/><text x="225" y="533" text-anchor="middle" class="head">电机方向盘</text>
+<rect x="545" y="482" width="310" height="84" class="box"/><text x="700" y="533" text-anchor="middle" class="head">行驶控制接口</text>
+<rect x="1020" y="482" width="310" height="84" class="box"/><text x="1175" y="519" text-anchor="middle" class="body">继电器 / 可用的</text><text x="1175" y="548" text-anchor="middle" class="body">原车 CAN 接口</text>
+<path d="M225 566 V608 M700 566 V608 M1175 566 V608" class="arrow"/>
+<rect x="70" y="618" width="310" height="84" class="box"/><text x="225" y="670" text-anchor="middle" class="body">原车转向机构</text>
+<rect x="545" y="618" width="310" height="84" class="box"/><text x="700" y="670" text-anchor="middle" class="body">原车动力或液压机构</text>
+<rect x="1020" y="618" width="310" height="84" class="box"/><text x="1175" y="655" text-anchor="middle" class="body">灯光、喇叭等</text><text x="1175" y="684" text-anchor="middle" class="body">车身信号</text>
+<path d="M225 702 V718 H700 V730 M700 702 V730 M1175 702 V718 H700" stroke="#7962b6" stroke-width="3" fill="none"/>
+<rect x="290" y="730" width="820" height="75" class="box feedback"/>
+<text x="700" y="777" text-anchor="middle" class="body">转角、车速、执行装置与原车状态反馈 → ECU</text>
+<path d="M290 767 H34 V328 H440" class="return"/>
+</svg>

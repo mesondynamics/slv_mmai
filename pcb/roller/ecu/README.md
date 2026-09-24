@@ -1,23 +1,12 @@
 # 通用车辆线控改装方案
 
-本项目整理公开的车辆改装方法，并提供一套可复用的开源 ECU 硬件设计。目标是让具备不同转向、行驶和车身信号机构的车辆，经过针对车型的适配后，能够接收外部控制命令并返回状态，从而成为遥控或无人驾驶系统的车辆执行平台。本文不是某一车型的即插即用改装说明：执行装置、原车接口和可获得的反馈都以目标车辆为准。
-
-阅读顺序是整车方案、按原车机构选择的改装路径、ECU 硬件及其公开来源。公开商业产品用于说明可采用的结构，只有明确标注的项目才作为开源实现引用。
+本项目整理公开的车辆改装方法，并提供一套可复用的开源 ECU 硬件设计。目标是让具备不同转向、行驶和车身信号机构的车辆，经过针对车型的适配后，能够接收外部控制命令并返回状态，从而成为遥控或无人驾驶系统的车辆执行平台。执行装置、原车接口和可获得的反馈都以目标车辆为准。
 
 ## 整体方案
 
-```text
-遥控端 / 上层自主控制系统
-             ↓ 控制命令
-       ECU：车辆连接中枢
-             ├─→ 电机方向盘 → 原车转向机构
-             ├─→ 行驶控制接口 → 原车动力或液压机构
-             └─→ 继电器 / 可用的原车 CAN 接口 → 灯光、喇叭等车身信号
-             ↑
-       转角、车速、执行装置与原车状态反馈
-```
+![车辆线控系统整体架构](docs/images/vehicle-drive-by-wire-system-architecture.svg)
 
-转向、行驶和车身信号是三条可分别适配的路径。ECU 接入命令、连接外部执行装置或原车接口，并汇集可取得的状态反馈。遥控与无人驾驶的区别在于命令来源；本文聚焦车辆端硬件，不定义上层控制软件或通信策略。
+转向、行驶和车身信号是三条可分别适配的路径。ECU 接入命令、连接外部执行装置或原车接口，并汇集可取得的状态反馈。遥控与无人驾驶的区别在于命令来源。
 
 ## 车辆改装方案
 
@@ -33,7 +22,11 @@
 | [SunNav AG500Pro](#s52) | 电机方向盘替换原方向盘 | 农机的方向盘替换路线 |
 | [Smajayu JY305](#s53) | 电机方向盘配合控制器和角度传感器 | 转向执行与角度反馈的组合路线 |
 
-这些公开产品展示同一类机械接入方法，但不代表三款产品均采用相同的内部中空结构，也不代表其扭矩规格适用于任意车辆。
+| Keya 转向电机套件 | SunNav AG500Pro 电机方向盘 | Smajayu JY305 装车示例 |
+| :---: | :---: | :---: |
+| <img src="docs/images/keya-steering-motor-kit.png" alt="Keya 转向电机与方向盘套件" width="260"> | <img src="docs/images/sunnav-ag500pro-motor-wheel.png" alt="SunNav AG500Pro 电机方向盘" width="260"> | <img src="docs/images/smajayu-jy305-motor-wheel-installation.png" alt="Smajayu JY305 电机方向盘装车示例" width="260"> |
+
+Keya 转向电机的[演示视频](https://www.youtube.com/watch?v=uilSU-zbLFg)。三张产品图分别对应 [S51](#s51)、[S52](#s52)、[S53](#s53)。
 
 ### 行驶与速度：按原车机构选择接口
 
@@ -361,7 +354,8 @@ https://pmc.ncbi.nlm.nih.gov/articles/PMC9058855/
 https://doi.org/10.1016/j.ohx.2022.e00288
 
 <a id="s51"></a>**S51 — Jinan Keya Electronic Science and Technology, Keya 12V/24V 50W 7Nm Tractor Autosteer Kit**, product page, Specification and Interface Definition sections.<br>
-https://www.dcmotorkeya.com/Keya-12V-24V-50W-7Nm-Tractor-Autosteer-Kit-for-Agricultural-Machinery-Driverless-Steering-System-pd546247168.html
+https://www.dcmotorkeya.com/Keya-12V-24V-50W-7Nm-Tractor-Autosteer-Kit-for-Agricultural-Machinery-Driverless-Steering-System-pd546247168.html<br>
+Keya 转向电机演示视频（用户提供）：https://www.youtube.com/watch?v=uilSU-zbLFg
 
 <a id="s52"></a>**S52 — SunNav, AG500Pro GNSS Auto-Steering System**, product page, High-Torque Motor Wheel specifications; Tractor Autopilot product overview.<br>
 https://www.sunnavtech.com/ProductDetail.aspx?aid=434<br>
