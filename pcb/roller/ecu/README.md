@@ -1,67 +1,100 @@
-# ECU 原理图设计来源与开放复现指南
+# 通用车辆线控改装方案
 
-本文档介绍 ECU 原理图 `PROJECT1.kicad_sch` 及 `PAGE1.kicad_sch`～`PAGE9.kicad_sch` 的设计来源、功能分层和复现路径。本项目以器件厂商公开资料、开源硬件项目和公开控制方法为基础，将电源、通信、继电器矩阵、比例阀驱动和采集接口组合为可复核的 ECU 电路。
+本项目整理公开的车辆改装方法，并提供一套可复用的开源 ECU 硬件设计。目标是让具备不同转向、行驶和车身信号机构的车辆，经过针对车型的适配后，能够接收外部控制命令并返回状态，从而成为遥控或无人驾驶系统的车辆执行平台。本文不是某一车型的即插即用改装说明：执行装置、原车接口和可获得的反馈都以目标车辆为准。
 
-阅读本文档时，可以先按 PAGE 查找电路，再通过来源编号打开对应的原理图、数据手册、应用笔记或开源项目。来源编号与电路编号保持稳定，便于后续修改原理图时继续追踪设计依据。
+阅读顺序是整车方案、按原车机构选择的改装路径、ECU 硬件及其公开来源。公开商业产品用于说明可采用的结构，只有明确标注的项目才作为开源实现引用。
 
-## 来源使用方式
+## 整体方案
 
-本项目采用三层来源协同设计：
+```text
+遥控端 / 上层自主控制系统
+             ↓ 控制命令
+       ECU：车辆连接中枢
+             ├─→ 电机方向盘 → 原车转向机构
+             ├─→ 行驶控制接口 → 原车动力或液压机构
+             └─→ 继电器 / 可用的原车 CAN 接口 → 灯光、喇叭等车身信号
+             ↑
+       转角、车速、执行装置与原车状态反馈
+```
 
-1. **器件与接口层**：使用官方数据手册、典型应用和参考设计确定引脚连接、保护、额定值和布局要点。
-2. **开源实现层**：参考带有明确许可证的开源硬件和软件项目，吸收低边比例阀恒流驱动、PWM 控制、继电器矩阵和车辆安全链路等实现方法。
+转向、行驶和车身信号是三条可分别适配的路径。ECU 接入命令、连接外部执行装置或原车接口，并汇集可取得的状态反馈。遥控与无人驾驶的区别在于命令来源；本文聚焦车辆端硬件，不定义上层控制软件或通信策略。
 
-本项目的原理图是上述公开来源的工程化组合，具体器件、参数、通道数量和 PCB 实现由本项目定义，并在各 PAGE 的来源映射中记录。
+## 车辆改装方案
 
-## 复现路径
+### 转向：电机方向盘
 
-1. 从“电路划分与来源映射”选择目标 PAGE 和电路 ID。
-2. 按来源编号阅读对应的官方资料或开源项目文件，确认拓扑、接口和控制方法。
-3. 对照原理图、BOM 和 PCB 规则检查器件参数、额定值、保护和散热条件。
-4. 在样机阶段完成电源瞬态、负载电流、通信质量、EMC、温升和安全状态测试，再固化参数和装配版本。
+<a id="steer-sys-01"></a>
 
-## 证据等级
+在方向盘位置安装同轴直驱的电机方向盘，使电机通过原车转向柱和转向机构完成转向，并读取电机位置或可用的转角反馈。中空轴/中空电机是可选的机械安装形式；轴径、花键、安装空间与所需扭矩应按车型和所选电机确定。
 
-| 等级 | 含义 | 在本项目中的用途 |
+| 公开案例 | 改装形式 | 对本方案的参考 |
 | --- | --- | --- |
-| A | 同型号器件的官方典型应用、参考原理图或评估板与本页拓扑近似 | 作为电路拓扑和关键连接的直接设计依据 |
-| B | 同型号官方数据手册/应用笔记给出的连接规则、接口电路或设计方法 | 支持局部电路、器件选型和控制方法 |
-| C | 公开的通用原理、相邻型号资料或器件能力说明 | 支持工程实现方向，参数由本项目进一步验证 |
+| [Keya 工程车辆转向电机](#s51) | 安装于转向轴的直驱电机；资料列举叉车、压路机、推土机 | 工程车辆的电机方向盘路线 |
+| [SunNav AG500Pro](#s52) | 电机方向盘替换原方向盘 | 农机的方向盘替换路线 |
+| [Smajayu JY305](#s53) | 电机方向盘配合控制器和角度传感器 | 转向执行与角度反馈的组合路线 |
 
-## 系统级方案
+这些公开产品展示同一类机械接入方法，但不代表三款产品均采用相同的内部中空结构，也不代表其扭矩规格适用于任意车辆。
 
-系统级方案把公开资料转换为本项目的可实现电路模块。每个模块都保留来源编号，使用者可以从功能目标一路追溯到公开原理图、控制方法和器件资料。
+### 行驶与速度：按原车机构选择接口
 
-### 比例阀低边恒流驱动
+“行驶控制”包括速度目标及车辆具备的前进/后退选择。先识别原车如何接受驾驶员的油门或行驶请求，再决定电控接入方式；比例阀只适用于相应的液压行驶机构，不是所有车辆通用的发动机油门。
+
+| 原车机构 | 可参考的改装路径 | 公开来源 |
+| --- | --- | --- |
+| 静液压行驶或由比例液压阀调节的动力机构 | 控制原有比例阀的线圈电流；前进/后退及速度与阀的对应关系由原车液压系统决定 | [AgOpenGPS 液压硬件](#s48)、[OpenHumidistat 恒流驱动](#s49)、[ADI CN0415](#s38) |
+| 机械油门或速度操纵杆 | 用执行器推动原控制件，行程与位置反馈按原车机构适配 | [ROS 2 Autonomous Tractor](#s59) 展示直线执行器控制加速 |
+| 原车速度电位器 | 对可接入的速度设定信号，参考模拟速度指令接入方式 | [OpenPodcar](#s43) 展示原车速度电位器的电控接入 |
+| 电子节气门或电驱控制器 | 在车型和控制器支持的条件下，使用其可验证的电子控制接口；电子节气门涉及踏板、节气门位置反馈，电驱接口依具体控制器而定 | [rusEFI](#s54) 展示电子节气门链路；[OVCS](#s55) 展示电驱车辆多部件 CAN 集成 |
+
+速度反馈与速度命令是不同的接口：车辆若提供可解析的原车 CAN 车速可直接读取；否则可采集车速脉冲或增加独立速度传感器。[RetroPilot Ocelot](#s56) 同时展示了原始 VSS 输入与已有 CAN 信息的转换。具体车速来源及前进/后退信号需逐车型确认。
+
+### 灯光、喇叭与其他原车信号
+
+对于需要切断原路径再切换到外部控制的信号，可用继电器接入；只需新增通断控制的信号，可按原车接口选用受控电源或接地。[OpenPodcar](#s43) 的车辆继电器接入与 [Subaru BRZ VCU](#s45) 的继电器、信号复用设计提供公开参考。
+
+另一条路径是使用原车或已有线控系统提供的 CAN 接口。[PACMod3 公开驱动](#s58) 列出了灯光、喇叭、危险警示灯等命令；[opendbc](#s57) 展示车型相关的 CAN 消息定义。CAN 控制仅适用于已确认支持相应命令的车型或控制系统，不能把某车型的消息直接视为通用接口。继电器和 CAN 可在同一车辆上分别负责不同信号。
+
+### 状态反馈
+
+整车可按现有接口取得方向盘或车轮转角、车速、行驶执行装置状态、灯光/喇叭等原车信号状态。反馈可来自执行装置控制器、原车 CAN、车速脉冲、开关量或模拟传感器；公开的 [OVCS](#s55) 与 [RetroPilot Ocelot](#s56) 展示了多种原车与外加接口并用的方式。并非所有车辆都提供上述全部状态，实际可用项由车型接口确定。
+
+## ECU：车辆连接中枢
+
+本目录 ECU 接收外部命令，通过通信接口与外部执行装置或原车控制系统连接，通过自身输出连接继电器及比例阀，并采集可接入的模拟量、数字量和脉冲量。外部转向电机及其功率控制器、车型专用的行驶机构不包含在本 ECU 原理图中。原理图为 `PROJECT1.kicad_sch`、`PAGE1.kicad_sch`～`PAGE9.kicad_sch`；下文从具体电路追溯到器件资料、参考设计和开源项目。
+
+### 比例阀驱动的公开电路来源
 
 <a id="sol-os-01"></a>
 
-#### CN0415 参考设计摘要
+对于采用比例液压阀的车辆，PAGE7 提供两路低边开关及电流采样硬件。阀的实际用途、前进/后退映射和电流范围由目标车辆的液压系统决定。
 
-本项目采用 [ADI CN0415：Robust, Closed-Loop Control and Monitoring System for Solenoid Actuators](https://www.analog.com/en/resources/reference-designs/circuits-from-the-lab/cn0415.html#rd-description) 作为比例电磁阀驱动的主要公开电路参考，来源条目为 [S38](#s38)。CN0415 页面中的 `Circuit Function & Benefits`、`Circuit Description` 和 `Digital PID Control` 章节，完整说明了比例电磁阀的驱动、采样和保护链路。
-
-CN0415 的示例采用低边开关与高边分流采样；本项目沿用其 PWM、闭环、dither、栅极驱动和过流保护的功能链路，并按 PAGE7 的器件和低边分流器布局实现。相关电流采样与汽车比例阀资料还包括 [S21](#s21)、[S39](#s39)、[S40](#s40)、[S41](#s41) 和 [S42](#s42)。
-
-#### 比例阀驱动拓扑
-
-参考电路
+[ADI CN0415](#s38) 是比例电磁阀驱动的主要公开参考：其说明了 PWM、线圈电流监测、闭环控制和 dither。CN0415 采用低边开关与高边分流采样；本项目借鉴功能链路，在 PAGE7 使用低边分流采样，不能将两者视为完全相同的原理图。[S21](#s21)、[S39](#s39)、[S40](#s40)、[S41](#s41) 和 [S42](#s42) 补充电流检测与汽车比例阀资料。
 
 ![CN0415 高边电流采样与低边开关](docs/images/cn0415-figure-04-high-side-current-sense.png)
 
-*图示来源：[Analog Devices CN0415](https://www.analog.com/en/resources/reference-designs/circuits-from-the-lab/cn0415.html#rd-description)，对应原文 Figure 4。*
+*图源：[Analog Devices CN0415](https://www.analog.com/en/resources/reference-designs/circuits-from-the-lab/cn0415.html#rd-description)，Figure 4。*
 
-MCU 输出 PWM，栅极驱动器控制 N-MOSFET，INA240 测量线圈电流并提供闭环反馈。比例阀的控制量以线圈电流为核心，并预留死区补偿、峰值/保持和 dither 参数。OpenHumidistat、PneuSoRD 和 AgOpenGPS 分别提供低边恒流驱动、比例阀 PWM 功率级以及双 PWM 液压比例阀控制的开源实现参考，来源见 [S47](#s47)、[S48](#s48)、[S49](#s49) 和 [S50](#s50)。
+本项目以 PWM 控制低边 MOSFET，并测量线圈电流；[OpenHumidistat](#s49)、[PneuSoRD](#s47) 和 [AgOpenGPS](#s48) 提供可追溯的公开实现参考。
 
-### 改装车辆信号切换
+### 继电器驱动与信号切换来源
 
 <a id="rly-sys-01"></a>
 
-本项目使用继电器矩阵对改装车辆信号进行可控切换：需要替代的信号按照 **break-before-make** 顺序先断开原路径，再接通替代路径；同一信号组保持互斥；无需切断的信号通过受控电源或低边接地直接控制。继电器由串行低边驱动器级联扩展，掉电、复位和故障状态回到安全态。
+PAGE5 的串行低边驱动链连接 PAGE6 的继电器触点。继电器可用于原车信号断开与替代信号切换，也可为无需切断的信号提供受控电源或接地；具体触点功能由车型连接表决定。[OpenPodcar](#s43)、[Subaru BRZ VCU](#s45) 和 [relay_matrix_edsp](#s46) 是公开系统参考，[TPIC6A595](#s13) 与 [SN74AHCT541-Q1](#s37) 提供驱动器件依据。
 
-OpenPodcar 提供车辆点火线切断、COM/NO 继电器和 Deadman 安全链路的开源实现；relay_matrix_edsp 提供交叉点矩阵、级联驱动和互斥命令；Subaru BRZ VCU 提供低边继电器、受控电源/地和信号复用的公开设计说明；TPIC6A595 提供本项目所需的串行低边感性负载驱动。对应来源见 [S13](#s13)、[S43](#s43)、[S44](#s44)、[S45](#s45) 和 [S46](#s46)。
+### 电路来源的使用方式与证据等级
 
+本文区分器件厂商资料、开源实现和公开商业产品。来源编号用于追溯，不表示商业产品的内部设计已开源。以下等级仅用于 ECU 电路的来源映射，不用于给整车方案或产品案例打分。
 
-## 电路划分与来源映射
+| 等级 | 含义 | 在本项目中的用途 |
+| --- | --- | --- |
+| A | 同型号器件的官方典型应用、参考原理图或评估板与本页拓扑近似 | 电路拓扑和关键连接依据 |
+| B | 同型号官方数据手册/应用笔记给出的连接规则、接口电路或设计方法 | 局部电路、器件选型和控制方法依据 |
+| C | 公开的通用原理、相邻型号资料或器件能力说明 | 工程实现方向，参数仍需验证 |
+
+### ECU 电路与公开来源映射
+
+下表按原理图 PAGE 列出 ECU 已有电路及公开依据；转向电机和车型专用行驶执行器不在这些 PAGE 电路中。
 
 ### PAGE1 — 电源变换与状态指示
 
@@ -98,7 +131,7 @@ OpenPodcar 提供车辆点火线切断、COM/NO 继电器和 Deadman 安全链�
 
 | ID | 电路与覆盖范围 | 公开依据（文档定位） | 等级 | 本项目实现说明 |
 | --- | --- | --- | --- | --- |
-| P4-01 | 两个同构 CAN 收发与可配置 120 Ω 端接通道：`U13,U14,C40,C85,R42,R43,R107,R108` | [S11](#s11)，Figures 38–39，p.27 | A | 官方图给出 CAN 总线与 120 Ω 端接原则；0 Ω 配置电阻使端接是否接入由装配方案决定。 |
+| P4-01 | 两个同构 CAN 收发与可配置 120 Ω 端接通道：`U13,U14,C40,C85,R42,R43,R107,R108` | [S11](#s11)，Figures 38–39，p.27 | A | 官方图给出 CAN 总线与 120 Ω 端接原则；0 Ω 配置电阻使端接是否接入由装配方案决定。该物理接口可连接具备 CAN 接口的外部装置或经确认的原车 CAN 总线；协议与总线分配按车型确定。 |
 | P4-02 | 两路 CAN 线对浪涌/ESD 保护：`D21,D22` | [S12](#s12)，High-Speed/Fault-Tolerant CAN Surge Protection application figure | A | NUP2105L 官方应用图即为 CANH/CANL 双线保护；最终抗扰度仍需结合接地回路和 PCB 布局验证。 |
 
 ### PAGE5 — 继电器驱动逻辑与串行低边驱动
@@ -144,22 +177,36 @@ OpenPodcar 提供车辆点火线切断、COM/NO 继电器和 Deadman 安全链�
 
 ## 公开来源
 
-访问日期均为 **2026-09-17**。
+S01–S50 的访问日期为 **2026-09-17**；S51–S59 的访问日期为 **2026-09-24**。
 
 ### 开源实现来源
 
 | 来源 | 许可证/开放方式 | 本项目采用的设计要点 |
 | --- | --- | --- |
-| [S43](#s43) OpenPodcar | 软件 GPL-2.0，硬件 CERN-OHL-W | 车辆点火线切断、继电器切换和 Deadman 安全链路 |
+| [S43](#s43) OpenPodcar | 软件 GPL-2.0，硬件 CERN-OHL-W | 原车速度电位器/DAC 接入、转向执行器与继电器接入 |
 | [S46](#s46) relay_matrix_edsp | MIT | 交叉点矩阵、级联驱动、互斥命令和状态查询 |
 | [S47](#s47) PneuSoRD | MIT | 比例阀 PWM、降压功率级、过流保护和多通道驱动 |
 | [S48](#s48) HW_for_AgOpenGPS | CERN-OHL-S-2.0（硬件） | 双 PWM 液压比例阀、反馈控制和开源农机执行器接口 |
 | [S49](#s49) OpenHumidistat/hardware | CERN-OHL-S-2.0 | 两路低边 VCCS 恒流比例阀驱动、KiCad 原理图/PCB/BOM |
 | [S50](#s50) OpenHumidistat 论文 | 公开论文与配套开源设计 | PWM 输入、恒流控制、温升补偿和比例阀闭环方法 |
+| [S54](#s54) rusEFI | 公开项目与文档 | 电子节气门、踏板和节气门位置反馈 |
+| [S55](#s55) OVCS | MIT | 电驱车辆的多部件 CAN 集成与状态读取 |
+| [S56](#s56) RetroPilot Ocelot | 公开项目资料 | 原车 CAN、VSS 脉冲、继电器接口的组合 |
+| [S57](#s57) opendbc | 开源项目 | 车型相关的 CAN 信号定义与解析 |
+| [S58](#s58) PACMod3 驱动 | 公开驱动代码 | 支持平台的灯光、喇叭等车身命令接口 |
+| [S59](#s59) ROS 2 Autonomous Tractor | 公开项目与文档 | 以直线执行器控制拖拉机加速的案例 |
+
+### 公开商业产品案例
+
+| 来源 | 公开案例 | 在整车方案中的用途 |
+| --- | --- | --- |
+| [S51](#s51) Keya | 工程车辆方向盘直驱电机 | 转向轴直驱、内置控制器和 CAN 接口参考 |
+| [S52](#s52) SunNav AG500Pro | 农机电机方向盘 | 方向盘替换结构和外形、扭矩规格参考 |
+| [S53](#s53) Smajayu JY305 | 农机自动转向套件 | 电机方向盘、控制器和角度传感器组合参考 |
 
 ### 详细来源条目
 
-本节采用标准文献条目格式，仅列出机构/作者、文献题名、版本或出版信息、章节/图表定位和原始链接；电路与本项目的对应关系统一记录在上方的 PAGE 表格和系统级方案中。
+本节列出机构/作者、文献题名、版本或章节定位和原始链接；具体电路与本项目的对应关系见上方 ECU 映射，整车使用方式见车辆改装方案。
 
 <a id="s01"></a>**S01 — Monolithic Power Systems, MPQ4371-AEC1 Datasheet**, Rev. 1.0 (2024-03-21), Figure 10 “Typical Application Circuit for MPQ4371-1000”, p. 69.<br>
 https://www.monolithicpower.com/en/documentview/productdocument/index/version/2/document_type/Datasheet/lang/en/sku/MPQ4371GVE-AEC1/
@@ -287,7 +334,7 @@ https://www.ti.com/tool/TIDA-020023
 <a id="s42"></a>**S42 — Texas Instruments, TIDUEO6A: Automotive Proportional Solenoid Drive With Highly-Accurate Current Sensor**, Rev. A, §§ 2.3.3, 2.4.3, 2.4.4, 3.2, Figures 4, 6, 11–15.<br>
 https://www.ti.com/lit/ug/tidueo6a/tidueo6a.pdf
 
-<a id="s43"></a>**S43 — OpenPodcar/OpenPodcar**, public open-source vehicle project; README section “DeadMan Handle (DMH) and Relay”; software GPL-2.0, hardware CERN-OHL-W.<br>
+<a id="s43"></a>**S43 — OpenPodcar/OpenPodcar**, public open-source vehicle project; README sections “Speed Potentiometer”, “Linear Actuator” and “DeadMan Handle (DMH) and Relay”; software GPL-2.0, hardware CERN-OHL-W.<br>
 https://github.com/OpenPodcar/OpenPodcar
 
 <a id="s44"></a>**S44 — OpenPodcar vehicle circuit diagram**, public hardware circuit diagram.<br>
@@ -312,3 +359,31 @@ https://github.com/OpenHumidistat/hardware/blob/main/solenoid_driver/compact.kic
 <a id="s50"></a>**S50 — Veldscholte & de Beer, “OpenHumidistat: Humidity-controlled experiments for everyone”**, HardwareX 11 (2022), e00288.<br>
 https://pmc.ncbi.nlm.nih.gov/articles/PMC9058855/
 https://doi.org/10.1016/j.ohx.2022.e00288
+
+<a id="s51"></a>**S51 — Jinan Keya Electronic Science and Technology, Keya 12V/24V 50W 7Nm Tractor Autosteer Kit**, product page, Specification and Interface Definition sections.<br>
+https://www.dcmotorkeya.com/Keya-12V-24V-50W-7Nm-Tractor-Autosteer-Kit-for-Agricultural-Machinery-Driverless-Steering-System-pd546247168.html
+
+<a id="s52"></a>**S52 — SunNav, AG500Pro GNSS Auto-Steering System**, product page, High-Torque Motor Wheel specifications; Tractor Autopilot product overview.<br>
+https://www.sunnavtech.com/ProductDetail.aspx?aid=434<br>
+https://tractorautopilot.com/
+
+<a id="s53"></a>**S53 — Smajayu, JY305 Tractor GNSS Auto-Steering System**, product page, system components and EMS2 Electric Motor sections.<br>
+https://www.smajayu.com/product/jy305-tractor-gnss-auto-steering-system/
+
+<a id="s54"></a>**S54 — rusEFI, Electronic Throttle Body**, project wiki, electronic throttle and pedal/throttle-position feedback overview.<br>
+https://github.com/rusefi/rusefi/wiki/Electronic-Throttle-Body
+
+<a id="s55"></a>**S55 — Open Vehicle Control System (OVCS)**, project README, Architecture Overview and OVCS1 full-size electric-vehicle conversion.<br>
+https://github.com/open-vehicle-control-system/ovcs
+
+<a id="s56"></a>**S56 — RetroPilot, Ocelot**, project README, Chimera raw VSS/CAN inputs and CAN-integrated Relay Core.<br>
+https://github.com/RetroPilot/ocelot
+
+<a id="s57"></a>**S57 — comma.ai, opendbc**, project README, vehicle-specific CAN definitions and car-port documentation.<br>
+https://github.com/commaai/opendbc
+
+<a id="s58"></a>**S58 — AutonomouStuff, PACMod3 ROS Driver**, project README, supported-system command topics including headlight, horn and hazard lights.<br>
+https://github.com/astuff/pacmod3
+
+<a id="s59"></a>**S59 — Mississippi State University ABE 6990 Autonomous Tractor course project, ROS 2 Autonomous Tractor**, project README, Overview and Actuator Control sections.<br>
+https://github.com/sushant097/Ros2-Autonomous-Tractor
