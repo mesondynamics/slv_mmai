@@ -8,8 +8,8 @@ MCU：STM32H563ZIT6，LQFP144
 
 硬件依据：`pcb/roller/ecu` KiCad 工程
 
-兼容依据：上一版 `legacy ECU firmware` 与
-`docs/SCH_2025-10-13.pdf`；CAN2 电机协议依据为厂商
+兼容层实现参考：[ecu_protocol.c](../NonSecure/App/Src/ecu_protocol.c)；
+当前硬件连接以 KiCad 工程为准。CAN2 电机协议依据为厂商
 [方向盘舵机使用手册](https://ae-pic-a1.aliexpress-media.com/kf/Sf252692b27884931b38077b0e5716cf1s.pdf)
 
 ## 1. 审查结论

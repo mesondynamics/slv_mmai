@@ -362,7 +362,7 @@ post-OTA ATECC/MCU/配对身份、无 quarantine、零输出和调参关闭均 P
 SAVE/RELOAD 和闭环回归通过；操作者随后再次断电上电，新参数掉电保持 PASS，
 generation=3/CRC32C=951452805、身份认证和零输出/遥测关闭均正常。
 无固件/Bootloader/密钥/Option Bytes/生命周期修改。详见
-[本轮台架记录](ECU_SN-EJAHGJI_2026-09-05_Test.md)，不能扩大为整车全项验收。
+该版本的台架记录，不能扩大为整车全项验收。
 
 本次升级前的 1.0.17 尚不包含新 Secure OTA 实体急停入口门禁，因此
 `1.0.17 -> 1.0.20` 是一次受控 bootstrap：必须使用本仓库更新后的

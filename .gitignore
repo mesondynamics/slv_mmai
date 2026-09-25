@@ -234,3 +234,28 @@ fp-info-cache
 
 # MacOS
 *.DS_Store
+
+# Local release preparation and generated artifacts
+/AGENTS.md
+/work/
+/tmp/
+/build/
+
+# Excluded reference documents and prebuilt CMSIS libraries
+/firmware/roller/ECU/docs/SCH_2025-10-13.pdf
+/firmware/roller/NUCLEO_F767ZI/doc/Nebulas IV Series High-Precision Product Data Interface Protocol.pdf
+/firmware/NUCLEO_F767ZI/doc/Nebulas IV Series High-Precision Product Data Interface Protocol.pdf
+/pcb/ATK-DMF407 V1.2.pdf
+**/CMSIS/**/*.lib
+**/CMSIS/**/*.a
+
+# Modules excluded from the ECU-focused source tree, including earlier names
+/firmware/roller/cubemx_project/
+/firmware/roller/NUCLEO_F767ZI/
+/firmware/roller/ccu_controller/
+/pcb/roller/ccu/
+/pcb/starlight_lib/
+/firmware/cubemx_project/
+/firmware/NUCLEO_F767ZI/
+/firmware/ccu_controller/
+/pcb/ccu_project/

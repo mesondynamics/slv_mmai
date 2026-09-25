@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="860" viewBox="0 0 1200 860" role="img" aria-labelledby="title description">
+  <title id="title">Mobile Machine Actuation Interface architecture</title>
+  <desc id="description">An upper-level controller sends commands to a machine-interface ECU. Steering, propulsion, and auxiliary interfaces connect the ECU to existing machine actuators. Available state feedback returns to the ECU and the upper-level controller.</desc>
+  <defs>
+    <style>
+      text { font-family: Arial, Helvetica, sans-serif; fill: #183044; }
+      .heading { font-size: 24px; font-weight: 700; }
+      .label { font-size: 20px; font-weight: 700; }
+      .body { font-size: 17px; }
+      .note { font-size: 16px; fill: #506677; }
+      .box { fill: #ffffff; stroke: #91a5b5; stroke-width: 2; }
+      .command { fill: none; stroke: #276d94; stroke-width: 3; marker-end: url(#command-arrow); }
+      .feedback { fill: none; stroke: #8b5d27; stroke-width: 3; marker-end: url(#feedback-arrow); }
+    </style>
+    <marker id="command-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#276d94"/></marker>
+    <marker id="feedback-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#8b5d27"/></marker>
+  </defs>
+  <rect width="1200" height="860" fill="#f7fafc"/>
+  <text x="600" y="45" text-anchor="middle" font-size="30" font-weight="700">Mobile Machine Actuation Interface</text>
+  <rect x="390" y="85" width="420" height="90" rx="12" fill="#e9f2fb" stroke="#276d94" stroke-width="2"/>
+  <text x="600" y="121" text-anchor="middle" class="heading">Upper-level controller</text>
+  <text x="600" y="151" text-anchor="middle" class="body">Teleoperation / autonomy</text>
+  <path d="M600 175V235" class="command"/>
+  <text x="620" y="208" class="note">Commands + heartbeat</text>
+  <rect x="330" y="235" width="540" height="120" rx="12" fill="#e4f4ef" stroke="#247f6c" stroke-width="2.5"/>
+  <text x="600" y="275" text-anchor="middle" class="heading">Machine-interface ECU</text>
+  <text x="600" y="307" text-anchor="middle" class="body">Validate · arbitrate · map outputs · acquire state</text>
+  <text x="600" y="333" text-anchor="middle" class="note">Watchdog, faults, and manual-control interaction</text>
+  <path d="M870 283H1148V130H810" class="feedback"/>
+  <text x="952" y="114" text-anchor="middle" class="note">State + faults</text>
+  <path d="M600 355V402M210 402H990" fill="none" stroke="#276d94" stroke-width="3"/>
+  <path d="M210 402V450" class="command"/>
+  <path d="M600 402V450" class="command"/>
+  <path d="M990 402V450" class="command"/>
+  <rect x="70" y="450" width="280" height="88" rx="12" class="box"/>
+  <text x="210" y="483" text-anchor="middle" class="label">Steering interface</text>
+  <text x="210" y="514" text-anchor="middle" class="body">Motor / electrical command</text>
+  <rect x="460" y="450" width="280" height="88" rx="12" class="box"/>
+  <text x="600" y="483" text-anchor="middle" class="label">Propulsion interface</text>
+  <text x="600" y="514" text-anchor="middle" class="body">Hydraulic valve / drive input</text>
+  <rect x="850" y="450" width="280" height="88" rx="12" class="box"/>
+  <text x="990" y="483" text-anchor="middle" class="label">Auxiliary I/O interface</text>
+  <text x="990" y="514" text-anchor="middle" class="body">Relay / CAN / discrete I/O</text>
+  <path d="M210 538V615" class="command"/>
+  <path d="M600 538V615" class="command"/>
+  <path d="M990 538V615" class="command"/>
+  <rect x="70" y="615" width="280" height="80" rx="12" class="box"/>
+  <text x="210" y="649" text-anchor="middle" class="label">Existing steering</text>
+  <text x="210" y="678" text-anchor="middle" class="body">Mechanism + actuator</text>
+  <rect x="460" y="615" width="280" height="80" rx="12" class="box"/>
+  <text x="600" y="649" text-anchor="middle" class="label">Existing propulsion</text>
+  <text x="600" y="678" text-anchor="middle" class="body">Power / hydraulic mechanism</text>
+  <rect x="850" y="615" width="280" height="80" rx="12" class="box"/>
+  <text x="990" y="649" text-anchor="middle" class="label">Existing auxiliaries</text>
+  <text x="990" y="678" text-anchor="middle" class="body">Lights, horn, work functions</text>
+  <path d="M210 695V718H990V695M600 695V718" fill="none" stroke="#8b5d27" stroke-width="3"/>
+  <path d="M600 718V740" class="feedback"/>
+  <rect x="310" y="740" width="580" height="60" rx="12" fill="#fbf0de" stroke="#8b5d27" stroke-width="2"/>
+  <text x="600" y="777" text-anchor="middle" class="label">Available machine-state feedback</text>
+  <path d="M310 770H35V298H330" class="feedback"/>
+  <text x="600" y="837" text-anchor="middle" class="note">Conceptual architecture. Interfaces and feedback vary by machine.</text>
+</svg>
